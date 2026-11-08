@@ -1,9 +1,18 @@
 //! SI units throughout: metres, kilograms, seconds, Newtons.
+#![recursion_limit = "256"]
+extern crate self as marvelous_cloth;
+
+#[cfg(feature = "desktop")]
+pub mod atelier;
 pub mod authoring;
 pub mod avatar;
 pub mod avatar_import;
 pub mod avatar_measurements;
+#[path = "atelier/commands.rs"]
+pub mod commands;
 pub mod contact;
+#[cfg(feature = "desktop")]
+pub use atelier::css_ui;
 pub mod document;
 pub mod energy;
 pub mod fabrics;

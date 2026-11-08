@@ -1,0 +1,512 @@
+/* FoldCraft Studio V2 CSS Tokens & Theme Rules
+ * MIT License - 100% original implementation for FoldCraft
+ */
+
+:root {
+  --bg: #111318;
+  --surface: #181b22;
+  --surface-raised: #21252f;
+  --border: #303644;
+  --text: #f0f3f8;
+  --text-muted: #848d9a;
+  --accent: #3b82f6;
+  --warn: #eab308;
+  --danger: #ef4444;
+}
+
+.theme-dark {
+  --bg: #111318;
+  --surface: #181b22;
+  --surface-raised: #21252f;
+  --border: #303644;
+  --text: #f0f3f8;
+  --text-muted: #848d9a;
+  --accent: #3b82f6;
+  --warn: #eab308;
+  --danger: #ef4444;
+}
+
+.theme-light {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-raised: #f1f5f9;
+  --border: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --warn: #d97706;
+  --danger: #dc2626;
+}
+
+/* App Shell Container */
+.studio-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* Top Menu & Transport Bar */
+.top-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  padding: 0 12px;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.top-bar-left {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.menu-bar {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+}
+
+.menu-item {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text);
+  border-radius: 4px;
+}
+
+.menu-item:hover {
+  background-color: var(--surface-raised);
+}
+
+/* Simulation Transport Controls */
+.sim-transport {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background-color: var(--surface-raised);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.transport-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  border-radius: 4px;
+}
+
+.transport-btn:hover {
+  background-color: var(--surface);
+}
+
+.transport-btn.playing {
+  background-color: var(--accent);
+  color: #ffffff;
+}
+
+#sim-backend-indicator {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  color: var(--text);
+  background-color: var(--surface);
+}
+
+#sim-backend-indicator.gpu {
+  color: var(--accent);
+}
+
+#sim-backend-indicator.cpu {
+  color: var(--warn);
+}
+
+.top-bar-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.layout-switcher {
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  background-color: var(--surface-raised);
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.layout-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-radius: 3px;
+}
+
+.layout-btn.active {
+  color: var(--text);
+  background-color: var(--surface);
+}
+
+#theme-toggle {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+#theme-toggle:hover {
+  color: var(--text);
+  background-color: var(--surface-raised);
+}
+
+#command-palette-trigger {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background-color: var(--surface-raised);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+/* Studio Workspace Body */
+.studio-body {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Left 3D Tool Rail */
+.rail-3d {
+  display: flex;
+  flex-direction: column;
+  width: 44px;
+  background-color: var(--surface);
+  border-right: 1px solid var(--border);
+  align-items: center;
+  padding: 8px 0;
+  gap: 8px;
+}
+
+.rail-tool-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.rail-tool-btn:hover {
+  background-color: var(--surface-raised);
+  color: var(--text);
+}
+
+.rail-tool-btn.active {
+  background-color: var(--accent);
+  color: #ffffff;
+}
+
+/* Left Asset & Piece Browser Drawer */
+.left-drawer {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  background-color: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.left-drawer.collapsed {
+  display: none;
+}
+
+.drawer-header {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 8px;
+  gap: 4px;
+  overflow: auto;
+}
+
+/* Center Dual Viewport Stage */
+#viewport-stage {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  position: relative;
+  background-color: transparent;
+  overflow: hidden;
+}
+
+#viewport-3d {
+  display: flex;
+  flex: 1;
+  position: relative;
+  background-color: transparent;
+  overflow: hidden;
+}
+
+#viewport-2d {
+  display: flex;
+  flex: 1;
+  position: relative;
+  background-color: transparent;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* 3D-only mode */
+.stage-3d-only #viewport-3d {
+  flex: 1;
+}
+
+.stage-3d-only #viewport-2d {
+  display: none;
+}
+
+/* 2D-only mode */
+.stage-2d-only #viewport-3d {
+  display: none;
+}
+
+.stage-2d-only #viewport-2d {
+  flex: 1;
+  border-left: none;
+}
+
+/* Viewport HUD Overlays */
+.viewport-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  padding: 4px 8px;
+  background-color: var(--surface-raised);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Center/Right 2D Tool Rail */
+.rail-2d {
+  display: flex;
+  flex-direction: column;
+  width: 44px;
+  background-color: var(--surface);
+  border-right: 1px solid var(--border);
+  align-items: center;
+  padding: 8px 0;
+  gap: 8px;
+}
+
+/* Right Dock: Object Browser & Property Editor */
+.right-dock {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  background-color: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#object-browser {
+  display: flex;
+  flex-direction: column;
+  height: 240px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dock-section-title {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background-color: var(--surface-raised);
+}
+
+.browser-categories {
+  display: flex;
+  flex-direction: row;
+  border-bottom: 1px solid var(--border);
+}
+
+.category-tab {
+  flex: 1;
+  padding: 6px 4px;
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.category-tab.active {
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+}
+
+.browser-tree {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 6px 10px;
+  gap: 4px;
+  overflow: auto;
+}
+
+.tree-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: var(--text);
+  border-radius: 3px;
+}
+
+.tree-item:hover {
+  background-color: var(--surface-raised);
+}
+
+#property-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.property-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 8px 12px;
+  gap: 8px;
+  overflow: auto;
+}
+
+.property-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.property-label {
+  color: var(--text-muted);
+}
+
+.property-value {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Bottom Status Bar */
+.status-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 12px;
+  background-color: var(--surface-raised);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.status-bar-left {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-bar-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Modals & Command Palette Overlay */
+.modal-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+#command-palette-modal {
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-height: 360px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.palette-input {
+  padding: 10px 14px;
+  font-size: 13px;
+  background-color: var(--surface-raised);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.palette-results {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 6px;
+  gap: 2px;
+  overflow: auto;
+}
+
+/* 2D Pattern SVG Preview Fallback */
+.pattern-preview-svg {
+  width: 100%;
+  height: 100%;
+}

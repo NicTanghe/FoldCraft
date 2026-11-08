@@ -24,6 +24,8 @@ use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
+#[path = "editor/css_editor.rs"]
+pub mod css_editor;
 #[path = "editor/mesh_preparation.rs"]
 mod mesh_preparation;
 #[cfg(test)]
@@ -129,6 +131,11 @@ struct Done {
 }
 
 pub fn run(project: Project, output: PathBuf) -> eframe::Result {
+    css_editor::run(project, output).map_err(|e| eframe::Error::AppCreation(e.to_string().into()))
+}
+
+#[allow(dead_code)]
+pub fn run_legacy_egui(project: Project, output: PathBuf) -> eframe::Result {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()

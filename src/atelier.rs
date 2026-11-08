@@ -20,6 +20,10 @@ mod chrome;
 mod command_palette;
 #[path = "atelier/commands.rs"]
 mod commands;
+#[path = "atelier/css_runner.rs"]
+pub mod css_runner;
+#[path = "atelier/css_ui/mod.rs"]
+pub mod css_ui;
 #[path = "atelier/documents_ui.rs"]
 mod documents_ui;
 #[path = "atelier/drafting_ui.rs"]
@@ -70,7 +74,7 @@ mod worker;
 #[path = "atelier/workspace.rs"]
 mod workspace;
 #[path = "atelier/workspace_profiles.rs"]
-mod workspace_profiles;
+pub mod workspace_profiles;
 use authoring_ui::{AuthoringUi, Tool};
 use worker::Work;
 
@@ -121,6 +125,9 @@ pub fn run(
     perf_test: bool,
     authoring_test: bool,
 ) -> Result<(), String> {
+    if !(smoke || drag_test || perf_test || authoring_test) {
+        return css_runner::run(project, scene, files);
+    }
     let output = files.output;
     let smoke_report = output.join("interaction.json");
     let authoring_report = output.join("authoring.json");

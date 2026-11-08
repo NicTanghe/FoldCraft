@@ -1,0 +1,1294 @@
+//! Native CSSimpler Studio V2 window runner for the CPU FEM Reference Editor.
+//!
+//! Replaces plain `cargo run` (`editor::run`) with a native `cssimpler::app::App`
+//! Studio V2 window backed by `Project` v1, `ReferenceSolver::step`, and `mesh_preparation`.
+
+#![allow(dead_code)]
+
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use cssimpler::app::{App, Invalidation, RenderMode};
+use cssimpler::core::Node;
+use cssimpler::renderer::{EngineEvent, FrameInfo, WindowConfig};
+use cssimpler::style::Stylesheet;
+use cssimpler::ui;
+
+use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, load_studio_stylesheet};
+use marvelous_cloth::mesh_resolution::preparation::PhysicsSizing;
+use marvelous_cloth::model::{Mesh, Scene, State};
+use marvelous_cloth::project::{self, Project};
+use marvelous_cloth::render::Camera;
+use marvelous_cloth::solver::{Metrics, ReferenceSolver};
+
+// ============================================================================
+// Actions bitmask for atomic dispatch from ui! onclick callbacks
+// ============================================================================
+
+pub const ACT_PLAY_PAUSE: u64 = 1 << 0;
+pub const ACT_STEP: u64 = 1 << 1;
+pub const ACT_RESET: u64 = 1 << 2;
+pub const ACT_SAVE: u64 = 1 << 3;
+pub const ACT_EXPORT_OBJ: u64 = 1 << 4;
+pub const ACT_REMESH_RESET: u64 = 1 << 5;
+pub const ACT_UNIFORM_RESET: u64 = 1 << 6;
+pub const ACT_SCENE_SPHERE: u64 = 1 << 7;
+pub const ACT_SCENE_HANG: u64 = 1 << 8;
+pub const ACT_TOGGLE_WIRE: u64 = 1 << 9;
+pub const ACT_TOGGLE_SHADED: u64 = 1 << 10;
+pub const ACT_TOGGLE_COLLIDER: u64 = 1 << 11;
+pub const ACT_TAB_PROPERTIES: u64 = 1 << 12;
+pub const ACT_TAB_OBJECTS: u64 = 1 << 13;
+pub const ACT_TAB_FABRIC: u64 = 1 << 14;
+pub const ACT_TAB_SIMULATION: u64 = 1 << 15;
+pub const ACT_THEME_TOGGLE: u64 = 1 << 16;
+pub const ACT_VIEW_SPLIT: u64 = 1 << 17;
+pub const ACT_VIEW_3D: u64 = 1 << 18;
+pub const ACT_VIEW_2D: u64 = 1 << 19;
+pub const ACT_PALETTE_TOGGLE: u64 = 1 << 20;
+pub const ACT_DRAWER_TOGGLE: u64 = 1 << 21;
+pub const ACT_CAM_RESET: u64 = 1 << 22;
+pub const ACT_EDGE_SELECT_NEXT: u64 = 1 << 23;
+
+static PENDING_ACTIONS: AtomicU64 = AtomicU64::new(0);
+
+pub fn dispatch_action(act: u64) {
+    PENDING_ACTIONS.fetch_or(act, Ordering::Relaxed);
+}
+
+// Onclick trampolines
+pub fn on_play_pause() {
+    dispatch_action(ACT_PLAY_PAUSE);
+}
+pub fn on_step() {
+    dispatch_action(ACT_STEP);
+}
+pub fn on_reset() {
+    dispatch_action(ACT_RESET);
+}
+pub fn on_save() {
+    dispatch_action(ACT_SAVE);
+}
+pub fn on_export_obj() {
+    dispatch_action(ACT_EXPORT_OBJ);
+}
+pub fn on_remesh_reset() {
+    dispatch_action(ACT_REMESH_RESET);
+}
+pub fn on_uniform_reset() {
+    dispatch_action(ACT_UNIFORM_RESET);
+}
+pub fn on_scene_sphere() {
+    dispatch_action(ACT_SCENE_SPHERE);
+}
+pub fn on_scene_hang() {
+    dispatch_action(ACT_SCENE_HANG);
+}
+pub fn on_toggle_wire() {
+    dispatch_action(ACT_TOGGLE_WIRE);
+}
+pub fn on_toggle_shaded() {
+    dispatch_action(ACT_TOGGLE_SHADED);
+}
+pub fn on_toggle_collider() {
+    dispatch_action(ACT_TOGGLE_COLLIDER);
+}
+pub fn on_tab_properties() {
+    dispatch_action(ACT_TAB_PROPERTIES);
+}
+pub fn on_tab_objects() {
+    dispatch_action(ACT_TAB_OBJECTS);
+}
+pub fn on_tab_fabric() {
+    dispatch_action(ACT_TAB_FABRIC);
+}
+pub fn on_tab_simulation() {
+    dispatch_action(ACT_TAB_SIMULATION);
+}
+pub fn on_theme_toggle() {
+    dispatch_action(ACT_THEME_TOGGLE);
+}
+pub fn on_view_split() {
+    dispatch_action(ACT_VIEW_SPLIT);
+}
+pub fn on_view_3d() {
+    dispatch_action(ACT_VIEW_3D);
+}
+pub fn on_view_2d() {
+    dispatch_action(ACT_VIEW_2D);
+}
+pub fn on_palette_toggle() {
+    dispatch_action(ACT_PALETTE_TOGGLE);
+}
+pub fn on_drawer_toggle() {
+    dispatch_action(ACT_DRAWER_TOGGLE);
+}
+pub fn on_cam_reset() {
+    dispatch_action(ACT_CAM_RESET);
+}
+pub fn on_edge_select_next() {
+    dispatch_action(ACT_EDGE_SELECT_NEXT);
+}
+
+// ============================================================================
+// Editor Tab Enum
+// ============================================================================
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum EditorTab {
+    #[default]
+    Properties,
+    Objects,
+    Fabric,
+    Simulation,
+}
+
+// ============================================================================
+// State Struct
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub struct CssEditorState {
+    pub active: Project,
+    pub mesh: Arc<Mesh>,
+    pub state: State,
+    pub metrics: Option<Metrics>,
+    pub camera: Camera,
+    pub playing: bool,
+    pub wire: bool,
+    pub shaded: bool,
+    pub collider: bool,
+    pub step_count: u64,
+    pub step_ms: f64,
+    pub output_dir: PathBuf,
+    pub active_tab: EditorTab,
+    pub theme: Theme,
+    pub layout_mode: ViewLayoutMode,
+    pub command_palette_open: bool,
+    pub left_drawer_open: bool,
+    pub selected_edge: Option<usize>,
+    pub status_message: String,
+    // Mesh prep inputs
+    pub mesh_prep_warp_e: String,
+    pub mesh_prep_weft_e: String,
+    pub mesh_prep_ratio: String,
+    pub mesh_prep_transition: String,
+    pub mesh_prep_error: Option<String>,
+    // Pointer / camera drag state
+    pub pointer_down: bool,
+    pub last_pointer_pos: (f32, f32),
+}
+
+impl CssEditorState {
+    pub fn new(project: Project, output_dir: PathBuf) -> Self {
+        let (mesh, state) = project.build().expect("build initial mesh from project");
+        let (warp, weft, ratio, trans) = if let Some(plan) = &project.physics_sizing {
+            (
+                plan.young_pa[0].to_string(),
+                plan.young_pa[1].to_string(),
+                plan.boundary_ratio.to_string(),
+                (plan.transition_m * 1000.0).to_string(),
+            )
+        } else {
+            (
+                "110000".to_string(),
+                "110000".to_string(),
+                "0.5".to_string(),
+                "40".to_string(),
+            )
+        };
+
+        Self {
+            active: project,
+            mesh: Arc::new(mesh),
+            state,
+            metrics: None,
+            camera: Camera::default(),
+            playing: false,
+            wire: true,
+            shaded: true,
+            collider: true,
+            step_count: 0,
+            step_ms: 0.0,
+            output_dir,
+            active_tab: EditorTab::Properties,
+            theme: Theme::Dark,
+            layout_mode: ViewLayoutMode::Split,
+            command_palette_open: false,
+            left_drawer_open: true,
+            selected_edge: None,
+            status_message: "Ready".to_string(),
+            mesh_prep_warp_e: warp,
+            mesh_prep_weft_e: weft,
+            mesh_prep_ratio: ratio,
+            mesh_prep_transition: trans,
+            mesh_prep_error: None,
+            pointer_down: false,
+            last_pointer_pos: (0.0, 0.0),
+        }
+    }
+
+    pub fn step(&mut self) {
+        match ReferenceSolver::step(
+            &self.mesh,
+            &mut self.state,
+            &self.active.material,
+            &self.active.solver,
+            self.active.sphere.as_ref(),
+        ) {
+            Ok(m) => {
+                self.step_count += 1;
+                self.step_ms = m.step_ms;
+                self.status_message = format!(
+                    "Step {}: max pen {:.3} mm, residual {:.1e}, {:.1} ms",
+                    self.step_count,
+                    m.max_vertex_penetration_m * 1000.0,
+                    m.residual_rms_n,
+                    m.step_ms
+                );
+                self.metrics = Some(m);
+            }
+            Err(e) => {
+                self.playing = false;
+                self.status_message = format!("Solver error: {e}");
+            }
+        }
+    }
+
+    pub fn reset(&mut self) {
+        if let Ok((mesh, state)) = self.active.build() {
+            self.mesh = Arc::new(mesh);
+            self.state = state;
+            self.metrics = None;
+            self.step_count = 0;
+            self.step_ms = 0.0;
+            self.status_message = "Reset simulation state".to_string();
+        }
+    }
+
+    pub fn save_project(&mut self) {
+        let _ = fs::create_dir_all(&self.output_dir);
+        let path = self.output_dir.join("project.json");
+        match self.active.save(&path) {
+            Ok(_) => self.status_message = format!("Saved {}", path.display()),
+            Err(e) => self.status_message = format!("Save error: {e}"),
+        }
+    }
+
+    pub fn export_obj(&mut self) {
+        let _ = fs::create_dir_all(&self.output_dir);
+        let path = self.output_dir.join("cloth.obj");
+        let obj_text = project::obj(&self.mesh, &self.state);
+        match fs::write(&path, obj_text) {
+            Ok(_) => self.status_message = format!("Exported {}", path.display()),
+            Err(e) => self.status_message = format!("Export error: {e}"),
+        }
+    }
+
+    pub fn remesh_and_reset(&mut self) {
+        let parse_num = |s: &str| {
+            s.trim()
+                .parse::<f64>()
+                .map_err(|_| "Enter numeric sizing values".to_string())
+        };
+
+        let result = (|| -> Result<PhysicsSizing, String> {
+            let warp = parse_num(&self.mesh_prep_warp_e)?;
+            let weft = parse_num(&self.mesh_prep_weft_e)?;
+            let ratio = parse_num(&self.mesh_prep_ratio)?;
+            let trans_mm = parse_num(&self.mesh_prep_transition)?;
+            let plan = PhysicsSizing {
+                young_pa: [warp, weft],
+                bending_nm: [
+                    self.active.material.bend_warp,
+                    self.active.material.bend_weft,
+                ],
+                axis_degrees: self.active.material.grain_degrees,
+                boundary_ratio: ratio,
+                transition_m: trans_mm * 0.001,
+                seed: 42,
+            };
+            plan.validate()?;
+            Ok(plan)
+        })();
+
+        match result {
+            Ok(plan) => {
+                self.active.physics_sizing = Some(plan);
+                self.mesh_prep_error = None;
+                self.reset();
+                self.status_message = "Remeshed with physics sizing".to_string();
+            }
+            Err(e) => {
+                self.mesh_prep_error = Some(e);
+            }
+        }
+    }
+
+    pub fn uniform_grid_and_reset(&mut self) {
+        self.active.physics_sizing = None;
+        self.mesh_prep_error = None;
+        self.reset();
+        self.status_message = "Reset to uniform grid".to_string();
+    }
+}
+
+// ============================================================================
+// Update and Event Handling
+// ============================================================================
+
+pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidation {
+    let actions = PENDING_ACTIONS.swap(0, Ordering::Relaxed);
+
+    if actions & ACT_PLAY_PAUSE != 0 {
+        state.playing = !state.playing;
+    }
+    if actions & ACT_STEP != 0 {
+        state.step();
+    }
+    if actions & ACT_RESET != 0 {
+        state.reset();
+    }
+    if actions & ACT_SAVE != 0 {
+        state.save_project();
+    }
+    if actions & ACT_EXPORT_OBJ != 0 {
+        state.export_obj();
+    }
+    if actions & ACT_REMESH_RESET != 0 {
+        state.remesh_and_reset();
+    }
+    if actions & ACT_UNIFORM_RESET != 0 {
+        state.uniform_grid_and_reset();
+    }
+    if actions & ACT_SCENE_SPHERE != 0 {
+        state.active.scene = Scene::Sphere;
+        state.active.sphere = Some(Default::default());
+        state.reset();
+    }
+    if actions & ACT_SCENE_HANG != 0 {
+        state.active.scene = Scene::Hanging;
+        state.active.sphere = None;
+        state.reset();
+    }
+    if actions & ACT_TOGGLE_WIRE != 0 {
+        state.wire = !state.wire;
+    }
+    if actions & ACT_TOGGLE_SHADED != 0 {
+        state.shaded = !state.shaded;
+    }
+    if actions & ACT_TOGGLE_COLLIDER != 0 {
+        state.collider = !state.collider;
+    }
+    if actions & ACT_TAB_PROPERTIES != 0 {
+        state.active_tab = EditorTab::Properties;
+    }
+    if actions & ACT_TAB_OBJECTS != 0 {
+        state.active_tab = EditorTab::Objects;
+    }
+    if actions & ACT_TAB_FABRIC != 0 {
+        state.active_tab = EditorTab::Fabric;
+    }
+    if actions & ACT_TAB_SIMULATION != 0 {
+        state.active_tab = EditorTab::Simulation;
+    }
+    if actions & ACT_THEME_TOGGLE != 0 {
+        state.theme = state.theme.toggled();
+    }
+    if actions & ACT_VIEW_SPLIT != 0 {
+        state.layout_mode = ViewLayoutMode::Split;
+    }
+    if actions & ACT_VIEW_3D != 0 {
+        state.layout_mode = ViewLayoutMode::ThreeDOnly;
+    }
+    if actions & ACT_VIEW_2D != 0 {
+        state.layout_mode = ViewLayoutMode::TwoDOnly;
+    }
+    if actions & ACT_PALETTE_TOGGLE != 0 {
+        state.command_palette_open = !state.command_palette_open;
+    }
+    if actions & ACT_DRAWER_TOGGLE != 0 {
+        state.left_drawer_open = !state.left_drawer_open;
+    }
+    if actions & ACT_CAM_RESET != 0 {
+        state.camera = Camera::default();
+    }
+    if actions & ACT_EDGE_SELECT_NEXT != 0 {
+        state.selected_edge = Some(state.selected_edge.map_or(0, |e| (e + 1) % 4));
+    }
+
+    if state.playing {
+        state.step();
+        Invalidation::Paint
+    } else if actions != 0 {
+        Invalidation::Structure
+    } else {
+        Invalidation::Clean
+    }
+}
+
+pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> bool {
+    match event {
+        EngineEvent::Key(k) => {
+            if k.state == cssimpler::renderer::ButtonState::Pressed {
+                if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key {
+                    if ch == " " {
+                        state.playing = !state.playing;
+                        return true;
+                    }
+                    if ch == "k" && (k.modifiers.control || k.modifiers.super_key) {
+                        state.command_palette_open = !state.command_palette_open;
+                        return true;
+                    }
+                    if ch == "s" && (k.modifiers.control || k.modifiers.super_key) {
+                        state.save_project();
+                        return true;
+                    }
+                }
+                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key {
+                    if name == "Escape" && state.command_palette_open {
+                        state.command_palette_open = false;
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        EngineEvent::PointerButton {
+            button: cssimpler::renderer::PointerButton::Primary,
+            state: btn_state,
+            ..
+        } => {
+            state.pointer_down = *btn_state == cssimpler::renderer::ButtonState::Pressed;
+            false
+        }
+        EngineEvent::PointerMoved { position, .. } => {
+            let (px, py) = (position.x as f32, position.y as f32);
+            if state.pointer_down {
+                let dx = px - state.last_pointer_pos.0;
+                let dy = py - state.last_pointer_pos.1;
+                // If dragging in 3D viewport region, orbit camera
+                state.camera.yaw += dx * 0.008;
+                state.camera.pitch = (state.camera.pitch + dy * 0.008).clamp(-1.45, 1.45);
+            }
+            state.last_pointer_pos = (px, py);
+            false
+        }
+        EngineEvent::Scroll { delta, .. } => {
+            let dy = match delta {
+                cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
+                cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
+            };
+            state.camera.distance = (state.camera.distance - dy as f32).clamp(0.5, 12.0);
+            false
+        }
+        _ => false,
+    }
+}
+
+// ============================================================================
+// UI Generation (Studio V2 layout via cssimpler::ui!)
+// ============================================================================
+
+pub fn build_editor_ui(state: &CssEditorState) -> Node {
+    let theme_class = state.theme.class_name();
+    let shell_class = format!("studio-shell {theme_class}");
+
+    ui! {
+        <div id="app" class={shell_class}>
+            {build_top_bar(state)}
+            <div class="studio-body">
+                {build_tool_rail_3d(state)}
+                {build_left_drawer(state)}
+                {build_stage(state)}
+                {build_right_dock(state)}
+            </div>
+            {build_status_bar(state)}
+            {build_command_palette_overlay(state)}
+        </div>
+    }
+}
+
+fn build_top_bar(state: &CssEditorState) -> Node {
+    let play_label = if state.playing { "Pause" } else { "Play" };
+    let play_class = if state.playing {
+        "transport-btn playing"
+    } else {
+        "transport-btn"
+    };
+
+    let (split_class, threed_class, twod_class) = match state.layout_mode {
+        ViewLayoutMode::Split => ("layout-btn active", "layout-btn", "layout-btn"),
+        ViewLayoutMode::ThreeDOnly => ("layout-btn", "layout-btn active", "layout-btn"),
+        ViewLayoutMode::TwoDOnly => ("layout-btn", "layout-btn", "layout-btn active"),
+    };
+
+    ui! {
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <span class="app-title">"FoldCraft | Reference Editor"</span>
+                <nav class="menu-bar">
+                    <button class="menu-item" onclick={on_save}>"Save (Ctrl+S)"</button>
+                    <button class="menu-item" onclick={on_export_obj}>"Export OBJ"</button>
+                </nav>
+            </div>
+            <div class="sim-transport">
+                <button id="sim-play-btn" class={play_class} onclick={on_play_pause}>
+                    {play_label}
+                </button>
+                <button id="sim-step-btn" class="transport-btn" onclick={on_step}>
+                    "Step"
+                </button>
+                <button id="sim-reset-btn" class="transport-btn" onclick={on_reset}>
+                    "Reset"
+                </button>
+                <span id="sim-backend-indicator" class="cpu">
+                    "CPU Reference"
+                </span>
+            </div>
+            <div class="top-bar-right">
+                <div class="layout-switcher">
+                    <button class={split_class} onclick={on_view_split}>"Split"</button>
+                    <button class={threed_class} onclick={on_view_3d}>"3D"</button>
+                    <button class={twod_class} onclick={on_view_2d}>"2D"</button>
+                </div>
+                <button id="command-palette-trigger" onclick={on_palette_toggle}>
+                    "Palette (Ctrl+K)"
+                </button>
+                <button id="theme-toggle" onclick={on_theme_toggle}>
+                    "Theme"
+                </button>
+            </div>
+        </header>
+    }
+}
+
+fn build_tool_rail_3d(_state: &CssEditorState) -> Node {
+    ui! {
+        <aside class="rail-3d">
+            <button class="rail-tool-btn active" title="Select / Orbit">"⤹"</button>
+            <button class="rail-tool-btn" onclick={on_cam_reset} title="Reset Camera">"⌖"</button>
+            <button class="rail-tool-btn" onclick={on_edge_select_next} title="Cycle Selected Edge">"✂"</button>
+            <button class="rail-tool-btn" onclick={on_drawer_toggle} title="Toggle Left Drawer">"☰"</button>
+        </aside>
+    }
+}
+
+fn build_left_drawer(state: &CssEditorState) -> Node {
+    if !state.left_drawer_open {
+        return ui! { <div class="left-drawer collapsed"></div> };
+    }
+
+    let is_sphere = state.active.scene == Scene::Sphere;
+    let sphere_class = if is_sphere {
+        "drawer-btn active"
+    } else {
+        "drawer-btn"
+    };
+    let hang_class = if !is_sphere {
+        "drawer-btn active"
+    } else {
+        "drawer-btn"
+    };
+
+    let wire_label = if state.wire {
+        "Wireframe: ON"
+    } else {
+        "Wireframe: OFF"
+    };
+    let shaded_label = if state.shaded {
+        "Shaded: ON"
+    } else {
+        "Shaded: OFF"
+    };
+    let collider_label = if state.collider {
+        "Collider: ON"
+    } else {
+        "Collider: OFF"
+    };
+
+    ui! {
+        <aside class="left-drawer">
+            <div class="drawer-header">"SCENE & DISPLAY"</div>
+            <div class="drawer-content">
+                <div class="drawer-section">
+                    <span class="section-label">"Reference Benchmark Scene"</span>
+                    <button id="scene-sphere-btn" class={sphere_class} onclick={on_scene_sphere}>
+                        "Sphere Benchmark"
+                    </button>
+                    <button id="scene-hang-btn" class={hang_class} onclick={on_scene_hang}>
+                        "Hanging Pins"
+                    </button>
+                </div>
+                <div class="drawer-section">
+                    <span class="section-label">"Display Toggles"</span>
+                    <button class="drawer-btn" onclick={on_toggle_wire}>{wire_label}</button>
+                    <button class="drawer-btn" onclick={on_toggle_shaded}>{shaded_label}</button>
+                    <button class="drawer-btn" onclick={on_toggle_collider}>{collider_label}</button>
+                </div>
+                <div class="drawer-section">
+                    <span class="section-label">"Camera Orbit Hint"</span>
+                    <p class="drawer-hint">"Drag mouse on 3D viewport to orbit. Mouse wheel to zoom."</p>
+                </div>
+            </div>
+        </aside>
+    }
+}
+
+fn build_stage(state: &CssEditorState) -> Node {
+    let stage_class = format!("stage {}", state.layout_mode.stage_class());
+
+    ui! {
+        <main id="viewport-stage" class={stage_class}>
+            {build_3d_viewport(state)}
+            {build_2d_viewport(state)}
+        </main>
+    }
+}
+
+fn build_3d_viewport(state: &CssEditorState) -> Node {
+    let svg_nodes = render_3d_scene_svg(state);
+
+    ui! {
+        <div id="viewport-3d" class="viewport-container">
+            <div class="viewport-header">
+                <span class="viewport-title">"3D CLOTH VIEWPORT"</span>
+                <span class="viewport-sub">"Double-precision CPU reference"</span>
+            </div>
+            <div class="canvas-area">
+                <svg viewBox="0 0 600 450" class="svg-canvas">
+                    {svg_nodes}
+                </svg>
+            </div>
+        </div>
+    }
+}
+
+fn build_2d_viewport(state: &CssEditorState) -> Node {
+    let svg_nodes = render_2d_pattern_svg(state);
+    let edge_hint = state
+        .selected_edge
+        .map_or("Click edge to select".to_string(), |e| {
+            let p = &state.active.pattern;
+            let mm = if e % 2 == 0 {
+                p.width * 1000.0
+            } else {
+                p.height * 1000.0
+            };
+            format!("Edge {} selected: {:.0} mm", e + 1, mm)
+        });
+
+    ui! {
+        <div id="viewport-2d" class="viewport-container">
+            <div class="viewport-header">
+                <span class="viewport-title">"2D REST PATTERN"</span>
+                <span class="viewport-sub">{edge_hint}</span>
+            </div>
+            <div class="canvas-area">
+                <svg viewBox="0 0 400 400" class="svg-canvas">
+                    {svg_nodes}
+                </svg>
+            </div>
+        </div>
+    }
+}
+
+fn build_right_dock(state: &CssEditorState) -> Node {
+    let (tab_p, tab_o, tab_f, tab_s) = match state.active_tab {
+        EditorTab::Properties => ("dock-tab active", "dock-tab", "dock-tab", "dock-tab"),
+        EditorTab::Objects => ("dock-tab", "dock-tab active", "dock-tab", "dock-tab"),
+        EditorTab::Fabric => ("dock-tab", "dock-tab", "dock-tab active", "dock-tab"),
+        EditorTab::Simulation => ("dock-tab", "dock-tab", "dock-tab", "dock-tab active"),
+    };
+
+    let content = match state.active_tab {
+        EditorTab::Properties => build_tab_properties(state),
+        EditorTab::Objects => build_tab_objects(state),
+        EditorTab::Fabric => build_tab_fabric(state),
+        EditorTab::Simulation => build_tab_simulation(state),
+    };
+
+    ui! {
+        <aside id="right-dock" class="right-dock">
+            <div class="dock-tabs">
+                <button class={tab_p} onclick={on_tab_properties}>"Properties"</button>
+                <button class={tab_o} onclick={on_tab_objects}>"Objects"</button>
+                <button class={tab_f} onclick={on_tab_fabric}>"Fabric"</button>
+                <button class={tab_s} onclick={on_tab_simulation}>"Simulation"</button>
+            </div>
+            <div class="dock-content">
+                {content}
+                {build_mesh_preparation_accordion(state)}
+            </div>
+        </aside>
+    }
+}
+
+fn build_tab_properties(state: &CssEditorState) -> Node {
+    let p = &state.active.pattern;
+    let width_str = format!("{:.0} mm", p.width * 1000.0);
+    let height_str = format!("{:.0} mm", p.height * 1000.0);
+    let res_str = format!("{} × {} cells", p.nx, p.ny);
+
+    ui! {
+        <div class="tab-panel">
+            <h3 class="panel-heading">"Pattern Dimensions"</h3>
+            <div class="prop-row">
+                <span class="prop-label">"Width"</span>
+                <span class="prop-value">{width_str}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Height"</span>
+                <span class="prop-value">{height_str}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Resolution"</span>
+                <span class="prop-value">{res_str}</span>
+            </div>
+        </div>
+    }
+}
+
+fn build_tab_objects(state: &CssEditorState) -> Node {
+    let verts = state.mesh.uv.len();
+    let tris = state.mesh.triangles.len();
+    let pins = state.mesh.pins.iter().filter(|p| p.is_some()).count();
+
+    ui! {
+        <div class="tab-panel">
+            <h3 class="panel-heading">"Reference Mesh Objects"</h3>
+            <div class="prop-row">
+                <span class="prop-label">"Vertices"</span>
+                <span class="prop-value">{format!("{verts}")}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Triangles"</span>
+                <span class="prop-value">{format!("{tris}")}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Fixed Pins"</span>
+                <span class="prop-value">{format!("{pins}")}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Selected Edge"</span>
+                <span class="prop-value">
+                    {state.selected_edge.map_or("None".to_string(), |e| format!("Edge {}", e + 1))}
+                </span>
+            </div>
+            <button class="action-btn" onclick={on_edge_select_next}>"Select Next Boundary Edge"</button>
+        </div>
+    }
+}
+
+fn build_tab_fabric(state: &CssEditorState) -> Node {
+    let mat = &state.active.material;
+    let density_str = format!(
+        "{:.3} kg/m² ({:.0} g/m²)",
+        mat.density,
+        mat.density * 1000.0
+    );
+    let stretch_str = format!("Warp {:.0} N/m, Weft {:.0} N/m", mat.warp, mat.weft);
+    let grain_str = format!("{:.1}°", mat.grain_degrees);
+
+    ui! {
+        <div class="tab-panel">
+            <h3 class="panel-heading">"Fabric Properties"</h3>
+            <div class="prop-row">
+                <span class="prop-label">"Density"</span>
+                <span class="prop-value">{density_str}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Stretch Stiffness"</span>
+                <span class="prop-value">{stretch_str}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Warp Bending"</span>
+                <span class="prop-value">{format!("{:.2e} N·m", mat.bend_warp)}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Weft Bending"</span>
+                <span class="prop-value">{format!("{:.2e} N·m", mat.bend_weft)}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Grain Angle"</span>
+                <span class="prop-value">{grain_str}</span>
+            </div>
+        </div>
+    }
+}
+
+fn build_tab_simulation(state: &CssEditorState) -> Node {
+    let s = &state.active.solver;
+    let dt_str = format!("{:.3} s ({:.1} Hz)", s.dt, 1.0 / s.dt);
+    let tol_str = format!("{:.1e}", s.absolute_tolerance);
+    let last_pen = state.metrics.as_ref().map_or("0.0 mm".to_string(), |m| {
+        format!("{:.3} mm", m.max_vertex_penetration_m * 1000.0)
+    });
+    let last_res = state
+        .metrics
+        .as_ref()
+        .map_or("N/A".to_string(), |m| format!("{:.1e}", m.residual_rms_n));
+
+    ui! {
+        <div class="tab-panel">
+            <h3 class="panel-heading">"Solver Configuration"</h3>
+            <div class="prop-row">
+                <span class="prop-label">"Time step dt"</span>
+                <span class="prop-value">{dt_str}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Newton iterations"</span>
+                <span class="prop-value">{format!("{}", s.newton_iterations)}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"PCG iterations"</span>
+                <span class="prop-value">{format!("{}", s.pcg_iterations)}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Tolerance"</span>
+                <span class="prop-value">{tol_str}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Last Residual"</span>
+                <span class="prop-value">{last_res}</span>
+            </div>
+            <div class="prop-row">
+                <span class="prop-label">"Max Penetration"</span>
+                <span class="prop-value">{last_pen}</span>
+            </div>
+        </div>
+    }
+}
+
+fn build_mesh_preparation_accordion(state: &CssEditorState) -> Node {
+    let err_node = if let Some(err) = &state.mesh_prep_error {
+        ui! { <p class="prep-error">{err.clone()}</p> }
+    } else {
+        ui! { <span></span> }
+    };
+
+    ui! {
+        <div class="accordion-section">
+            <h4 class="accordion-title">"Physics-inspired mesh preparation"</h4>
+            <p class="accordion-sub">
+                "Build before simulating. Bending and grain come from Fabric settings; E is an explicit sizing estimate."
+            </p>
+            <div class="prep-inputs">
+                <div class="prop-row">
+                    <span class="prop-label">"Warp E (Pa)"</span>
+                    <span class="prop-value">{state.mesh_prep_warp_e.clone()}</span>
+                </div>
+                <div class="prop-row">
+                    <span class="prop-label">"Weft E (Pa)"</span>
+                    <span class="prop-value">{state.mesh_prep_weft_e.clone()}</span>
+                </div>
+                <div class="prop-row">
+                    <span class="prop-label">"Boundary ratio"</span>
+                    <span class="prop-value">{state.mesh_prep_ratio.clone()}</span>
+                </div>
+                <div class="prop-row">
+                    <span class="prop-label">"Transition (mm)"</span>
+                    <span class="prop-value">{state.mesh_prep_transition.clone()}</span>
+                </div>
+            </div>
+            {err_node}
+            <div class="prep-buttons">
+                <button id="remesh-reset-btn" class="action-btn primary" onclick={on_remesh_reset}>
+                    "Remesh and reset"
+                </button>
+                <button id="uniform-reset-btn" class="action-btn secondary" onclick={on_uniform_reset}>
+                    "Use uniform grid and reset"
+                </button>
+            </div>
+        </div>
+    }
+}
+
+fn build_status_bar(state: &CssEditorState) -> Node {
+    let max_pen_mm = state
+        .metrics
+        .as_ref()
+        .map_or(0.0, |m| m.max_vertex_penetration_m * 1000.0);
+    let residual = state.metrics.as_ref().map_or(0.0, |m| m.residual_rms_n);
+
+    let step_info = format!(
+        "Step: {} | dt: {:.1} ms | Residual: {:.1e} | Max Pen: {:.3} mm",
+        state.step_count, state.step_ms, residual, max_pen_mm
+    );
+    let mesh_info = format!(
+        "Verts: {} | Tris: {}",
+        state.mesh.uv.len(),
+        state.mesh.triangles.len()
+    );
+
+    ui! {
+        <footer class="status-bar">
+            <div class="status-left">
+                <span class="status-indicator">"●"</span>
+                <span class="status-message">{state.status_message.clone()}</span>
+            </div>
+            <div class="status-right">
+                <span class="status-step-info">{step_info}</span>
+                <span class="status-mesh-info">{mesh_info}</span>
+            </div>
+        </footer>
+    }
+}
+
+fn build_command_palette_overlay(state: &CssEditorState) -> Node {
+    if !state.command_palette_open {
+        return ui! { <div id="command-palette-container"></div> };
+    }
+
+    ui! {
+        <div id="command-palette-container" class="command-palette-backdrop">
+            <div class="command-palette-modal">
+                <div class="palette-header">
+                    <span class="palette-title">"Command Palette"</span>
+                    <button class="palette-close-btn" onclick={on_palette_toggle}>"✕"</button>
+                </div>
+                <div class="palette-items">
+                    <button class="palette-item" onclick={on_play_pause}>"▶ Toggle Simulation (Space)"</button>
+                    <button class="palette-item" onclick={on_step}>"⏭ Step Simulation"</button>
+                    <button class="palette-item" onclick={on_reset}>"↺ Reset Simulation"</button>
+                    <button class="palette-item" onclick={on_save}>"💾 Save Project (Ctrl+S)"</button>
+                    <button class="palette-item" onclick={on_export_obj}>"📦 Export OBJ"</button>
+                    <button class="palette-item" onclick={on_scene_sphere}>"🌐 Scene: Sphere Benchmark"</button>
+                    <button class="palette-item" onclick={on_scene_hang}>"📌 Scene: Hanging Pins"</button>
+                    <button class="palette-item" onclick={on_remesh_reset}>"⚡ Remesh and Reset"</button>
+                    <button class="palette-item" onclick={on_uniform_reset}>"▦ Use Uniform Grid and Reset"</button>
+                    <button class="palette-item" onclick={on_theme_toggle}>"🎨 Toggle Dark/Light Theme"</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// 3D Perspective SVG Projection Engine
+// ============================================================================
+
+fn render_3d_scene_svg(state: &CssEditorState) -> Vec<Node> {
+    let mut nodes = Vec::new();
+
+    // Dark canvas background
+    nodes.push(ui! {
+        <rect width="600" height="450" fill="#111318" />
+    });
+
+    let w = 600.0_f32;
+    let h = 450.0_f32;
+    let aspect = w / h;
+    let view_proj = state.camera.matrix(aspect);
+
+    // Render sphere collider if scene is sphere and collider enabled
+    if state.collider && state.active.scene == Scene::Sphere {
+        if let Some(sphere) = &state.active.sphere {
+            let sc_center = glam::Vec3::new(
+                sphere.center.x as f32,
+                sphere.center.y as f32,
+                sphere.center.z as f32,
+            );
+            let clip = view_proj.project_point3(sc_center);
+            let cx = (clip.x * 0.5 + 0.5) * w;
+            let cy = (1.0 - (clip.y * 0.5 + 0.5)) * h;
+            // Screen projected radius approx
+            let r_proj = (sphere.radius as f32 / (state.camera.distance * 0.414)).max(0.05) * 220.0;
+
+            nodes.push(ui! {
+                <circle cx={format!("{cx:.1}")} cy={format!("{cy:.1}")} r={format!("{r_proj:.1}")}
+                    fill="rgba(59, 130, 246, 0.22)" stroke="#3b82f6" stroke-width="1.5" />
+            });
+        }
+    }
+
+    // Sort cloth triangles by projected depth
+    let mut sorted_triangles: Vec<(usize, f32)> = state
+        .mesh
+        .triangles
+        .iter()
+        .enumerate()
+        .map(|(idx, t)| {
+            let p0 = state.state.x[t.vertices[0]];
+            let p1 = state.state.x[t.vertices[1]];
+            let p2 = state.state.x[t.vertices[2]];
+            let center = (p0 + p1 + p2) * (1.0 / 3.0);
+            let c_f32 = glam::Vec3::new(center.x as f32, center.y as f32, center.z as f32);
+            let clip = view_proj.project_point3(c_f32);
+            (idx, clip.z)
+        })
+        .collect();
+
+    // Sort back-to-front
+    sorted_triangles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let light_dir = glam::Vec3::new(0.35, 0.85, 0.4).normalize();
+
+    for (t_idx, _) in sorted_triangles {
+        let t = &state.mesh.triangles[t_idx];
+        let p0 = state.state.x[t.vertices[0]];
+        let p1 = state.state.x[t.vertices[1]];
+        let p2 = state.state.x[t.vertices[2]];
+
+        let v0 = glam::Vec3::new(p0.x as f32, p0.y as f32, p0.z as f32);
+        let v1 = glam::Vec3::new(p1.x as f32, p1.y as f32, p1.z as f32);
+        let v2 = glam::Vec3::new(p2.x as f32, p2.y as f32, p2.z as f32);
+
+        let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
+        let diffuse = normal.dot(light_dir).abs().clamp(0.2, 0.95);
+
+        let c0 = view_proj.project_point3(v0);
+        let c1 = view_proj.project_point3(v1);
+        let c2 = view_proj.project_point3(v2);
+
+        let x0 = (c0.x * 0.5 + 0.5) * w;
+        let y0 = (1.0 - (c0.y * 0.5 + 0.5)) * h;
+        let x1 = (c1.x * 0.5 + 0.5) * w;
+        let y1 = (1.0 - (c1.y * 0.5 + 0.5)) * h;
+        let x2 = (c2.x * 0.5 + 0.5) * w;
+        let y2 = (1.0 - (c2.y * 0.5 + 0.5)) * h;
+
+        let points_str = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
+
+        let fill_color = if state.shaded {
+            let r = (210.0 * diffuse) as u8;
+            let g = (225.0 * diffuse) as u8;
+            let b = (245.0 * diffuse) as u8;
+            format!("rgb({r},{g},{b})")
+        } else {
+            "none".to_string()
+        };
+
+        let stroke_color = if state.wire { "#334155" } else { "none" };
+
+        nodes.push(ui! {
+            <polygon points={points_str} fill={fill_color} stroke={stroke_color} stroke-width="0.5" />
+        });
+    }
+
+    // Render fixed pins in 3D
+    for (i, pin) in state.mesh.pins.iter().enumerate() {
+        if pin.is_some() {
+            let p = state.state.x[i];
+            let v = glam::Vec3::new(p.x as f32, p.y as f32, p.z as f32);
+            let c = view_proj.project_point3(v);
+            let px = (c.x * 0.5 + 0.5) * w;
+            let py = (1.0 - (c.y * 0.5 + 0.5)) * h;
+            nodes.push(ui! {
+                <circle cx={format!("{px:.1}")} cy={format!("{py:.1}")} r="4.5"
+                    fill="#ef4444" stroke="#ffffff" stroke-width="1.5" />
+            });
+        }
+    }
+
+    nodes
+}
+
+// ============================================================================
+// 2D Pattern SVG Viewport Engine
+// ============================================================================
+
+fn render_2d_pattern_svg(state: &CssEditorState) -> Vec<Node> {
+    let mut nodes = Vec::new();
+
+    // Board background
+    nodes.push(ui! {
+        <rect width="400" height="400" fill="#181b22" />
+    });
+
+    // Drafting grid lines
+    let grid_step = 40.0_f32;
+    let mut gx = grid_step;
+    while gx < 400.0 {
+        nodes.push(ui! {
+            <polyline points={format!("{gx:.1},0 {gx:.1},400")} stroke="#262a34" stroke-width="0.8" />
+        });
+        gx += grid_step;
+    }
+    let mut gy = grid_step;
+    while gy < 400.0 {
+        nodes.push(ui! {
+            <polyline points={format!("0,{gy:.1} 400,{gy:.1}")} stroke="#262a34" stroke-width="0.8" />
+        });
+        gy += grid_step;
+    }
+
+    let p = &state.active.pattern;
+    let pw = p.width as f32;
+    let ph = p.height as f32;
+    let max_dim = pw.max(ph).max(0.01);
+    let scale = 280.0 / max_dim;
+    let ox = 200.0 - pw * scale * 0.5;
+    let oy = 200.0 - ph * scale * 0.5;
+
+    let uv_to_screen =
+        |u: glam::DVec2| -> (f32, f32) { (ox + u.x as f32 * scale, oy + u.y as f32 * scale) };
+
+    // Render 2D mesh triangles
+    for t in &state.mesh.triangles {
+        let (x0, y0) = uv_to_screen(state.mesh.uv[t.vertices[0]]);
+        let (x1, y1) = uv_to_screen(state.mesh.uv[t.vertices[1]]);
+        let (x2, y2) = uv_to_screen(state.mesh.uv[t.vertices[2]]);
+        let points = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
+
+        nodes.push(ui! {
+            <polygon points={points} fill="rgba(148, 163, 184, 0.12)" stroke="#64748b" stroke-width="0.6" />
+        });
+    }
+
+    // Four boundary edges
+    let corners = [
+        (ox, oy),
+        (ox + pw * scale, oy),
+        (ox + pw * scale, oy + ph * scale),
+        (ox, oy + ph * scale),
+    ];
+
+    for i in 0..4 {
+        let (x_start, y_start) = corners[i];
+        let (x_end, y_end) = corners[(i + 1) % 4];
+        let is_selected = state.selected_edge == Some(i);
+        let stroke_color = if is_selected { "#f59e0b" } else { "#f0f3f8" };
+        let stroke_w = if is_selected { "3.0" } else { "1.5" };
+
+        let pts = format!("{x_start:.1},{y_start:.1} {x_end:.1},{y_end:.1}");
+        nodes.push(ui! {
+            <polyline points={pts} stroke={stroke_color} stroke-width={stroke_w} />
+        });
+    }
+
+    // Warp grainline arrow
+    let grain_rad = (state.active.material.grain_degrees as f32).to_radians();
+    let cx = 200.0_f32;
+    let cy = 200.0_f32;
+    let d = 50.0_f32;
+    let ax = cx + grain_rad.cos() * d;
+    let ay = cy + grain_rad.sin() * d;
+    let arrow_pts = format!("{cx:.1},{cy:.1} {ax:.1},{ay:.1}");
+    nodes.push(ui! {
+        <polyline points={arrow_pts} stroke="#3b82f6" stroke-width="2.2" />
+    });
+
+    // Fixed pins on 2D board
+    for (i, pin) in state.mesh.pins.iter().enumerate() {
+        if pin.is_some() {
+            let (px, py) = uv_to_screen(state.mesh.uv[i]);
+            nodes.push(ui! {
+                <circle cx={format!("{px:.1}")} cy={format!("{py:.1}")} r="4.0"
+                    fill="#ef4444" stroke="#ffffff" stroke-width="1.2" />
+            });
+        }
+    }
+
+    nodes
+}
+
+// ============================================================================
+// App Constructor and Native Window Runner
+// ============================================================================
+
+pub fn create_editor_app<'a>(
+    state: CssEditorState,
+    stylesheet: &'a Stylesheet,
+) -> App<
+    'a,
+    CssEditorState,
+    fn(&mut CssEditorState, FrameInfo) -> Invalidation,
+    fn(&CssEditorState) -> Node,
+    Invalidation,
+> {
+    App::new(
+        state,
+        stylesheet,
+        update_editor as fn(&mut CssEditorState, FrameInfo) -> Invalidation,
+        build_editor_ui as fn(&CssEditorState) -> Node,
+    )
+    .with_event_handler(handle_editor_event)
+    .with_render_mode(RenderMode::OnInvalidation)
+}
+
+pub fn run(project: Project, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let stylesheet = Box::leak(Box::new(load_studio_stylesheet()?));
+    let state = CssEditorState::new(project, output);
+    let app = create_editor_app(state, stylesheet);
+    let config = WindowConfig::new("MARVELOUS CLOTH | FEM Workshop", 1600, 980);
+    app.run(config)?;
+    Ok(())
+}
+
+// ============================================================================
+// Unit Tests (Headless Frame & RGBA8 verification)
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_css_editor_headless_frame_and_rendering() {
+        let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
+        let project = Project::default();
+        let state = CssEditorState::new(project, PathBuf::from("target/test_editor_out"));
+        let mut app = create_editor_app(state, &stylesheet);
+
+        // Advance one frame headlessly
+        let scene = app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 0,
+        });
+        assert!(!scene.is_empty(), "scene nodes should not be empty");
+
+        // Verify key layout containers exist
+        assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
+        assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
+        assert!(app.find_element_bounds_by_id("#right-dock").is_some());
+
+        // Test RGBA8 rendering headlessly
+        let width = 640;
+        let height = 480;
+        let mut rgba = vec![0_u8; width * height * 4];
+        app.render_rgba8(
+            FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 1,
+            },
+            &mut rgba,
+            width,
+            height,
+            1.0,
+            cssimpler::core::Color::rgba(0, 0, 0, 0),
+        );
+        assert!(
+            rgba.iter().any(|&b| b > 0),
+            "rendered buffer should contain painted UI pixels"
+        );
+
+        // Test Step
+        assert_eq!(app.state().step_count, 0);
+        app.state_mut().step();
+        assert_eq!(app.state().step_count, 1);
+        assert!(app.state().metrics.is_some());
+
+        // Test Reset
+        app.state_mut().reset();
+        assert_eq!(app.state().step_count, 0);
+        assert!(app.state().metrics.is_none());
+
+        // Test Tab Switching
+        assert_eq!(app.state().active_tab, EditorTab::Properties);
+        app.state_mut().active_tab = EditorTab::Fabric;
+        assert_eq!(app.state().active_tab, EditorTab::Fabric);
+
+        // Test Mesh Preparation: Remesh and Reset
+        app.state_mut().remesh_and_reset();
+        assert!(app.state().mesh_prep_error.is_none());
+        assert!(app.state().active.physics_sizing.is_some());
+
+        // Test Mesh Preparation: Uniform Reset
+        app.state_mut().uniform_grid_and_reset();
+        assert!(app.state().active.physics_sizing.is_none());
+    }
+}

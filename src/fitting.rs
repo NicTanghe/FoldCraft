@@ -39,6 +39,7 @@ pub struct FittingProject {
     #[serde(default)]
     pub mesh_signature: Option<String>,
 }
+#[derive(Clone)]
 pub struct FittingScene {
     pub garment: Arc<CompiledGarment>,
     pub collider: Arc<MeshCollider>,
@@ -90,6 +91,16 @@ impl FittingScene {
         ))
     }
 }
+impl Default for FittingProject {
+    fn default() -> Self {
+        Self::basic(
+            GarmentKind::Tshirt,
+            1,
+            PathBuf::from("assets/avatars/default.obj"),
+        )
+    }
+}
+
 impl FittingProject {
     pub fn basic(kind: GarmentKind, subdivisions: u32, avatar_path: PathBuf) -> Self {
         Self {

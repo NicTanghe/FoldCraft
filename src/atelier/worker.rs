@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(super) struct Work {
+pub struct Work {
     pub generation: u64,
     pub scene: FittingScene,
     pub settings: VbdSettings,
@@ -27,12 +27,12 @@ pub(super) struct Work {
     pub playing: bool,
     pub once: bool,
 }
-pub(super) struct Done {
+pub struct Done {
     pub generation: u64,
     pub had_grab: bool,
     pub result: Result<(State, VbdMetrics), String>,
 }
-pub(super) type Latest = Arc<Mutex<Option<Done>>>;
+pub type Latest = Arc<Mutex<Option<Done>>>;
 
 /// Identity of one sample request. The generation names the document/solver
 /// generation; the request id distinguishes repeated requests in the same
@@ -146,12 +146,21 @@ fn accept(active: &mut Option<Work>, mut new: Work, deadline: &mut Instant) {
     }
     *active = Some(new);
 }
-pub(super) fn start(
+pub fn start(
     device: wgpu::Device,
     queue: wgpu::Queue,
 ) -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
     let (tx, latest, _thread) = start_inner(
         Some((device, queue)),
+        #[cfg(test)]
+        None,
+    )?;
+    Ok((tx, latest))
+}
+
+pub fn start_cpu() -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
+    let (tx, latest, _thread) = start_inner(
+        None,
         #[cfg(test)]
         None,
     )?;
