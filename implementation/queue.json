@@ -262,6 +262,19 @@
       "owner": "codex-wave2-review",
       "vruntime": 2.75,
       "pr": null
+    },
+    {
+      "id": "FC-0015",
+      "title": "Verify upstream hardening and integrate avatar acceptance evidence",
+      "acceptance": "Pin existing glTF/worker changes, preserve avatar import acceptance limits and review PR12 with passing CI.",
+      "points": 2,
+      "spent": 2,
+      "priority": "high",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 2.875,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/12"
     }
   ]
 }
