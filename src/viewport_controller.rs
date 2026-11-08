@@ -24,7 +24,8 @@ impl LogicalViewport {
         (origin.is_finite()
             && size.is_finite()
             && size.min_element() > 0.
-            && (origin + size).is_finite())
+            && (origin + size).is_finite()
+            && (origin + size).cmpgt(origin).all())
         .then_some(Self { origin, size })
     }
 

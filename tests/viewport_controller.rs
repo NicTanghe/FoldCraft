@@ -62,6 +62,8 @@ fn viewport_rejects_invalid_dimensions_and_has_unambiguous_edges() {
     }
     assert!(LogicalViewport::new(DVec2::splat(f64::NAN), DVec2::ONE).is_none());
     assert!(LogicalViewport::new(DVec2::splat(f64::MAX), DVec2::splat(f64::MAX)).is_none());
+    // A positive size can still collapse at an unrepresentably large origin.
+    assert!(LogicalViewport::new(DVec2::splat(f64::MAX), DVec2::ONE).is_none());
     let rect = viewport();
     assert_eq!(rect.origin(), DVec2::new(100., 50.));
     assert_eq!(rect.size(), DVec2::new(800., 600.));
