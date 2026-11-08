@@ -1,6 +1,9 @@
 # Native command registry
 
-`src/atelier/commands.rs` describes implemented workspace and tool commands.
+`marvelous_cloth::workspace_commands` (in `src/workspace_commands.rs`) exposes
+implemented workspace and tool commands to library callers, including CPU-only
+builds. `src/atelier/commands.rs` reexports those same public types and checks
+for the desktop adapter; it does not maintain a separate registry.
 `Atelier::dispatch_command` in `src/atelier.rs` is their checked runtime adapter.
 The native command palette uses this registry. It is not a remote API or a
 universal inventory of every authoring tool.
@@ -56,6 +59,12 @@ invent shortcuts just to make the list look complete.
 
 ## Adding a UI caller
 
+Import `CommandId`, `REGISTRY`, `CapabilityContext` and `availability` from
+`marvelous_cloth::workspace_commands`. This public contract supplies metadata
+and side-effect-free capability checks, not a command executor or a full editor
+state API. Native controls still need the existing checked runtime adapter.
+The extraction adds no new commands, shortcuts, solver modes or UI widgets.
+
 Read availability from the current `CapabilityContext` and show the returned
 reason for disabled commands. Recheck through `dispatch_command` when invoking;
 do not duplicate simulation, export or preset logic in a palette or toolbar.
@@ -77,7 +86,8 @@ All seven hosted checks passed at
 `a8c601fbed27662e932e4c1b3d3b3328f9af8d3c` before merge
 `c558dc64300c85e8cd244379476ae6479a20c5dd`.
 
-Five CPU tests in `tests/command_registry.rs` cover descriptors and availability.
+CPU tests in `tests/command_registry.rs` cover the public descriptors and
+availability, plus compile-time type compatibility with the desktop reexport.
 Desktop CPU tests exercise the real worker-channel and export helpers,
 including disconnect, early/late write failures and unchanged project state.
 They do not instantiate every dispatch action in a native GPU window; no such

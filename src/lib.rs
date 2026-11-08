@@ -30,3 +30,5 @@ pub mod solver;
 pub mod solver_lab;
 pub mod template_catalog;
 pub mod vbd;
+/// Typed workspace actions and capability checks, independent of desktop UI.
+pub mod workspace_commands;
