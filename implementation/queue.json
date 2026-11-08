@@ -118,8 +118,8 @@
       "depends_on": [
         "FC-0008"
       ],
-      "status": "ready",
-      "owner": null,
+      "status": "active",
+      "owner": "codex-native-ui-core",
       "vruntime": 2.75,
       "pr": null
     },
