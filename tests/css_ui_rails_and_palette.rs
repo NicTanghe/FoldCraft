@@ -2,6 +2,7 @@
 //! Top menu bar, simulation transport, 3D/2D tool rails, radial menu, and command palette in cssimpler.
 #![cfg(feature = "desktop")]
 
+use cssimpler::core::{ElementNode, Node};
 use marvelous_cloth::commands::CapabilityContext;
 use marvelous_cloth::css_ui::{
     ALL_COMMAND_IDS, CommandPaletteState, CornerMode, PaletteKey, PinMode, RadialMenuAction,
@@ -9,7 +10,6 @@ use marvelous_cloth::css_ui::{
     TopBarAction, TopBarState, render_2d_rail, render_3d_rail, render_command_palette,
     render_radial_menu, render_top_bar,
 };
-use cssimpler::core::{ElementNode, Node};
 
 fn ready_ctx() -> CapabilityContext {
     CapabilityContext {
@@ -36,11 +36,7 @@ fn find_element_by_id<'a>(node: &'a Node, id: &str) -> Option<&'a ElementNode> {
     None
 }
 
-fn find_elements_by_class<'a>(
-    node: &'a Node,
-    class_name: &str,
-    acc: &mut Vec<&'a ElementNode>,
-) {
+fn find_elements_by_class<'a>(node: &'a Node, class_name: &str, acc: &mut Vec<&'a ElementNode>) {
     if let Node::Element(elem) = node {
         if elem.classes.iter().any(|c| c == class_name) {
             acc.push(elem);
@@ -83,7 +79,11 @@ fn text_content(node: &Node) -> String {
 }
 
 fn element_text(elem: &ElementNode) -> String {
-    elem.children.iter().map(text_content).collect::<Vec<_>>().join("")
+    elem.children
+        .iter()
+        .map(text_content)
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 #[test]
@@ -132,11 +132,15 @@ fn pending_trim_draft_disables_reset_drape_and_destructive_commands_in_transport
         ..Default::default()
     };
     let top_bar_node = render_top_bar(&top_bar_state);
-    let reset_btn = find_element_by_id(&top_bar_node, "transport-reset").expect("reset button exists");
+    let reset_btn =
+        find_element_by_id(&top_bar_node, "transport-reset").expect("reset button exists");
 
     assert_eq!(reset_btn.attribute("data-enabled"), Some("false"));
     assert!(reset_btn.classes.contains(&"disabled".to_string()));
-    assert_eq!(reset_btn.attribute("data-disabled-reason"), Some(trim_reason));
+    assert_eq!(
+        reset_btn.attribute("data-disabled-reason"),
+        Some(trim_reason)
+    );
     assert_eq!(reset_btn.attribute("title"), Some(trim_reason));
     assert_eq!(top_bar_state.dispatch(TopBarAction::SimulationReset), None);
 
@@ -154,21 +158,30 @@ fn pending_trim_draft_disables_reset_drape_and_destructive_commands_in_transport
         .find(|e| e.attribute("data-command-id") == Some("simulation.reset"))
         .expect("simulation.reset item exists");
     assert_eq!(reset_cmd.attribute("data-enabled"), Some("false"));
-    assert_eq!(reset_cmd.attribute("data-disabled-reason"), Some(trim_reason));
+    assert_eq!(
+        reset_cmd.attribute("data-disabled-reason"),
+        Some(trim_reason)
+    );
 
     let tshirt_cmd = palette_items
         .iter()
         .find(|e| e.attribute("data-command-id") == Some("example.tshirt"))
         .expect("example.tshirt item exists");
     assert_eq!(tshirt_cmd.attribute("data-enabled"), Some("false"));
-    assert_eq!(tshirt_cmd.attribute("data-disabled-reason"), Some(example_reason));
+    assert_eq!(
+        tshirt_cmd.attribute("data-disabled-reason"),
+        Some(example_reason)
+    );
 
     let dress_cmd = palette_items
         .iter()
         .find(|e| e.attribute("data-command-id") == Some("example.dress"))
         .expect("example.dress item exists");
     assert_eq!(dress_cmd.attribute("data-enabled"), Some("false"));
-    assert_eq!(dress_cmd.attribute("data-disabled-reason"), Some(example_reason));
+    assert_eq!(
+        dress_cmd.attribute("data-disabled-reason"),
+        Some(example_reason)
+    );
 
     // Keyboard enter on blocked reset returns None
     palette_state.selected_index = 2; // ResetSimulation
@@ -211,8 +224,14 @@ fn tool_rails_and_corner_tool_radius_shape_modes_render_and_dispatch() {
     let mut mode_btns = Vec::new();
     find_elements_by_attr(&node_2d, "data-mode", &mut mode_btns);
     assert_eq!(mode_btns.len(), 2);
-    let radius_btn = mode_btns.iter().find(|b| b.attribute("data-mode") == Some("radius")).unwrap();
-    let shape_btn = mode_btns.iter().find(|b| b.attribute("data-mode") == Some("shape")).unwrap();
+    let radius_btn = mode_btns
+        .iter()
+        .find(|b| b.attribute("data-mode") == Some("radius"))
+        .unwrap();
+    let shape_btn = mode_btns
+        .iter()
+        .find(|b| b.attribute("data-mode") == Some("shape"))
+        .unwrap();
     assert!(radius_btn.classes.contains(&"active".to_string()));
     assert!(!shape_btn.classes.contains(&"active".to_string()));
 
@@ -229,7 +248,10 @@ fn tool_rails_and_corner_tool_radius_shape_modes_render_and_dispatch() {
     let node_2d_updated = render_2d_rail(&rail_2d);
     let mut mode_btns_updated = Vec::new();
     find_elements_by_attr(&node_2d_updated, "data-mode", &mut mode_btns_updated);
-    let shape_btn_updated = mode_btns_updated.iter().find(|b| b.attribute("data-mode") == Some("shape")).unwrap();
+    let shape_btn_updated = mode_btns_updated
+        .iter()
+        .find(|b| b.attribute("data-mode") == Some("shape"))
+        .unwrap();
     assert!(shape_btn_updated.classes.contains(&"active".to_string()));
 
     let mut readouts_updated = Vec::new();
@@ -261,7 +283,10 @@ fn radial_menu_renders_at_pointer_coordinates_when_open() {
 
     for (i, sec) in RadialSector::ALL.iter().enumerate() {
         let i_str = i.to_string();
-        let sector_elem = sectors.iter().find(|s| s.attribute("data-sector") == Some(i_str.as_str())).unwrap();
+        let sector_elem = sectors
+            .iter()
+            .find(|s| s.attribute("data-sector") == Some(i_str.as_str()))
+            .unwrap();
         assert_eq!(sector_elem.attribute("data-action"), Some(sec.key()));
         assert!(element_text(sector_elem).contains(sec.label()));
     }

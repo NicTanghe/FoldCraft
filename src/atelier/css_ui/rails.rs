@@ -154,15 +154,27 @@ pub fn render_top_bar(state: &TopBarState) -> Node {
 
     let play_class = format!(
         "transport-btn play {}",
-        if play_reason.is_none() { "enabled" } else { "disabled" }
+        if play_reason.is_none() {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
     let step_class = format!(
         "transport-btn step {}",
-        if step_reason.is_none() { "enabled" } else { "disabled" }
+        if step_reason.is_none() {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
     let reset_class = format!(
         "transport-btn reset {}",
-        if reset_reason.is_none() { "enabled" } else { "disabled" }
+        if reset_reason.is_none() {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
 
     let clean_view_class = format!(
@@ -184,9 +196,21 @@ pub fn render_top_bar(state: &TopBarState) -> Node {
     let step_title = step_reason.unwrap_or("Advance one simulation step");
     let reset_title = reset_reason.unwrap_or("Reset flat arrangement");
 
-    let play_enabled_str = if play_reason.is_none() { "true" } else { "false" };
-    let step_enabled_str = if step_reason.is_none() { "true" } else { "false" };
-    let reset_enabled_str = if reset_reason.is_none() { "true" } else { "false" };
+    let play_enabled_str = if play_reason.is_none() {
+        "true"
+    } else {
+        "false"
+    };
+    let step_enabled_str = if step_reason.is_none() {
+        "true"
+    } else {
+        "false"
+    };
+    let reset_enabled_str = if reset_reason.is_none() {
+        "true"
+    } else {
+        "false"
+    };
 
     ui! {
         <header id="top-bar" class="top-bar">
@@ -319,7 +343,10 @@ impl Rail3dState {
             }
             Rail3dAction::SetGrabStrength(s) => {
                 self.grab_strength = s;
-                if let Tool3d::Grab { ref mut strength, .. } = self.active_tool {
+                if let Tool3d::Grab {
+                    ref mut strength, ..
+                } = self.active_tool
+                {
                     *strength = s;
                 }
             }
@@ -532,11 +559,19 @@ pub fn render_2d_rail(state: &Rail2dState) -> Node {
 
     let radius_mode_class = format!(
         "corner-mode-btn {}",
-        if corner_radius_mode_active { "active" } else { "" }
+        if corner_radius_mode_active {
+            "active"
+        } else {
+            ""
+        }
     );
     let shape_mode_class = format!(
         "corner-mode-btn {}",
-        if corner_shape_mode_active { "active" } else { "" }
+        if corner_shape_mode_active {
+            "active"
+        } else {
+            ""
+        }
     );
 
     let radius_str = format!("{:.1} mm", state.corner_params.radius_mm);
@@ -809,7 +844,11 @@ mod tests {
     }
 
     fn element_text(elem: &ElementNode) -> String {
-        elem.children.iter().map(text_content).collect::<Vec<_>>().join("")
+        elem.children
+            .iter()
+            .map(text_content)
+            .collect::<Vec<_>>()
+            .join("")
     }
 
     #[test]
@@ -827,7 +866,8 @@ mod tests {
         let reset_btn = find_element_by_id(&node, "transport-reset").expect("reset button exists");
         assert_eq!(reset_btn.attribute("data-enabled"), Some("true"));
 
-        let clean_view_btn = find_element_by_id(&node, "clean-view-toggle").expect("clean view toggle exists");
+        let clean_view_btn =
+            find_element_by_id(&node, "clean-view-toggle").expect("clean view toggle exists");
         assert!(!clean_view_btn.classes.contains(&"active".to_string()));
 
         let badge = find_element_by_id(&node, "backend-badge").expect("backend badge exists");
@@ -896,7 +936,10 @@ mod tests {
         assert_eq!(tool_btns.len(), 6);
 
         // Gizmo is active by default
-        let gizmo = tool_btns.iter().find(|b| b.attribute("data-tool") == Some("gizmo")).unwrap();
+        let gizmo = tool_btns
+            .iter()
+            .find(|b| b.attribute("data-tool") == Some("gizmo"))
+            .unwrap();
         assert!(gizmo.classes.contains(&"active".to_string()));
 
         // Grab tool shows readouts
@@ -907,7 +950,10 @@ mod tests {
         assert!(element_text(readouts[1]).contains("1.0"));
 
         // Switch to Grab with custom params
-        state.dispatch(Rail3dAction::SelectTool(Tool3d::Grab { radius: 0.08, strength: 2.5 }));
+        state.dispatch(Rail3dAction::SelectTool(Tool3d::Grab {
+            radius: 0.08,
+            strength: 2.5,
+        }));
         state.dispatch(Rail3dAction::SetGrabRadius(0.08));
         state.dispatch(Rail3dAction::SetGrabStrength(2.5));
         let node_grab = render_3d_rail(&state);
@@ -944,15 +990,24 @@ mod tests {
         assert_eq!(tool_btns.len(), 10);
 
         // Edit active by default
-        let edit_btn = tool_btns.iter().find(|b| b.attribute("data-tool") == Some("edit")).unwrap();
+        let edit_btn = tool_btns
+            .iter()
+            .find(|b| b.attribute("data-tool") == Some("edit"))
+            .unwrap();
         assert!(edit_btn.classes.contains(&"active".to_string()));
 
         // Corner Tool subcontrols
         let mut mode_btns = Vec::new();
         find_elements_by_attr(&node, "data-mode", &mut mode_btns);
         assert_eq!(mode_btns.len(), 2);
-        let radius_btn = mode_btns.iter().find(|b| b.attribute("data-mode") == Some("radius")).unwrap();
-        let shape_btn = mode_btns.iter().find(|b| b.attribute("data-mode") == Some("shape")).unwrap();
+        let radius_btn = mode_btns
+            .iter()
+            .find(|b| b.attribute("data-mode") == Some("radius"))
+            .unwrap();
+        let shape_btn = mode_btns
+            .iter()
+            .find(|b| b.attribute("data-mode") == Some("shape"))
+            .unwrap();
         assert!(radius_btn.classes.contains(&"active".to_string()));
         assert!(!shape_btn.classes.contains(&"active".to_string()));
 
@@ -975,8 +1030,14 @@ mod tests {
         let node_corner = render_2d_rail(&state);
         let mut mode_btns_shape = Vec::new();
         find_elements_by_attr(&node_corner, "data-mode", &mut mode_btns_shape);
-        let shape_btn_active = mode_btns_shape.iter().find(|b| b.attribute("data-mode") == Some("shape")).unwrap();
-        let radius_btn_inactive = mode_btns_shape.iter().find(|b| b.attribute("data-mode") == Some("radius")).unwrap();
+        let shape_btn_active = mode_btns_shape
+            .iter()
+            .find(|b| b.attribute("data-mode") == Some("shape"))
+            .unwrap();
+        let radius_btn_inactive = mode_btns_shape
+            .iter()
+            .find(|b| b.attribute("data-mode") == Some("radius"))
+            .unwrap();
         assert!(shape_btn_active.classes.contains(&"active".to_string()));
         assert!(!radius_btn_inactive.classes.contains(&"active".to_string()));
 
@@ -1011,7 +1072,10 @@ mod tests {
 
         for (idx, sec) in RadialSector::ALL.iter().enumerate() {
             let idx_str = idx.to_string();
-            let elem = sectors.iter().find(|e| e.attribute("data-sector") == Some(idx_str.as_str())).unwrap();
+            let elem = sectors
+                .iter()
+                .find(|e| e.attribute("data-sector") == Some(idx_str.as_str()))
+                .unwrap();
             assert_eq!(elem.attribute("data-action"), Some(sec.key()));
             assert!(element_text(elem).contains(sec.label()));
         }
@@ -1021,7 +1085,10 @@ mod tests {
         let node_hover = render_radial_menu(&state).unwrap();
         let mut sectors_hover = Vec::new();
         find_elements_by_attr(&node_hover, "data-sector", &mut sectors_hover);
-        let sector_4 = sectors_hover.iter().find(|e| e.attribute("data-sector") == Some("4")).unwrap();
+        let sector_4 = sectors_hover
+            .iter()
+            .find(|e| e.attribute("data-sector") == Some("4"))
+            .unwrap();
         assert!(sector_4.classes.contains(&"active".to_string()));
 
         // Select sector 4
@@ -1031,4 +1098,3 @@ mod tests {
         assert!(render_radial_menu(&state).is_none());
     }
 }
-

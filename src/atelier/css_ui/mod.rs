@@ -5,8 +5,8 @@ pub mod palette;
 pub mod rails;
 
 pub use palette::{
-    ALL_COMMAND_IDS, CommandPaletteState, PaletteAction, PaletteItem, PaletteKey,
-    command_aliases, evaluate_availability, is_subsequence, matches_query, render_command_palette,
+    ALL_COMMAND_IDS, CommandPaletteState, PaletteAction, PaletteItem, PaletteKey, command_aliases,
+    evaluate_availability, is_subsequence, matches_query, render_command_palette,
 };
 pub use rails::{
     BackendBadge, CornerMode, CornerToolParams, PinMode, RadialMenuAction, RadialMenuState,

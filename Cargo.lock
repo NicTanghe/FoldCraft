@@ -646,7 +646,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "cssimpler"
 version = "0.1.0"
-source = "git+https://github.com/NicTanghe/cssimpler.git#82167e13dff3157a1300108a5f9fe17fa1fa5af8"
+source = "git+https://github.com/NicTanghe/cssimpler.git?rev=835d89156e8a64800e200ebcd41d6049aada9d9f#835d89156e8a64800e200ebcd41d6049aada9d9f"
 dependencies = [
  "anyhow",
  "arboard",
@@ -659,7 +659,7 @@ dependencies = [
 [[package]]
 name = "cssimpler-core"
 version = "0.1.0"
-source = "git+https://github.com/NicTanghe/cssimpler.git#82167e13dff3157a1300108a5f9fe17fa1fa5af8"
+source = "git+https://github.com/NicTanghe/cssimpler.git?rev=835d89156e8a64800e200ebcd41d6049aada9d9f#835d89156e8a64800e200ebcd41d6049aada9d9f"
 dependencies = [
  "ab_glyph",
  "fontdb",
@@ -672,7 +672,7 @@ dependencies = [
 [[package]]
 name = "cssimpler-macro"
 version = "0.1.0"
-source = "git+https://github.com/NicTanghe/cssimpler.git#82167e13dff3157a1300108a5f9fe17fa1fa5af8"
+source = "git+https://github.com/NicTanghe/cssimpler.git?rev=835d89156e8a64800e200ebcd41d6049aada9d9f#835d89156e8a64800e200ebcd41d6049aada9d9f"
 dependencies = [
  "cssimpler-core",
  "proc-macro2",
@@ -683,7 +683,7 @@ dependencies = [
 [[package]]
 name = "cssimpler-renderer"
 version = "0.1.0"
-source = "git+https://github.com/NicTanghe/cssimpler.git#82167e13dff3157a1300108a5f9fe17fa1fa5af8"
+source = "git+https://github.com/NicTanghe/cssimpler.git?rev=835d89156e8a64800e200ebcd41d6049aada9d9f#835d89156e8a64800e200ebcd41d6049aada9d9f"
 dependencies = [
  "ab_glyph",
  "cssimpler-core",
@@ -702,7 +702,7 @@ dependencies = [
 [[package]]
 name = "cssimpler-style"
 version = "0.1.0"
-source = "git+https://github.com/NicTanghe/cssimpler.git#82167e13dff3157a1300108a5f9fe17fa1fa5af8"
+source = "git+https://github.com/NicTanghe/cssimpler.git?rev=835d89156e8a64800e200ebcd41d6049aada9d9f#835d89156e8a64800e200ebcd41d6049aada9d9f"
 dependencies = [
  "cssimpler-core",
  "cssparser",
@@ -3304,7 +3304,7 @@ dependencies = [
 [[package]]
 name = "softbuffer"
 version = "0.4.8"
-source = "git+https://github.com/NicTanghe/cssimpler.git#82167e13dff3157a1300108a5f9fe17fa1fa5af8"
+source = "git+https://github.com/NicTanghe/cssimpler.git?rev=835d89156e8a64800e200ebcd41d6049aada9d9f#835d89156e8a64800e200ebcd41d6049aada9d9f"
 dependencies = [
  "as-raw-xcb-connection",
  "bytemuck",

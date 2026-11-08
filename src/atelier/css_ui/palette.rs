@@ -64,7 +64,9 @@ pub fn evaluate_availability(
                 return Err("Save or discard the measurement draft before loading an example");
             }
             CommandId::ResetSimulation => {
-                return Err("Save or discard the measurement draft before resetting the simulation");
+                return Err(
+                    "Save or discard the measurement draft before resetting the simulation",
+                );
             }
             _ => {}
         }
@@ -397,7 +399,11 @@ mod tests {
     }
 
     fn element_text(elem: &ElementNode) -> String {
-        elem.children.iter().map(text_content).collect::<Vec<_>>().join("")
+        elem.children
+            .iter()
+            .map(text_content)
+            .collect::<Vec<_>>()
+            .join("")
     }
 
     fn find_elements_by_class_in_element<'a>(
@@ -422,7 +428,11 @@ mod tests {
         let mut items = Vec::new();
         find_elements_by_class(&node, "command-palette-item", &mut items);
 
-        assert_eq!(items.len(), 12, "exactly 12 typed CommandId items must render");
+        assert_eq!(
+            items.len(),
+            12,
+            "exactly 12 typed CommandId items must render"
+        );
 
         // Verify all 12 command keys are present and enabled in ready context
         let expected_keys = [
@@ -468,12 +478,20 @@ mod tests {
         let mut unavail_ctx = ready_ctx();
         unavail_ctx.document_loaded = false;
         let unavail_state = CommandPaletteState::new(unavail_ctx);
-        let unavail_state = CommandPaletteState { open: true, ..unavail_state };
+        let unavail_state = CommandPaletteState {
+            open: true,
+            ..unavail_state
+        };
         let unavail_node = render_command_palette(&unavail_state).unwrap();
         let mut unavail_items = Vec::new();
         find_elements_by_class(&unavail_node, "command-palette-item", &mut unavail_items);
 
-        for key in ["simulation.toggle", "simulation.step", "simulation.reset", "file.export"] {
+        for key in [
+            "simulation.toggle",
+            "simulation.step",
+            "simulation.reset",
+            "file.export",
+        ] {
             let item = unavail_items
                 .iter()
                 .find(|elem| elem.attribute("data-command-id") == Some(key))
@@ -488,10 +506,17 @@ mod tests {
         // When worker_ready is false, simulation commands are disabled
         let mut no_worker_ctx = ready_ctx();
         no_worker_ctx.worker_ready = false;
-        let no_worker_state = CommandPaletteState { open: true, ..CommandPaletteState::new(no_worker_ctx) };
+        let no_worker_state = CommandPaletteState {
+            open: true,
+            ..CommandPaletteState::new(no_worker_ctx)
+        };
         let no_worker_node = render_command_palette(&no_worker_state).unwrap();
         let mut no_worker_items = Vec::new();
-        find_elements_by_class(&no_worker_node, "command-palette-item", &mut no_worker_items);
+        find_elements_by_class(
+            &no_worker_node,
+            "command-palette-item",
+            &mut no_worker_items,
+        );
 
         let toggle_no_worker = no_worker_items
             .iter()
@@ -505,7 +530,10 @@ mod tests {
         // When playing is true, StepSimulation is disabled
         let mut playing_ctx = ready_ctx();
         playing_ctx.playing = true;
-        let playing_state = CommandPaletteState { open: true, ..CommandPaletteState::new(playing_ctx) };
+        let playing_state = CommandPaletteState {
+            open: true,
+            ..CommandPaletteState::new(playing_ctx)
+        };
         let playing_node = render_command_palette(&playing_state).unwrap();
         let mut playing_items = Vec::new();
         find_elements_by_class(&playing_node, "command-palette-item", &mut playing_items);
@@ -522,7 +550,10 @@ mod tests {
         // When pending is true, StepSimulation is disabled
         let mut busy_ctx = ready_ctx();
         busy_ctx.pending = true;
-        let busy_state = CommandPaletteState { open: true, ..CommandPaletteState::new(busy_ctx) };
+        let busy_state = CommandPaletteState {
+            open: true,
+            ..CommandPaletteState::new(busy_ctx)
+        };
         let busy_node = render_command_palette(&busy_state).unwrap();
         let mut busy_items = Vec::new();
         find_elements_by_class(&busy_node, "command-palette-item", &mut busy_items);
@@ -623,7 +654,11 @@ mod tests {
 
         state.query = "drape".into();
         let items_drape = state.filtered_items();
-        assert!(items_drape.iter().any(|i| i.id == CommandId::ResetSimulation));
+        assert!(
+            items_drape
+                .iter()
+                .any(|i| i.id == CommandId::ResetSimulation)
+        );
 
         // "tee" matches LoadTshirt
         state.query = "tee".into();
@@ -634,7 +669,11 @@ mod tests {
         // Subsequence filtering
         state.query = "spc".into();
         let items_spc = state.filtered_items();
-        assert!(items_spc.iter().any(|i| i.id == CommandId::ToggleSimulation));
+        assert!(
+            items_spc
+                .iter()
+                .any(|i| i.id == CommandId::ToggleSimulation)
+        );
 
         // Substring
         state.query = "split".into();
@@ -685,4 +724,3 @@ mod tests {
         assert!(!state.open);
     }
 }
-
