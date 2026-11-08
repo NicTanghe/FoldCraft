@@ -4,7 +4,7 @@ Audit date: 22 October 2026. This is a source/document inspection, not a runtime
 
 The owner has selected **erythrofr/ClothCraft as the coordination and integration point for this native Rust effort**. This is our project's direction, not a claim that EXO's maintainer has transferred their repository, endorsed every decision, or agreed to change licenses. EXO remains an independent upstream reference and collaborator.
 
-The executable backlog is [coordination/tasks.json](../coordination/tasks.json). Each task has bounded paths, dependencies, observable acceptance criteria, evidence and existing PR links. This document describes the differences; it is not a second assignment board.
+The [optional rewrite backlog](rewrite-backlog.md) preserves task ideas, dependencies, acceptance criteria and evidence from upstream. This document describes the differences; neither document assigns work in this fork.
 
 ## What was actually inspected
 

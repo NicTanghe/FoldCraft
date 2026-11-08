@@ -14,10 +14,7 @@ by this document.
 | [ClothCraft legacy fork base](https://github.com/mikristian/ClothCraft/commit/78b359cb2cbf8367e3615a5679d30184a14f851b) | `78b359cb2cbf8367e3615a5679d30184a14f851b` | Base of many open feature proposals; being based on MIT code does **not** resolve the ownership/license of added files. |
 
 These revisions pin the **inspected evidence**, not every commit that may
-subsequently appear on either repository's default branch. Follow
-[COORDINATION.md](../COORDINATION.md), the [live board](https://github.com/erythrofr/ClothCraft/issues/8)
-and the [feature audit](exo-feature-audit.md) for task ownership and functional
-status. This document does not create another task board.
+subsequently appear on either repository's default branch. See the [feature audit](exo-feature-audit.md) for historical functional status. Upstream task assignments do not govern this fork.
 
 ### Rules for future integrations
 

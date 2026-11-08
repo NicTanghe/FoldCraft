@@ -3,3 +3,6 @@
 *.tmp
 __pycache__/
 *.py[cod]
+
+# Local agent mailbox and queue writer lock
+/comms/

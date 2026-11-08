@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "clock": 0.75,
+  "tickets": [
+    {
+      "id": "FC-0001",
+      "title": "Set up the local software factory",
+      "acceptance": "Gitignored agent mailbox; tested weighted ticket scheduling; feature PR and gh merge workflow with standing review authorization.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "high",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 0.75,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/1"
+    }
+  ]
+}

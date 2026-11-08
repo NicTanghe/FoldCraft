@@ -2,9 +2,7 @@
 
 Reviewed against `main` at `e569ac1bbe82fca2c5c0339f1ada551380ed4fc4`
 on 23 October 2026. This is a code-oriented inventory, not a product-parity
-claim, benchmark or second assignment board. Start with [COORDINATION.md](../COORDINATION.md),
-then use the [task catalog](../coordination/TASKS.md) and its live board before
-editing. A task's static eligibility does not mean that its files are free.
+claim or benchmark. The [backlog](rewrite-backlog.md) is optional planning context; inspect the current code before implementing a historical gap.
 
 This review follows FireflyTheReal's [PR #5](https://github.com/erythrofr/ClothCraft/pull/5),
 head `74cd0157de5aa51e90172f59fd79dc01e05b25f5`. Its useful contribution is the
@@ -20,7 +18,7 @@ means an open contribution is not part of this audited main revision.
 
 | Family | Native state at the audited revision | Evidence / entry point | Next catalog work |
 |---|---|---|---|
-| Documents | Partial: Open/Save/Save As, accepted simulation state, portable avatar assets and dirty-session recovery every 60 seconds. No multi-document workspace or versioned recovery history. | [Document contract](documents-and-sewing.md), `atelier/documents_ui.rs` | A tabs/history proposal needs its own reviewed scope; no invented task ID. |
+| Documents | Partial: Open/Save/Save As, accepted simulation state, portable avatar assets and dirty-session recovery every 60 seconds. No multi-document workspace or versioned recovery history. | [Document contract](documents-and-sewing.md), `atelier/documents_ui.rs` | Tabs/history remain a possible follow-up. |
 | Workspace | Partial: resizable 2D/3D panes, Piece/Fabric properties, radial tools, context actions and preferences. No searchable command palette. | [Workspace](workspace-ui.md), `atelier/layout.rs`, `atelier/radial.rs` | EXO-UX-001 registry, then EXO-UX-002 search; EXO-UX-003 saved layouts. PR #29 remains pending. |
 | Selection | Partial: linked 2D/3D panel and boundary selection; 2D point box/lasso, group moves and semantic clipboard. Do not infer a full group 3D transform workflow. | [Editor controls](editor-basics.md), `atelier/selection.rs` | EXO-UX-004 group 3D transforms. |
 | Drawing | Partial: polygon, rectangle, ellipse, arc sector, cubic contours, internal paths, booleans and new freehand panels. Freehand replaces neither existing sewn contours nor holes. | [Authoring](authoring.md), `atelier/board.rs`, `garment/freehand.rs` | EXO-CAD-003 reference migration before EXO-CAD-006 existing-contour editing and EXO-CAD-007 hole tools. |

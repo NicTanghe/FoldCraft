@@ -71,13 +71,12 @@ DXF-AAMA/ASTM, MTL round trips, glTF/GLB export, animated avatars, Alembic, USD,
 
 ## Help build it
 
-**Contributing with an AI agent? Give it [COORDINATION.md](COORDINATION.md).**
-This repository hosts the Rust rewrite task catalog and a shared assignment
-board for contributors. The [EXO feature audit](docs/exo-feature-audit.md)
-and [atomic backlog](coordination/TASKS.md) identify gaps, existing PRs and
-acceptance checks. Agents claim scoped work and leave public handoffs; the
-coordinator detects overlapping assignments. It does not launch AI sessions
-or merge changes automatically.
+This fork uses [a software factory](docs/software-factory.md): a weighted
+implementation queue, local agent communications in gitignored `comms/`, and
+feature PRs reviewed and merged through `gh`. Codex reviews and sensible fixes
+are welcome throughout implementation.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance, and the
+[EXO feature audit](docs/exo-feature-audit.md) and [optional backlog](docs/rewrite-backlog.md) for planning context.
 
 Choose a track from the [roadmap](ROADMAP.md):
 
@@ -86,7 +85,7 @@ Choose a track from the [roadmap](ROADMAP.md):
 - **Connect other tools:** implement a small, tested import or export slice with explicit units and supported entities.
 - **Test real workflows:** share an original garment you may redistribute, exact steps, settings and expected behavior. A small failing example is valuable.
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md). The [contributor kit](docs/contributor-kit.md) includes task briefs, an issue checklist and prompts you can give a coding assistant. Agents should read [AI_START_HERE.md](AI_START_HERE.md) and [AGENTS.md](AGENTS.md) before editing. Contributions need human review and the same evidence whether written by a person, an AI assistant or both.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md). The [contributor kit](docs/contributor-kit.md) includes task briefs, an issue checklist and prompts you can give a coding assistant. Agents should read [AI_START_HERE.md](AI_START_HERE.md) and [AGENTS.md](AGENTS.md) before editing. Validate changes whether written by a person, an AI assistant or both.
 
 ## Development
 
