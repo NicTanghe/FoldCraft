@@ -39,7 +39,7 @@ For an idea rather than a bug, explain the mechanism you suspect, which existing
 
 Start any task with this preamble:
 
-> Read AGENTS.md, AI_START_HERE.md, the current handoff and the documentation of the affected module. Inspect the existing implementation and preserve unrelated changes. Select one task below. Explain its scope and acceptance cases, implement it, run the relevant checks and report the actual results and remaining limits. Keep all new UI text, comments and documentation in English. Do not activate experimental solver behavior, use the GPU or publish changes without authorization.
+> Read AGENTS.md, AI_START_HERE.md, the current handoff and the documentation of the affected module. Inspect the existing implementation and preserve unrelated changes. Select one task below. Explain its scope and acceptance cases, implement it, run the relevant checks and report the actual results and remaining limits. Keep all new UI text, comments and documentation in English. Keep experimental solver behavior and GPU checks opt-in. Follow the current user request for Git operations.
 
 ### Interface task
 
@@ -66,4 +66,4 @@ Start any task with this preamble:
 - Documentation explains supported behavior and remaining limitations without presenting research candidates as production backends.
 - The PR gives another contributor the commands and small fixture needed to reproduce the result.
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for CPU checks, licensing and fork coordination. GPU checks remain opt-in. No research or performance claim is accepted solely because an AI assistant produced it.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for CPU checks, licensing and Git workflow. GPU checks remain opt-in. No research or performance claim is accepted solely because an AI assistant produced it.

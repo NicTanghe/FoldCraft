@@ -1,5 +1,8 @@
 # Rust rewrite hub validation
 
+Historical upstream validation only. The coordinator and reservation process have been removed from this fork; this record imposes no contribution requirements.
+
+
 22 October 2026. The feature audit pins EXO main at
 `352c6086b622caeda95f16d9bd923624b95e05d9`. It is source inspection, not a
 runtime certification of EXO's tools. No EXO implementation or assets were

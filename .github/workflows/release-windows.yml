@@ -7,7 +7,6 @@ on:
   pull_request:
 
 # One validation per PR revision; main and manual runs keep independent groups.
-# Do not apply this policy to the serialized coordination ledger writer.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -28,17 +27,9 @@ jobs:
       WGPU_BACKEND: dx12
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Classify exact PR changes
-        id: scope
-        run: node scripts/ci-change-scope.mjs
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.scope.outputs.mode != 'metadata'
       # Cache dependencies only; full-validation runs rebuild package executables.
       - name: Restore portable Rust dependency cache
-        if: steps.scope.outputs.mode != 'metadata'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           prefix-key: clothcraft-deps-v1
@@ -49,11 +40,9 @@ jobs:
           cache-on-failure: "false"
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Use a supported desktop resolution
-        if: steps.scope.outputs.mode != 'metadata'
         shell: powershell
         run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
       - name: Record the hosted Windows graphics adapter
-        if: steps.scope.outputs.mode != 'metadata'
         run: |
           $video = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
             Select-Object Name, DriverVersion, Status
@@ -61,10 +50,9 @@ jobs:
       # PR/main runs share the mandatory Windows CPU suite in build.yml on the
       # same windows-2025 image. Standalone manual packaging still runs it.
       - name: Test the CPU core
-        if: steps.scope.outputs.mode != 'metadata' && (github.event_name == 'workflow_dispatch')
+        if: (github.event_name == 'workflow_dispatch')
         run: cargo test --locked --no-default-features -j 2 -- --test-threads=2
       - name: Test package manifest coverage
-        if: steps.scope.outputs.mode != 'metadata'
         run: |
           $tokens = $null; $errors = $null
           $scriptPath = (Resolve-Path ./scripts/package-windows.ps1).Path
@@ -107,12 +95,10 @@ jobs:
           if ((Test-PayloadManifest $root) -ne 4) { throw 'Complete hidden-payload manifest failed' }
           Write-Host 'Package manifest coverage fixtures passed.'
       - name: Build portable executables
-        if: steps.scope.outputs.mode != 'metadata'
         run: >-
           cargo build --locked --release -j 2 --features desktop
           --bin cloth-fit --bin marvelous-cloth --bin cloth-template --bin cloth-session
       - name: Package, verify hashes and run native editor launch/capture from a path with spaces
-        if: steps.scope.outputs.mode != 'metadata'
         timeout-minutes: 10
         run: |
           $destination = Join-Path $env:RUNNER_TEMP 'ClothCraft Portable Preview'
@@ -126,7 +112,7 @@ jobs:
           }
           if (-not $refused) { throw 'Packaging unexpectedly overwrote an existing destination' }
       - name: Upload native smoke evidence
-        if: steps.scope.outputs.mode != 'metadata' && (always())
+        if: (always())
         uses: actions/upload-artifact@v4
         with:
           name: clothcraft-windows-native-smoke-evidence
@@ -141,7 +127,6 @@ jobs:
             ${{ runner.temp }}/ClothCraft Portable Preview.verify/session-output.jsonl
             ${{ runner.temp }}/ClothCraft Portable Preview.verify/session-error.log
       - name: Upload portable preview and archive checksum
-        if: steps.scope.outputs.mode != 'metadata'
         uses: actions/upload-artifact@v4
         with:
           name: clothcraft-windows-x64-portable-preview

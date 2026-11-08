@@ -85,6 +85,4 @@ visual acceptance is claimed.
 
 EXO-UX-002 retains palette interaction acceptance. EXO-UX-003 (workspace
 profiles) and EXO-UX-006 (headless session adapter) can be scoped against the registry.
-Read their catalog entries and open contributions, then obtain a claim before
-editing. In particular, inspect the existing session proposal before creating
-a competing protocol. Eligibility is not ownership.
+Inspect the existing implementation and session proposal before creating a competing protocol.

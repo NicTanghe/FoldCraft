@@ -116,9 +116,7 @@ round-trips in an independent factory application.
    invariants, performance cost, and opt-in GPU parity; reject or revise
    proposals that lose collision coverage or change the energy/constraints.
 
-These are **recommendations for future registered tasks**, not permission to
-take another agent's locked files. [The live board](https://github.com/erythrofr/ClothCraft/issues/8)
-and current task manifest still control claims and exact scopes.
+These are optional follow-up recommendations. Upstream assignments and task scopes do not govern this fork.
 
 ## Review gates and handoff
 

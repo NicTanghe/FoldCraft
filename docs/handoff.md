@@ -1,5 +1,9 @@
 # Repository handoff
 
+## Fork workflow — 8 November 2026
+
+Removed the upstream coordinator, task registration, catalog enforcement and mandatory claim/scope process. Direct commits and merges are supported; issues and PRs are optional. The former task catalog is retained as [optional planning context](rewrite-backlog.md). Build, CPU, desktop and packaging checks remain. Entries below describe historical work and session-specific decisions, not current Git permissions or task reservations.
+
 ## Editor transitions and workspace profiles — 26 October 2026
 
 PR #111 merged as `07c4988`. The production cancellation and installation
@@ -38,8 +42,7 @@ flat-arrangement reset, sampling budget and cancellation behavior.
 
 EXO-UX-004 (#104) remains open for complete Atelier cancellation/generation
 acceptance. Backend and helper/widget tests pass; full native interaction was
-not run. The source reservation is released. Obtain an accepted claim before
-adding missing evidence; do not reimplement the already merged feature.
+not run. Follow-up work can add the missing evidence without reimplementing the already merged feature.
 
 ## Physical SVG reader — 26 October 2026
 
@@ -52,8 +55,7 @@ are documented in [SVG import](svg-import.md); they do not add a desktop dialog.
 EXO-IO-011 (#103) is the reviewed native integration follow-up. Reuse the reader
 and existing authoring installer, display dimensions and losses before Apply,
 and preserve the distinction between prepared-edit tests and full native-window
-acceptance. The reader reservation is released. Obtain a fresh accepted claim
-for UI work; do not duplicate parsing or advertise planned format support.
+acceptance. Reuse the parser for UI work and describe only supported formats.
 
 ## Native command registry — 26 October 2026
 
@@ -277,9 +279,9 @@ or private garment was used.
 
 **22 October — shared Rust rewrite hub.** The owner selected this repository
 as the native Rust coordination/integration point and explicitly requested
-parallel agents and a task mailbox. Read [COORDINATION.md](../COORDINATION.md),
+parallel agents and a task mailbox. Historical context: see
 the [pinned EXO feature audit](exo-feature-audit.md) and
-[67 atomic tasks](../coordination/TASKS.md). The first 16 task discussions are
+[67 atomic tasks](rewrite-backlog.md). The first 16 task discussions are
 linked from hub issue #8. The coordinator uses authenticated comment authors,
 exclusive file/directory scopes, explicit release and a durable bot ledger;
 it does not start agents, merge PRs or copy EXO's GPL source/assets. Thirty
