@@ -72,6 +72,9 @@ mod workspace;
 #[path = "atelier/workspace_profiles.rs"]
 mod workspace_profiles;
 use authoring_ui::{AuthoringUi, Tool};
+#[cfg(feature = "desktop")]
+#[allow(unused_imports)]
+pub use marvelous_cloth::css_ui;
 use worker::Work;
 
 /// Export is not atomic across artifacts: an error may leave earlier files.
