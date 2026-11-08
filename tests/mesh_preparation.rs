@@ -42,6 +42,7 @@ fn fixture() -> GarmentTemplate {
         target_lengths: BTreeMap::new(),
         seam_allowances: BTreeMap::new(),
         notches: BTreeMap::new(),
+        measurements: Vec::new(),
     });
     t
 }

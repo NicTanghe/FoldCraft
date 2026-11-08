@@ -72,6 +72,7 @@ impl Project {
             target_lengths: BTreeMap::new(),
             seam_allowances: BTreeMap::new(),
             notches: BTreeMap::new(),
+            measurements: Vec::new(),
         };
         let compiled = pattern.build(&self.material)?;
         let mut mesh = compiled.mesh;
