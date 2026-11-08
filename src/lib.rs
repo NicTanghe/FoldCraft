@@ -1,4 +1,6 @@
 //! SI units throughout: metres, kilograms, seconds, Newtons.
+extern crate self as marvelous_cloth;
+
 pub mod authoring;
 pub mod avatar;
 pub mod avatar_import;

@@ -3,7 +3,8 @@
 //! Connects numeric point constructions, notches/allowances, persistent ruler measurements (FC-0005),
 //! and contour/interior pins (FC-0007) to cssimpler property accordions.
 
-use crate::{
+use glam::{DVec2, DVec3};
+use marvelous_cloth::{
     authoring::{self, ConstructionRef, PointConstruction},
     garment::{
         markings::{NotchKind, polyline_length},
@@ -13,7 +14,6 @@ use crate::{
         template::{Corner, GarmentTemplate, Panel, Placement},
     },
 };
-use glam::{DVec2, DVec3};
 
 #[cfg(test)]
 use cssimpler::core::ElementNode;
@@ -1084,8 +1084,8 @@ pub(crate) mod test_helpers {
 mod tests {
     use super::test_helpers::*;
     use super::*;
-    use crate::garment::{markings::Notch, seam::Side, template::MirrorLink};
-    use crate::model::Pattern;
+    use marvelous_cloth::garment::{markings::Notch, seam::Side, template::MirrorLink};
+    use marvelous_cloth::model::Pattern;
 
     fn test_polygon(width: f64, height: f64) -> PolygonPattern {
         PolygonPattern {
@@ -1147,29 +1147,31 @@ mod tests {
         let (mut template, mut panel) = sample_test_fixture();
 
         // Add a seam using edge_0
-        template.seams.push(crate::garment::seam::SeamSpec {
-            id: "seam_edge0".into(),
-            a: BoundaryRef {
-                reversed: false,
-                panel: panel.id.clone(),
-                side: Side::Top,
-                edge: Some("edge_0".into()),
-                range: [0.0, 1.0],
-            },
-            b: BoundaryRef {
-                reversed: true,
-                panel: "partner_piece".into(),
-                side: Side::Bottom,
-                edge: Some("edge_2".into()),
-                range: [0.0, 1.0],
-            },
-            a_tail: vec![],
-            b_tail: vec![],
-            reverse_b: false,
-            notches: vec![],
-            stiffness: 1000.0,
-            allow_ease: false,
-        });
+        template
+            .seams
+            .push(marvelous_cloth::garment::seam::SeamSpec {
+                id: "seam_edge0".into(),
+                a: BoundaryRef {
+                    reversed: false,
+                    panel: panel.id.clone(),
+                    side: Side::Top,
+                    edge: Some("edge_0".into()),
+                    range: [0.0, 1.0],
+                },
+                b: BoundaryRef {
+                    reversed: true,
+                    panel: "partner_piece".into(),
+                    side: Side::Bottom,
+                    edge: Some("edge_2".into()),
+                    range: [0.0, 1.0],
+                },
+                a_tail: vec![],
+                b_tail: vec![],
+                reverse_b: false,
+                notches: vec![],
+                stiffness: 1000.0,
+                allow_ease: false,
+            });
 
         // Add notches and seam allowance
         if let Some(poly) = panel.polygon.as_mut() {
