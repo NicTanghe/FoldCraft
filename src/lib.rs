@@ -30,5 +30,7 @@ pub mod solver;
 pub mod solver_lab;
 pub mod template_catalog;
 pub mod vbd;
+/// Logical viewport coordinates and metric-board navigation, independent of UI.
+pub mod viewport_controller;
 /// Typed workspace actions and capability checks, independent of desktop UI.
 pub mod workspace_commands;
