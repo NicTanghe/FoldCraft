@@ -134,8 +134,28 @@ fn has_document_draft(authoring: &AuthoringUi) -> bool {
         || authoring.sewing.start.is_some()
 }
 
+fn has_unapplied_document_edits(authoring: &AuthoringUi) -> bool {
+    authoring.preview.is_some() || has_document_draft(authoring)
+}
+
 fn needs_document_decision(document: &DocumentUi, authoring: &AuthoringUi) -> bool {
-    document.dirty || authoring.preview.is_some() || has_document_draft(authoring)
+    document.dirty || has_unapplied_document_edits(authoring)
+}
+
+fn begin_avatar_import(
+    document: &mut DocumentUi,
+    authoring: &AuthoringUi,
+) -> Result<(), &'static str> {
+    if has_unapplied_document_edits(authoring) {
+        return Err(
+            "Finish or cancel the current drawing, placement, sewing or trim draft before importing an avatar",
+        );
+    }
+    document.avatar_import = avatar_import_ui::ImportUi {
+        open: true,
+        ..Default::default()
+    };
+    Ok(())
 }
 
 impl Atelier {
@@ -143,7 +163,7 @@ impl Atelier {
         self.document.svg_import.smoke_status()
     }
     pub(super) fn open_svg_import(&mut self) {
-        if self.authoring.preview.is_some() || has_document_draft(&self.authoring) {
+        if has_unapplied_document_edits(&self.authoring) {
             self.status = "Finish or cancel the current drawing, placement, sewing or trim draft before importing patterns".into();
             return;
         }
@@ -189,7 +209,7 @@ impl Atelier {
         }
     }
     fn open_pattern_import(&mut self) {
-        if self.authoring.preview.is_some() || has_document_draft(&self.authoring) {
+        if has_unapplied_document_edits(&self.authoring) {
             self.status = "Finish or cancel the current drawing, placement, sewing or trim draft before importing patterns".into();
             return;
         }
@@ -232,14 +252,14 @@ impl Atelier {
         }
     }
     fn open_avatar_import(&mut self, ctx: &egui::Context) {
+        if let Err(error) = begin_avatar_import(&mut self.document, &self.authoring) {
+            self.status = error.into();
+            return;
+        }
         // Pause controls without changing generation or rewinding the worker.
         // Cancelling the importer is not a document replacement.
         self.playing = false;
         self.submit(ctx, false);
-        self.document.avatar_import = avatar_import_ui::ImportUi {
-            open: true,
-            ..Default::default()
-        };
     }
     fn avatar_import_tick(&mut self, ctx: &egui::Context) {
         use avatar_import_ui::Action;
@@ -867,7 +887,15 @@ mod draft_tests {
         h.replace_text("trim.width", "invalid", &mut case, &mut draw)
             .unwrap();
         assert!(needs_document_decision(&case.document, &case.authoring));
-        // Draft editing must require a decision without changing the saved document.
+        // Avatar replacement also resets AuthoringUi, so opening it must refuse the draft.
+        case.document.avatar_import.error = Some("Previous import error".into());
+        assert!(begin_avatar_import(&mut case.document, &case.authoring).is_err());
+        assert!(!case.document.avatar_import.open);
+        assert_eq!(
+            case.document.avatar_import.error.as_deref(),
+            Some("Previous import error")
+        );
+        assert!(needs_document_decision(&case.document, &case.authoring));
         assert!(!case.document.dirty);
         h.click("trim.cancel", &mut case, &mut draw).unwrap();
         assert!(!needs_document_decision(&case.document, &case.authoring));
@@ -876,6 +904,25 @@ mod draft_tests {
         assert!(needs_document_decision(&case.document, &case.authoring));
         h.click("trim.cancel", &mut case, &mut draw).unwrap();
         assert!(!needs_document_decision(&case.document, &case.authoring));
+        case.authoring.preview = Some(Default::default());
+        assert!(begin_avatar_import(&mut case.document, &case.authoring).is_err());
+        assert!(case.authoring.preview.is_some());
+        case.authoring.preview = None;
+        begin_avatar_import(&mut case.document, &case.authoring).unwrap();
+        assert!(case.document.avatar_import.open);
+        let mut draw_avatar =
+            |ui: &mut egui::Ui, case: &mut Case| match case.document.avatar_import.show(ui.ctx()) {
+                Some(avatar_import_ui::Action::Cancel) => {
+                    case.document.avatar_import = Default::default()
+                }
+                None => {}
+                action => panic!("Unexpected avatar action: {action:?}"),
+            };
+        h.frame(&mut case, &mut draw_avatar);
+        h.frame(&mut case, &mut draw_avatar);
+        h.click("avatar.cancel", &mut case, &mut draw_avatar)
+            .unwrap();
+        assert!(!case.document.avatar_import.open);
         assert!(!case.document.dirty);
         assert_eq!(case.document.path, saved_path);
         assert_eq!(serde_json::to_vec(&case.template).unwrap(), original);
@@ -898,7 +945,10 @@ mod template_tests {
         installs: usize,
     }
     fn draw(ui: &mut egui::Ui, case: &mut Case) {
-        let action = case.browser.show(ui.ctx(), case.document.dirty);
+        let action = case.browser.show(
+            ui.ctx(),
+            needs_document_decision(&case.document, &case.authoring),
+        );
         match action {
             Some(template_browser::Action::Prepare) => {
                 match case
