@@ -8,6 +8,54 @@ The [factory workflow](software-factory.md) supersedes the direct-feature-merge 
 
 Removed the upstream coordinator, task registration, catalog enforcement and mandatory claim/scope process. Direct commits and merges are supported; issues and PRs are optional. The former task catalog is retained as [optional planning context](rewrite-backlog.md). Build, CPU, desktop and packaging checks remain. Entries below describe historical work and session-specific decisions, not current Git permissions or task reservations.
 
+## Default sphere demo mesh controls — 31 October 2026
+
+Plain `cargo run` still launches the original cloth-over-sphere reference
+editor. Its right-hand **Simulation** tab now exposes **Physics-inspired mesh
+preparation** and **Remesh and reset** ahead of the solver settings. The
+optional Project v1 `physics_sizing` field is omitted by default. It uses the
+existing polygon compiler and static sizing pipeline on the rectangle, keeps
+the original sphere/hanging placement and hanging corner pins, and rebuilds
+mass/hinges from material coordinates. Changing material or grain rebinds the
+plan during compilation. Save/load and reset retain it; **Use uniform grid and
+reset** clears it. Preparation requires a paused worker with no pending step.
+Inputs are estimates in Pa, separate from membrane coefficients in N/m.
+
+The same controls now also appear in **Properties > REST PATTERN**, below
+grain and before the sphere settings. Both tabs share the same draft values
+and apply path. **Remesh and reset** applies sizing estimates together with
+pattern/fabric settings; **Apply and Reset** rebuilds the current mesh mode.
+
+Validation: 197 selected CPU tests passed across both editor binaries, static
+garment preparation, reference numerics and the five new reference-project
+checks; two existing optional captures were ignored. The default native binary
+also built successfully. No native-window or GPU interaction acceptance was
+run. The optional strict Clippy pass was stopped during its fresh desktop
+dependency rebuild to release Cargo; no lint result is claimed.
+
+## One-time physics-inspired mesh preparation — 31 October 2026
+
+The independent `codex/physics-inspired-mesh-resolution` branch now shares
+its CPU sizing implementation between CLI comparison examples and the native
+Simulation inspector. **Physics-inspired mesh preparation** compiles an optional
+static plan and resets the arrangement through the existing scene installer;
+the resulting topology stays fixed during solver steps. Reset rebuilds the
+same plan. Existing uniform defaults and solver/contact rules are unchanged.
+
+The preparation controls now appear directly under Mesh resolution, ahead of
+the comparison lab, with no collapsed section. They remain available without
+a piece selection and then target all editable polygon pieces. Selecting a
+polygon enables the single-piece scope; clearing selection restores all-piece
+scope. Legacy rectangular pieces are excluded.
+
+The optional meshing settings retain explicit Pa estimates; bending and grain
+are rebound to the current fabric/panel during compilation. Named boundaries,
+mass, seam compilation, ordinary saves and signed caches use the normal paths.
+CPU checks cover physical compilation, fixed-topology stepping, pins, curves,
+cache rejection, deterministic reset, history and native named controls.
+The comparison UI has an explicitly invoked CPU-rasterized layout preview;
+native-window/GPU runtime acceptance has not been performed.
+See [the runnable gathered-panel project, UI placement and limits](pie-resolution.md).
 ## Measurement review follow-up — 8 November 2026
 
 Local follow-up to PR #227 at published base `24788ad`. Pending measurement
