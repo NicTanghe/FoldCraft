@@ -10,10 +10,10 @@
       "spent": 3.0,
       "priority": "high",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-factory-setup",
+      "status": "review",
+      "owner": null,
       "vruntime": 0.75,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/1"
     }
   ]
 }
