@@ -210,6 +210,19 @@
       "owner": "codex-trim-lifecycle",
       "vruntime": 2.75,
       "pr": null
+    },
+    {
+      "id": "FC-0017",
+      "title": "Expose shared native workspace command registry through CPU library",
+      "acceptance": "Public typed command registry and availability use same definitions as Atelier; CPU-only integration tests import library API; no UI or worker dependency introduced.",
+      "points": 2.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-command-boundary",
+      "vruntime": 2.75,
+      "pr": null
     }
   ]
 }
