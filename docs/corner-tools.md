@@ -169,7 +169,9 @@ The transaction rejects invalid or oversized radii, curved incident boundaries,
 degenerate or unsupported corners, and any seams, targets, allowances, notches,
 measurements or pins on either affected panel. Graphics and trims use the
 existing contour-change guard. A linked partner is reflected once and the entire
-result must compile before installation. This conservative preflight includes
+result must compile before installation. Linked edits that change the normalized
+material frame are also refused because partner placement is not remapped. This
+conservative preflight includes
 unaffected references; no station migration is implemented. The command stores
 no construction source, so a rounded corner cannot be re-edited as a radius.
 Custom Bézier Shape editing, UI gestures, synchronized seam cutouts, and the

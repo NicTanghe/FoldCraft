@@ -129,3 +129,40 @@ fn linked_rounding_works_from_either_partner_and_refuses_partner_metadata() {
         assert_eq!(before, serde_json::to_vec(&blocked).unwrap());
     }
 }
+
+#[test]
+fn linked_rounding_that_changes_material_frame_is_atomic() {
+    let base = authoring::apply(
+        &fixture(),
+        Command::Polygon {
+            points: vec![
+                DVec2::ZERO,
+                DVec2::new(0.4, 0.1),
+                DVec2::new(0.3, 0.5),
+                DVec2::new(0.0, 0.4),
+            ],
+            tangents: vec![],
+            meshing: MeshingSettings {
+                target_edge_m: 0.09,
+                ..Default::default()
+            },
+            fabric: "woven-demo".into(),
+            replace: true,
+        },
+    )
+    .unwrap()
+    .template;
+    let t = authoring::apply(
+        &base,
+        Command::LinkedMirror {
+            panel: base.panels[0].id.clone(),
+            axis: MirrorAxis::X,
+        },
+    )
+    .unwrap()
+    .template;
+    let before = serde_json::to_vec(&t).unwrap();
+    let error = authoring::apply(&t, command(&t, 0, 0.01)).err().unwrap();
+    assert!(error.contains("material frame"), "{error}");
+    assert_eq!(before, serde_json::to_vec(&t).unwrap());
+}

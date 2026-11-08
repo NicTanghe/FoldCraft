@@ -12,6 +12,10 @@ pub(super) fn round(
         return Err("Radius must be finite and positive".into());
     }
     let mut affected = vec![panel];
+    let linked = source
+        .mirror_links
+        .iter()
+        .any(|link| link.a == panel || link.b == panel);
     for link in &source.mirror_links {
         if link.a == panel {
             affected.push(&link.b);
@@ -50,6 +54,9 @@ pub(super) fn round(
         .iter_mut()
         .find(|p| p.id == panel)
         .ok_or("Panel not found")?;
+    let old_width = p.pattern.width;
+    let old_height = p.pattern.height;
+    let old_translation = p.placement.translation;
     let poly = p
         .polygon
         .as_mut()
@@ -104,5 +111,16 @@ pub(super) fn round(
     poly.curves
         .insert(name, [start + u * handle, end - v * handle]);
     normalize(p);
+    // Linked synchronization does not adjust the partner placement when the
+    // normalized material frame changes. Refuse instead of moving that piece.
+    if linked
+        && (p.pattern.width != old_width
+            || p.pattern.height != old_height
+            || p.placement.translation != old_translation)
+    {
+        return Err(
+            "Linked rounding that changes the material frame is not supported; unlink first".into(),
+        );
+    }
     Ok(())
 }
