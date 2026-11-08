@@ -2129,6 +2129,55 @@ Historical status: ready. Technical dependencies: EXO-REV-001.
 - https://github.com/erythrofr/ClothCraft/pull/227
 
 
+## EXO-CAD-013
+
+**Synchronize cutouts and contour edits across sewn boundaries**
+
+Historical status: blocked. Technical dependencies: EXO-CAD-003, EXO-CAD-011, EXO-SEW-001.
+
+**Starting points**
+
+- src/authoring.rs
+- src/authoring/geometry.rs
+- src/authoring/linked.rs
+- src/garment/seam.rs
+- src/garment/curves.rs
+- src/garment/polygon.rs
+- src/garment/domain.rs
+- src/garment/shapes.rs
+- src/atelier/authoring_ui.rs
+- src/atelier/board.rs
+- src/atelier/drafting_ui.rs
+- tests/seam_aware_cutting.rs
+- tests/linked_mirror.rs
+- tests/sewing_chains.rs
+- tests/persistent_pom_references.rs
+- docs/seam-aware-cutting.md
+- docs/panel-tools.md
+- docs/authoring.md
+- docs/handoff.md
+
+**Acceptance ideas**
+
+- Select a named sewn outer boundary in the native 2D workspace and explicitly preview a synchronized notch-shaped or rounded material cutout on both pieces before Apply. A cut spanning 35-45% of the selected sewn interval must appear at the corresponding interval on its partner. Distinguish a geometric material cut from manufacturing notch metadata and from geometry-preserving subdivision in #68.
+- Map positions through the existing directed, trimmed rest-arclength seam correspondence, including reverse_b, per-segment reversal and interior notch correspondence anchors. Use the selected seam's partial interval rather than the full boundary; support either side as the source. Respect ordered chain segments and reject cuts crossing discontinuous joints or ambiguous ownership with a specific error and no mutation.
+- Reuse the existing linked-mirror relation and reflection when the pieces are linked mirrors and it agrees with the selected seam correspondence. Apply each panel edit once; preserve the link and both pieces' independent identities, fabric, grain policy, layout and placement. For differently shaped sewn pieces, map only the selected contour neighborhood; never reflect or replace an entire assembly. Reject conflicting seam/mirror correspondences atomically.
+- Offer explicit correspondence-based and dimension-preserving policies for unequal sewn lengths. Correspondence mode maps the cut interval through the seam and keeps the specified inward depth in material metres. Dimension-preserving mode maps its center but keeps the source width and depth in metres on the target. Preview both resulting intervals, dimensions and easing; reject insufficient material, range overflow or incompatible correspondence anchors rather than silently stretching or selecting a policy.
+- Replace the affected contours and preserve or rebuild the appropriate partial/chain sewing ranges and monotone correspondence anchors through the reviewed topology-reference mapping. Preview retained sewing and expose an explicit choice for sewing the new cutout rims or leaving them open; never bridge a removed interval implicitly. Preserve unaffected seam IDs, direction, stiffness and easing permission, with stable new boundary IDs where required.
+- Preserve attached measurements, target lengths, allowances/notches, internal paths, pins and construction metadata through defined migrations, or reject unsupported references before mutation with an actionable message. Review the current serialized model and pending #227/#228 measurement work before implementation; do not introduce a parallel station or topology-migration representation.
+- Prepare, validate and compile the complete paired edit before installation as one CPU authoring/history transaction. Cancel, stale drafts, failed partner mapping, invalid/self-intersecting geometry or failed compilation leave the document, history and live state unchanged. A successful edit has one-step undo/redo and survives JSON Save/Open; affected pieces remesh/reset dependent caches while compatible unaffected pieces retain their state.
+- Use real named egui controls and independent CPU geometry/reference oracles to verify straight and cubic cuts, source-side symmetry, 35-45% mapping, reversed and partial seams, unequal lengths in both policies, interior correspondence anchors, supported chain segments, discontinuous-joint rejection, linked-mirror deduplication/conflicts and measurement stability through cut/undo/reload. Cover rotated layouts, text focus, cancel, invalid input and atomic rollback. Limit local CPU checks to two jobs/test threads; native-window/GPU acceptance stays separate and opt-in.
+
+**Evidence**
+
+- https://github.com/erythrofr/ClothCraft/issues/231
+- https://github.com/erythrofr/ClothCraft/issues/68
+- https://github.com/erythrofr/ClothCraft/blob/3f52d66f400c5d04f6e9b58c5402694f4717b867/docs/panel-tools.md
+- https://github.com/erythrofr/ClothCraft/blob/3f52d66f400c5d04f6e9b58c5402694f4717b867/docs/documents-and-sewing.md
+- https://github.com/erythrofr/ClothCraft/pull/227
+- https://github.com/erythrofr/ClothCraft/pull/228
+
+
 ## EXO-CAD-012
 
 **Add editable pattern text annotations to the native Piece inspector and board**
@@ -2437,9 +2486,25 @@ Historical status: blocked. Technical dependencies: EXO-CAD-003, EXO-CAD-011, EX
 - docs/authoring.md
 - docs/panel-tools.md
 - docs/handoff.md
+- src/authoring/corners.rs
+- src/atelier.rs
+- src/atelier/corner_ui.rs
+- src/atelier/icons.rs
+- src/atelier/view_controls.rs
+- docs/corner-tools.md
+- src/fitting.rs
+- src/garment/markings.rs
+- src/garment/svg_import.rs
+- src/pattern_import.rs
+- tests/pattern_markings.rs
+- tests/drawing_commands.rs
 
 **Acceptance ideas**
 
+- Expose a dedicated Corner rounding button in the left vertical toolbar, using the shared tool-transition path. Activating it selects an actual 2D corner-editing tool; clicking a panel corner targets it without starting a piece/anchor move. Expose clearly labelled Radius and Shape buttons to switch interaction modes, with visible active state, contextual cursor/hints and disabled/error feedback for unsupported corners.
+- In Radius mode, click and drag the selected corner's rounding control to vary the fillet radius in material millimetres, with a live non-destructive contour preview and numeric radius readout/input for exact entry. Resolve pointer motion through inverse board/panel transforms so zoom, pan and rotated layouts do not change physical dimensions. Commit one validated transaction on pointer release; clicking/selecting alone or a no-op drag creates no history entry. Re-edit an existing fillet from its authored source parameters without accumulating trims or approximations.
+- In Shape mode, directly drag the selected rounded corner's Bezier handles to adjust their positions, directions and lengths, changing curvature and the resulting rounding profile, including flatter or squarer appearances within the cubic representation. Keep the sharp/smooth/symmetric tangent rule visible and editable, and apply its handle-coupling policy during these drags. The profile is authored by the Bezier controls themselves. Changing the profile away from a circular fillet must visibly label it a custom Bezier shape rather than continue claiming the numeric value is an exact circular radius. Radius and Shape interactions must operate on saved authored geometry and use the same atomic linked-mirror/reference/history pipeline.
+- Cancel an active corner gesture on Escape, lost focus, tool/mode changes or stale geometry without modifying the document/history. Respect text-field and modal ownership, discard stale previews on Undo/Redo/document replacement, preserve other tool drafts through their existing decisions, and keep navigation available. Test actual left-toolbar activation, Radius/Shape switching and corner/handle pointer gestures through real named controls and the production installer, including failed compilation/reference migration and one-step history; a button or prepared-command test alone is insufficient.
 - Fillet selected outer-contour corners in the native Piece inspector and 2D board using a positive numeric radius in millimetres, converted once to material metres. Preview the tangent points and resulting contour before Apply. Include a 90-degree straight-edge fixture with a 10 mm radius; handle supported curved-edge configurations explicitly and reject unsupported, ambiguous, degenerate, oversized or self-intersecting constructions without mutation.
 - Construct the intended tangent circular fillet from the requested radius. If stored as ordinary cubic Beziers, document and independently verify a bounded geometric error in millimetres against that circle; never describe the cubic approximation as an exact circular arc. Separate authored fillet error from display/meshing flattening tolerance. No polygonal replacement of the authored fillet.
 - Convert selected corners between sharp, smooth and symmetric Bezier modes. Sharp permits independent incident handles; smooth keeps opposite collinear tangents with independent handle lengths; symmetric keeps opposite collinear tangents with equal lengths. Define behavior for absent or zero-length handles and persist the chosen mode compatibly with existing documents.
@@ -2455,3 +2520,4 @@ Historical status: blocked. Technical dependencies: EXO-CAD-003, EXO-CAD-011, EX
 - https://github.com/erythrofr/ClothCraft/issues/233
 - https://github.com/erythrofr/ClothCraft/issues/68
 - https://github.com/erythrofr/ClothCraft/issues/69
+
