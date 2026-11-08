@@ -1,5 +1,6 @@
 //! Integration acceptance tests for Ticket FC-0011:
 //! Top menu bar, simulation transport, 3D/2D tool rails, radial menu, and command palette in cssimpler.
+#![cfg(feature = "desktop")]
 
 use marvelous_cloth::commands::CapabilityContext;
 use marvelous_cloth::css_ui::{
