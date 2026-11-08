@@ -13,6 +13,43 @@ holds its current shape; **Unfreeze panel** releases the freeze while retaining
 individual pins. On polygon panels, selected contour points across panels
 can be pinned/unpinned in one atomic history action. **Release panel pins**
 removes all authored individual pins on that panel. These controls leave legacy template pins unchanged.
+Expand **Pin a material position** to enter local 2D X/Y in millimetres. The
+inspector displays the nearest compiled mesh vertex and distance before you pin
+or release it; this works for interior vertices as well as contours. Selection
+is snapped to that exact material coordinate, not stored as a mesh index. The
+lookup is limited to 100,000 vertices per panel and rejects ambiguous winners. The
+last lookup is cached for the same immutable mesh, panel and coordinates; a
+remesh or query change recomputes it. No lookup runs while the editor is busy.
+In Edit mode, **Choose on 3D cloth** lets you click the visible active panel to
+stage the nearest material vertex. The X/Y readout and marker update; choose
+**Pin nearest** separately to commit. Escape or **Cancel pick** abandons the
+gesture. Other panels, the avatar in front, a closed inspector, changing tools,
+or a new mesh cannot silently pin a different point. Picking scans at most
+100,000 cloth triangles on a click and is unavailable in clean view.
+**Choose on 2D pattern** stages a material position from the visible active
+panel, accounting for its board placement and rotation. Overlapping panels are
+resolved in board draw order; holes do not count as panel bodies. The readout
+shows the nearest vertex and the offset before the
+separate confirmation. Each picker requires its own view; the 2D picker also
+works with the 3D view hidden. The full native-window input path is not yet tested.
+The CPU named-input fixture covers rotated board and panel transforms, rejection
+of an overlapping panel, staging without a document change, confirmation and
+undo. It drives the production staging helper, not the whole native viewport.
+In the combined trim/pin integration, a pending construction-trim edit or
+placement disables pin picking; starting a trim draft cancels an armed pick.
+Finish or cancel the trim edit before picking a pin. Named-widget CPU coverage
+exercises both orders without committing the garment; native-window routing
+and an actual concurrent worker remain unverified.
+While the section is open, the panel is unfrozen and the editor is paused, a small X-ray marker in the
+3D view shows that exact vertex. It can appear through cloth or the avatar; it
+is a selection aid, not a visibility or collision test. It is hidden in clean
+view, outside the viewport, or when the section is closed or unavailable.
+The CPU editor-transition fixture also pins an interior vertex, releases it and
+undoes the release through the production installer. It checks exact material
+and world targets, JSON project round-trip, drape/time and free-vertex velocity,
+and rejects results from older generations. The pending flag is simulated; this
+is not a live-worker, native-window or GPU test.
+
 Expand **Individual authored pins** to see their material coordinates and
 release one pin without removing the others. The list is virtualized for large
 selections; its Release buttons require a paused, unfrozen panel and use the
