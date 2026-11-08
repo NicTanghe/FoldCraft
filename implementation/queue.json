@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 2.75,
+  "clock": 2.875,
   "tickets": [
     {
       "id": "FC-0001",
@@ -203,26 +203,26 @@
       "title": "Guard document replacement against unapplied construction trim drafts",
       "acceptance": "New/Open/Close detect an unapplied trim draft; discard confirmation and cancellation retain existing lifecycle semantics, with meaningful CPU coverage.",
       "points": 2.0,
-      "spent": 0,
+      "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-trim-lifecycle",
-      "vruntime": 2.75,
-      "pr": null
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/11"
     },
     {
       "id": "FC-0017",
       "title": "Expose shared native workspace command registry through CPU library",
       "acceptance": "Public typed command registry and availability use same definitions as Atelier; CPU-only integration tests import library API; no UI or worker dependency introduced.",
       "points": 2.0,
-      "spent": 0,
+      "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-command-boundary",
-      "vruntime": 2.75,
-      "pr": null
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/10"
     }
   ]
 }
