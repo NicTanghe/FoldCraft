@@ -40,6 +40,8 @@ fn fixture() -> GarmentTemplate {
         holes: vec![],
         lines: vec![],
         target_lengths: BTreeMap::new(),
+        seam_allowances: BTreeMap::new(),
+        notches: BTreeMap::new(),
     });
     t
 }
