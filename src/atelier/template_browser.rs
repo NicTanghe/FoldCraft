@@ -83,7 +83,7 @@ impl Browser {
             }
             ui.label("The current garment will be replaced. Your avatar and simulation settings will be kept.");
             ui.label("The new project has no saved path. Its first save will ask for a filename.");
-            ui.small("Saving keeps committed geometry and placement. Unfinished drawing and sewing drafts are not saved.");
+            ui.small("Saving keeps committed geometry and placement. Unfinished drawing/sewing and unapplied trims are not saved. Cancel and Apply trims first to retain them.");
             if dirty {
                 ui.colored_label(
                     egui::Color32::YELLOW,
@@ -214,5 +214,50 @@ fn preview(ui: &mut egui::Ui, selection: &Selection) {
                 },
             ),
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn template_confirmation_renders_trim_warning_before_save_or_discard() {
+        let mut browser = Browser::default();
+        browser.begin();
+        browser.choose("two-panel");
+        browser.confirming = true;
+        let ctx = egui::Context::default();
+        let mut labels = String::new();
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900., 900.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        browser.controls(ui, true);
+                    });
+                },
+            );
+            labels = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some(text.galley.job.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            output.textures_delta.clear();
+        }
+        assert!(labels.contains("unapplied trims are not saved"));
+        assert!(labels.contains("Cancel and Apply trims first to retain them"));
+        assert!(labels.contains("Save current, then open"));
+        assert!(labels.contains("Discard changes and open"));
     }
 }

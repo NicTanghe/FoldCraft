@@ -2330,6 +2330,10 @@ Historical status: done. Technical dependencies: EXO-IO-007, EXO-UX-005.
 
 - https://github.com/erythrofr/ClothCraft/pull/74
 
+**Notes**
+
+- Merged PR #74 at ea8ae2c implements native static avatar import with confirmation, owned canonical OBJ staging, portable save and worker-generation invalidation. All 12 required CI checks passed on source 39c61c9; CPU named-widget and format tests cover the task acceptance. Native OS picker/GPU acceptance remains untested. Geometry only: no rigging, animation, textures, guessed scale or collision repair; dense import is synchronous. See docs/avatar-import.md and issue #64 for evidence.
+
 
 ## EXO-IO-010
 

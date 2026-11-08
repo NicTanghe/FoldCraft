@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 2.75,
+  "clock": 2.875,
   "tickets": [
     {
       "id": "FC-0001",
@@ -197,6 +197,84 @@
       "owner": null,
       "vruntime": 2.75,
       "pr": null
+    },
+    {
+      "id": "FC-0016",
+      "title": "Guard document replacement against unapplied construction trim drafts",
+      "acceptance": "New/Open/Close detect an unapplied trim draft; discard confirmation and cancellation retain existing lifecycle semantics, with meaningful CPU coverage.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/11"
+    },
+    {
+      "id": "FC-0017",
+      "title": "Expose shared native workspace command registry through CPU library",
+      "acceptance": "Public typed command registry and availability use same definitions as Atelier; CPU-only integration tests import library API; no UI or worker dependency introduced.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/10"
+    },
+    {
+      "id": "FC-0019",
+      "title": "Extract UI-independent viewport gesture controller",
+      "acceptance": "Plain logical coordinates and explicit viewport ownership drive real board pan/zoom first; later hit-testing and 3D staging remain explicit slices with tests.",
+      "points": 4.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/14"
+    },
+    {
+      "id": "FC-0020",
+      "title": "Implement CPU corner tooling and synchronized seam cutout domain operations",
+      "acceptance": "Reviewable original Rust geometry transactions for corner radius/shape and synchronized cutouts; preserve semantic references or refuse explicitly; slice delivery must not imply whole-ticket completion.",
+      "points": 5.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/13"
+    },
+    {
+      "id": "FC-0021",
+      "title": "Independently review native UI and hardening PRs",
+      "acceptance": "Review PR12 and incoming native UI source/lifecycle changes with pinned evidence, actionable findings, and validated fixes before merge.",
+      "points": 3.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-wave2-review",
+      "vruntime": 2.75,
+      "pr": null
+    },
+    {
+      "id": "FC-0015",
+      "title": "Verify upstream hardening and integrate avatar acceptance evidence",
+      "acceptance": "Pin existing glTF/worker changes, preserve avatar import acceptance limits and review PR12 with passing CI.",
+      "points": 2,
+      "spent": 2,
+      "priority": "high",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 2.875,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/12"
     }
   ]
 }
