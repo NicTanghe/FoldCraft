@@ -215,7 +215,8 @@ impl DartDraft {
     }
 
     pub(super) fn matches_boundary(&self, selected: Option<&BoundaryRef>) -> bool {
-        selected.is_some_and(|r| r.panel == self.panel && r.edge.as_deref() == Some(&self.edge))
+        selected
+            .is_some_and(|r| r.panel == self.panel && r.edge.as_deref() == Some(self.edge.as_str()))
     }
 
     pub(super) fn boundary_start(

@@ -5,13 +5,13 @@ use eframe::egui;
 use serde::{Deserialize, Serialize};
 use std::{io::Read, path::Path};
 
-pub(super) const FILE_NAME: &str = "workspace-profiles.json";
+pub const FILE_NAME: &str = "workspace-profiles.json";
 const MAX_BYTES: u64 = 256 * 1024;
 const MAX_PROFILES: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub(super) struct Snapshot {
+pub struct Snapshot {
     layout: WorkspaceLayout,
     appearance: Appearance,
     tools_visible: bool,
@@ -32,7 +32,7 @@ impl Default for Snapshot {
     }
 }
 impl Snapshot {
-    pub fn capture(
+    pub(super) fn capture(
         prefs: &Preferences,
         tools_visible: bool,
         wireframe: bool,
@@ -55,7 +55,7 @@ impl Snapshot {
         self.layout.sanitize();
         self.appearance.sanitize();
     }
-    pub fn apply(
+    pub(super) fn apply(
         &self,
         prefs: &mut Preferences,
         tools_visible: &mut bool,
@@ -77,14 +77,14 @@ impl Snapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct Profile {
-    name: String,
-    snapshot: Snapshot,
+pub struct Profile {
+    pub name: String,
+    pub snapshot: Snapshot,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(super) struct Store {
-    version: u32,
-    profiles: Vec<Profile>,
+pub struct Store {
+    pub version: u32,
+    pub profiles: Vec<Profile>,
     // Exact bytes read from disk, never serialized. This detects edits by a
     // second instance even when unknown JSON fields or formatting changed.
     #[serde(skip)]
@@ -262,7 +262,7 @@ impl Store {
         *self = next;
         Ok(())
     }
-    fn ensure_current(&self, path: &Path) -> Result<(), String> {
+    pub fn ensure_current(&self, path: &Path) -> Result<(), String> {
         if read_source(path)? != self.source_text {
             return Err(
                 "Workspace profiles changed on disk. Reload saved profiles before continuing."
