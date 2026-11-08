@@ -166,3 +166,117 @@ fn linked_rounding_that_changes_material_frame_is_atomic() {
     assert!(error.contains("material frame"), "{error}");
     assert_eq!(before, serde_json::to_vec(&t).unwrap());
 }
+
+#[test]
+fn rounding_preserves_automatic_board_origins() {
+    let mut t = fixture();
+    for _ in 0..2 {
+        t = authoring::apply(
+            &t,
+            Command::Duplicate {
+                panel: t.panels[0].id.clone(),
+            },
+        )
+        .unwrap()
+        .template;
+    }
+    for panel in &mut t.panels {
+        panel.layout_2d = None;
+    }
+    let origins: Vec<_> = (0..t.panels.len())
+        .map(|i| authoring::layout(&t, i))
+        .collect();
+    let edit = authoring::apply(&t, command(&t, 1, 0.01)).unwrap();
+    for (i, origin) in origins.iter().enumerate() {
+        assert_eq!(authoring::layout(&edit.template, i), *origin);
+    }
+    // A corner that changes the first piece's width must not move later pieces.
+    let skewed = authoring::apply(
+        &fixture(),
+        Command::Polygon {
+            points: vec![
+                DVec2::ZERO,
+                DVec2::new(0.4, 0.1),
+                DVec2::new(0.3, 0.5),
+                DVec2::new(0.0, 0.4),
+            ],
+            tangents: vec![],
+            meshing: MeshingSettings {
+                target_edge_m: 0.09,
+                ..Default::default()
+            },
+            fabric: "woven-demo".into(),
+            replace: true,
+        },
+    )
+    .unwrap()
+    .template;
+    let mut t = authoring::apply(
+        &skewed,
+        Command::Duplicate {
+            panel: skewed.panels[0].id.clone(),
+        },
+    )
+    .unwrap()
+    .template;
+    for panel in &mut t.panels {
+        panel.layout_2d = None;
+    }
+    let next_origin = authoring::layout(&t, 1);
+    let edit = authoring::apply(&t, command(&t, 0, 0.01)).unwrap();
+    assert!(edit.template.panels[0].pattern.width < t.panels[0].pattern.width);
+    assert_eq!(authoring::layout(&edit.template, 1), next_origin);
+}
+
+#[test]
+fn generated_boundary_name_is_bounded_and_avoids_collisions() {
+    let mut t = fixture();
+    let poly = t.panels[0].polygon.as_mut().unwrap();
+    poly.edges[0] = "corner_round_1".into();
+    poly.edges[1] = "e".repeat(80);
+    t.compile().unwrap();
+    let edit = authoring::apply(&t, command(&t, 0, 0.01)).unwrap();
+    let poly = edit.template.panels[0].polygon.as_ref().unwrap();
+    assert_eq!(poly.edges[1], "corner_round_2");
+    assert_eq!(poly.edges[2], "e".repeat(80));
+    edit.template.compile().unwrap();
+}
+
+#[test]
+fn forty_five_degree_fillet_has_correct_tangencies_and_radius() {
+    let t = authoring::apply(
+        &fixture(),
+        Command::Polygon {
+            points: vec![
+                DVec2::ZERO,
+                DVec2::new(0.4, 0.0),
+                DVec2::new(0.6, 0.2),
+                DVec2::new(0.6, 0.5),
+                DVec2::new(0.0, 0.5),
+            ],
+            tangents: vec![],
+            meshing: MeshingSettings {
+                target_edge_m: 0.09,
+                ..Default::default()
+            },
+            fabric: "woven-demo".into(),
+            replace: true,
+        },
+    )
+    .unwrap()
+    .template;
+    let edit = authoring::apply(&t, command(&t, 0, 0.01)).unwrap();
+    let poly = edit.template.panels[0].polygon.as_ref().unwrap();
+    let trim = 0.01 * (std::f64::consts::PI / 8.0).tan();
+    let corner = DVec2::new(0.4, 0.0);
+    let direction = DVec2::new(1.0, 1.0).normalize();
+    assert!(poly.points[1].distance(corner - DVec2::X * trim) < 1e-12);
+    assert!(poly.points[2].distance(corner + direction * trim) < 1e-12);
+    let controls = poly.curves[&poly.edges[1]];
+    let cubic = [poly.points[1], controls[0], controls[1], poly.points[2]];
+    let center = poly.points[1] + DVec2::Y * 0.01;
+    let error = (0..=10000)
+        .map(|i| (curves::cubic(cubic, i as f64 / 10000.0).distance(center) - 0.01).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(error < 0.000_002_73, "error in metres: {error}");
+}

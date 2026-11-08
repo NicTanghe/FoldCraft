@@ -49,6 +49,10 @@ pub(super) fn round(
             return Err("Remove seams, targets, markings, measurements and pins from both affected panels before rounding".into());
         }
     }
+    // Preserve every derived board origin before the edited width can change.
+    for (i, p) in template.panels.iter_mut().enumerate() {
+        p.layout_2d = Some(layout(source, i));
+    }
     let p = template
         .panels
         .iter_mut()
@@ -95,7 +99,7 @@ pub(super) fn round(
     let handle = (4.0 / 3.0) * radius * (turn * 0.25).tan();
     let mut suffix = 1;
     let name = loop {
-        let candidate = format!("{edge}_round_{suffix}");
+        let candidate = format!("corner_round_{suffix}");
         if !poly.edges.contains(&candidate)
             && !poly.holes.iter().any(|h| h.edges.contains(&candidate))
             && !poly.lines.iter().any(|l| l.id == candidate)
