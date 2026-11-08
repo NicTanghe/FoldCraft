@@ -1,5 +1,9 @@
 # Repository handoff
 
+## Software factory — 8 November 2026
+
+The [factory workflow](software-factory.md) supersedes the direct-feature-merge policy below. Local agent messages live in gitignored `comms/`; `implementation/queue.json` and `scripts/factory.py` provide weighted point scheduling. Features use PRs merged through `gh`, with standing authorization for Codex reviews and sensible fixes. This does not restore the upstream coordinator.
+
 ## Fork workflow — 8 November 2026
 
 Removed the upstream coordinator, task registration, catalog enforcement and mandatory claim/scope process. Direct commits and merges are supported; issues and PRs are optional. The former task catalog is retained as [optional planning context](rewrite-backlog.md). Build, CPU, desktop and packaging checks remain. Entries below describe historical work and session-specific decisions, not current Git permissions or task reservations.

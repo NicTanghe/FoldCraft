@@ -35,7 +35,7 @@ The second command only compiles. The authorized GPU pass is reproduced with `sc
 
 ## Contributions
 
-This fork uses ordinary Git workflows. The owner may edit, commit, push and merge directly; no task claim, coordinator acknowledgement, upstream issue, scope approval or pull request is required. Issues and pull requests are optional collaboration tools. Follow the current user request for Git operations.
+Follow [the software factory](docs/software-factory.md). `implementation/queue.json` is the authoritative implementation queue; select work with `scripts/factory.py`, using weighted virtual deadlines and priority boosts. Agents communicate in gitignored `comms/`. Every feature uses a branch and PR, merged through `gh`. The owner authorizes commit, push, PR creation, Codex ticket/PR reviews, sensible review fixes and merge for assigned feature work without repeated permission requests. Inspect findings, fix valid issues and explain declined suggestions. Keep queue bookkeeping in the dispatcher checkout. No upstream coordinator approval is required.
 
 Preserve user files and existing changes. Preserve license notices and attribution for reused work. Test physics changes through falsifiable properties: finite differences, objectivity, balances, convergence and limiting behavior. Update technical documentation when behavior changes.
 

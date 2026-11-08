@@ -40,11 +40,14 @@ ClothCraft's original source and documentation are under the [MIT License](LICEN
 
 ## Git workflow
 
-This fork is independent of upstream's task coordination process. You may edit,
-commit, push and merge directly. Task registration, reservations, scope approval,
-upstream synchronization and pull requests are not prerequisites.
+Follow [the software factory](docs/software-factory.md). Select tickets from
+`implementation/queue.json`, communicate in gitignored `comms/`, and deliver
+every feature through a PR merged with `gh`. Codex ticket/PR reviews are always
+allowed; fix valid findings and explain declined suggestions. Commit, push, PR
+creation and merge are authorized for assigned feature work. The former upstream
+coordinator is not used.
 
-Use branches, issues and pull requests when they help you collaborate. If you
-reuse another contribution, preserve its authorship, license and source references.
+If you reuse another contribution, preserve its authorship, license and source
+references.
 The first selective integration from FireflyTheReal / julienfoss is recorded in
 [the integration notes](docs/firefly-integration.md).

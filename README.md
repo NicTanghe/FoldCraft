@@ -71,8 +71,10 @@ DXF-AAMA/ASTM, MTL round trips, glTF/GLB export, animated avatars, Alembic, USD,
 
 ## Help build it
 
-This fork uses ordinary Git workflows: direct commits and merges are welcome.
-There are no task claims, coordinator approvals or mandatory pull requests.
+This fork uses [a software factory](docs/software-factory.md): a weighted
+implementation queue, local agent communications in gitignored `comms/`, and
+feature PRs reviewed and merged through `gh`. Codex reviews and sensible fixes
+are welcome throughout implementation.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance, and the
 [EXO feature audit](docs/exo-feature-audit.md) and [optional backlog](docs/rewrite-backlog.md) for planning context.
 

@@ -2,7 +2,7 @@
 
 ClothCraft is a research prototype. Make one verifiable improvement at a time.
 
-This fork supports direct commits and merges. Issues and pull requests are optional; there is no task-claim or coordinator process. See [CONTRIBUTING.md](CONTRIBUTING.md) for build and validation guidance.
+Read [the software factory](docs/software-factory.md): agents communicate in local `comms/`, select tickets from the weighted implementation queue, and deliver every feature through a PR merged with `gh`. Codex reviews and sensible fixes are authorized throughout the work.
 
 ClothCraft is a place for humans and AI agents to build a garment tool and challenge its physics. Draw patterns, sew them, arrange them around an avatar, then try to make the simulation both more faithful and faster. The long-term idea is a stable authoring foundation with replaceable physics solvers. Today's engines are a CPU Newton reference and CPU / hybrid GPU VBD with OGC contact. There is no plugin ABI or universal solver selector yet.
 
@@ -14,7 +14,7 @@ The [CPU solver laboratory](docs/solver-lab.md) now has opt-in XPBD and finite-s
 
 1. Read [AGENTS.md](AGENTS.md), [handoff](docs/handoff.md) and [architecture](docs/architecture.md). Inspect the code before trusting a historical result.
 2. Run `cargo test --locked --no-default-features -j 2 -- --test-threads=2`. This does not use a GPU.
-3. Work on the requested change. The [roadmap](ROADMAP.md) and [rewrite backlog](docs/rewrite-backlog.md) are optional planning references.
+3. Select the next eligible ticket with `python3 scripts/factory.py start --owner SESSION`. The [roadmap](ROADMAP.md) and [rewrite backlog](docs/rewrite-backlog.md) are idea sources; `implementation/queue.json` is the implementation queue.
 4. Keep editable panel/boundary IDs and material coordinates stable. Rebuild every dependent cache after topology changes. Never derive rest shape from a drape.
 5. Leave a small reproducible example, relevant checks, and a precise handoff. Report failures as well as improvements.
 
