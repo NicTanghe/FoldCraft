@@ -1,8 +1,8 @@
 # Corner tool implementation plan
 
-Status: proposed, awaiting coordination approval. Corner rounding and coupled
-corner-handle editing are not implemented by this document or its draft PR.
-The owner requested a planning draft before source work starts.
+Status: the full interaction below remains proposed. A limited one-shot CPU
+radius transaction is implemented; see the scope and restrictions at the end of
+this document. Coupled corner-handle editing is not implemented.
 
 Task: [EXO-CAD-014, issue #233](https://github.com/erythrofr/ClothCraft/issues/233).
 The separate [administration PR #239](https://github.com/erythrofr/ClothCraft/pull/239)
