@@ -262,8 +262,9 @@ impl BoardNavigation {
             || viewport.is_none()
             || self.pan.is_some_and(|pan| Some(pan.viewport) != viewport)
         {
+            // Releasing the old capture does not own this event: it may be
+            // the first click delivered to an overlay or a resized viewport.
             result.capture_changed = self.pan.take().is_some();
-            result.consumed = result.capture_changed;
             return result;
         }
         let viewport = viewport.expect("validated viewport");

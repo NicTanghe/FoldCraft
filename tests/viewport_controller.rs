@@ -363,7 +363,7 @@ fn focus_pointer_ownership_or_viewport_changes_release_capture_without_jump() {
             ownership,
             NavigationEvent::OwnershipChanged,
         );
-        assert!(result.capture_changed && result.consumed && !result.view_changed);
+        assert!(result.capture_changed && !result.consumed && !result.view_changed);
         assert_eq!(board.navigation.captured_pointer(), None);
         assert_eq!(board.view, last_view);
         assert!(
@@ -439,4 +439,44 @@ fn invalid_pointer_samples_do_not_poison_pan_and_invalid_release_ends_it() {
     );
     assert_eq!(board.view, last_view);
     assert_eq!(board.navigation.captured_pointer(), None);
+}
+
+#[test]
+fn releasing_capture_does_not_swallow_a_new_owners_press() {
+    for (rect, ownership) in [
+        (
+            Some(viewport()),
+            InputOwnership {
+                pointer_available: false,
+                ..Default::default()
+            },
+        ),
+        (
+            LogicalViewport::new(DVec2::ZERO, DVec2::splat(500.)),
+            InputOwnership::default(),
+        ),
+    ] {
+        let mut board = Board::default();
+        board.event(press(1, viewport().center()));
+        let result = board.navigation.handle(
+            &mut board.view,
+            rect,
+            ownership,
+            NavigationEvent::PointerPressed {
+                id: 2,
+                position: viewport().center(),
+                button: PointerButton::Primary,
+                modifiers: Modifiers::default(),
+            },
+        );
+        assert_eq!(
+            result,
+            NavigationResult {
+                consumed: false,
+                view_changed: false,
+                capture_changed: true
+            }
+        );
+        assert_eq!(board.navigation.captured_pointer(), None);
+    }
 }
