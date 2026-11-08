@@ -4,6 +4,9 @@ pub mod avatar;
 pub mod avatar_import;
 pub mod avatar_measurements;
 pub mod contact;
+#[cfg(feature = "desktop")]
+#[path = "atelier/css_ui/mod.rs"]
+pub mod css_ui;
 pub mod document;
 pub mod energy;
 pub mod fabrics;
@@ -25,9 +28,6 @@ pub mod project;
 /// Shared optional renderer; the numerical modules do not depend on this module.
 #[cfg(feature = "desktop")]
 pub mod render;
-#[cfg(feature = "desktop")]
-#[path = "atelier/css_ui/mod.rs"]
-pub mod css_ui;
 pub mod session_protocol;
 pub mod solver;
 pub mod solver_lab;

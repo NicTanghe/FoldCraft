@@ -397,8 +397,7 @@ pub fn layout_studio_shell(
 pub type StudioV2UpdateFn =
     fn(&mut StudioV2State, cssimpler::renderer::FrameInfo) -> cssimpler::app::Invalidation;
 pub type StudioV2ViewFn = fn(&StudioV2State) -> Node;
-pub type StudioV2App<'a> =
-    cssimpler::app::App<'a, StudioV2State, StudioV2UpdateFn, StudioV2ViewFn>;
+pub type StudioV2App<'a> = cssimpler::app::App<'a, StudioV2State, StudioV2UpdateFn, StudioV2ViewFn>;
 
 fn studio_v2_default_update(
     _state: &mut StudioV2State,
@@ -450,9 +449,7 @@ pub fn run_studio_v2(
     initial_state: StudioV2State,
     config: WindowConfig,
 ) -> cssimpler::renderer::Result<()> {
-    let stylesheet = load_studio_stylesheet().map_err(|e| {
-        RendererError::Window(e.to_string())
-    })?;
+    let stylesheet = load_studio_stylesheet().map_err(|e| RendererError::Window(e.to_string()))?;
     let app = create_studio_v2_app(initial_state, &stylesheet);
     app.run(config)
 }
@@ -501,7 +498,10 @@ mod tests {
                 assert!(map.rail_2d.is_some(), "rail_2d should exist");
                 assert!(map.right_dock.is_some(), "right_dock should exist");
                 assert!(map.object_browser.is_some(), "object_browser should exist");
-                assert!(map.property_editor.is_some(), "property_editor should exist");
+                assert!(
+                    map.property_editor.is_some(),
+                    "property_editor should exist"
+                );
             }
         }
     }
@@ -518,20 +518,54 @@ mod tests {
         let map = extract_viewport_layout(&scene);
 
         // Core viewports must have positive width and height
-        let v3d = map.viewport_3d.expect("#viewport-3d must be present in Split mode");
-        let v2d = map.viewport_2d.expect("#viewport-2d must be present in Split mode");
-        assert!(v3d.width > 100.0, "3D viewport width must be > 100px: {}", v3d.width);
-        assert!(v3d.height > 100.0, "3D viewport height must be > 100px: {}", v3d.height);
-        assert!(v2d.width > 100.0, "2D viewport width must be > 100px: {}", v2d.width);
-        assert!(v2d.height > 100.0, "2D viewport height must be > 100px: {}", v2d.height);
+        let v3d = map
+            .viewport_3d
+            .expect("#viewport-3d must be present in Split mode");
+        let v2d = map
+            .viewport_2d
+            .expect("#viewport-2d must be present in Split mode");
+        assert!(
+            v3d.width > 100.0,
+            "3D viewport width must be > 100px: {}",
+            v3d.width
+        );
+        assert!(
+            v3d.height > 100.0,
+            "3D viewport height must be > 100px: {}",
+            v3d.height
+        );
+        assert!(
+            v2d.width > 100.0,
+            "2D viewport width must be > 100px: {}",
+            v2d.width
+        );
+        assert!(
+            v2d.height > 100.0,
+            "2D viewport height must be > 100px: {}",
+            v2d.height
+        );
 
         // Dock components must have positive width and height
         let ob = map.object_browser.expect("#object-browser must be present");
-        let pe = map.property_editor.expect("#property-editor must be present");
+        let pe = map
+            .property_editor
+            .expect("#property-editor must be present");
         assert!(ob.width > 50.0, "object browser width > 50px: {}", ob.width);
-        assert!(ob.height > 50.0, "object browser height > 50px: {}", ob.height);
-        assert!(pe.width > 50.0, "property editor width > 50px: {}", pe.width);
-        assert!(pe.height > 50.0, "property editor height > 50px: {}", pe.height);
+        assert!(
+            ob.height > 50.0,
+            "object browser height > 50px: {}",
+            ob.height
+        );
+        assert!(
+            pe.width > 50.0,
+            "property editor width > 50px: {}",
+            pe.width
+        );
+        assert!(
+            pe.height > 50.0,
+            "property editor height > 50px: {}",
+            pe.height
+        );
 
         // Physical rect conversions
         let phys_3d = map.viewport_3d_physical(1.5).expect("physical 3d rect");
@@ -609,7 +643,8 @@ mod tests {
         };
         let scene_modal = layout_studio_shell(&state_modal, &stylesheet, 1600, 900);
         let map_modal = extract_viewport_layout(&scene_modal);
-        let modal_target = route_pointer_event(v3d.x + 20.0, v3d.y + 20.0, &map_modal, &state_modal);
+        let modal_target =
+            route_pointer_event(v3d.x + 20.0, v3d.y + 20.0, &map_modal, &state_modal);
         assert_eq!(modal_target, InputTarget::ModalOrOverlay);
     }
 
@@ -718,8 +753,14 @@ mod tests {
         });
         assert!(!app.state().command_palette_open);
         let handled = app.handle_engine_event(&ctrl_k);
-        assert!(handled, "Ctrl+K should be handled by Studio V2 event handler");
-        assert!(app.state().command_palette_open, "command palette should be open");
+        assert!(
+            handled,
+            "Ctrl+K should be handled by Studio V2 event handler"
+        );
+        assert!(
+            app.state().command_palette_open,
+            "command palette should be open"
+        );
 
         // Test headless RGBA8 rendering
         let width = 800;

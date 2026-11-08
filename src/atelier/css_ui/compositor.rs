@@ -67,7 +67,11 @@ pub struct ViewportLayoutMap {
 
 impl ViewportLayoutMap {
     /// Convert a logical LayoutBox to a physical pixel rectangle.
-    pub fn to_physical(&self, layout: Option<LayoutBox>, scale_factor: f32) -> Option<PhysicalRect> {
+    pub fn to_physical(
+        &self,
+        layout: Option<LayoutBox>,
+        scale_factor: f32,
+    ) -> Option<PhysicalRect> {
         let b = layout?;
         if b.width <= 0.0 || b.height <= 0.0 {
             return None;
@@ -127,7 +131,10 @@ pub fn extract_viewport_layout(scene_root: &RenderNode) -> ViewportLayoutMap {
         rail_2d: cssimpler::renderer::find_element_bounds_by_id(&roots, "rail-2d"),
         top_bar: cssimpler::renderer::find_element_bounds_by_id(&roots, "top-bar"),
         status_bar: cssimpler::renderer::find_element_bounds_by_id(&roots, "status-bar"),
-        command_palette_modal: cssimpler::renderer::find_element_bounds_by_id(&roots, "command-palette-modal"),
+        command_palette_modal: cssimpler::renderer::find_element_bounds_by_id(
+            &roots,
+            "command-palette-modal",
+        ),
     }
 }
 
@@ -227,12 +234,7 @@ pub fn punch_viewport_cutouts(
 /// Pixels with alpha = 0 (punched viewport cutouts) preserve the destination frame untouched.
 /// Pixels with alpha = 255 (opaque UI chrome) completely overwrite the destination.
 /// Intermediate alpha blends smoothly using standard linear blending.
-pub fn composite_ui_over_frame(
-    ui_rgba: &[u8],
-    frame_rgba: &mut [u8],
-    width: usize,
-    height: usize,
-) {
+pub fn composite_ui_over_frame(ui_rgba: &[u8], frame_rgba: &mut [u8], width: usize, height: usize) {
     let pixel_count = width * height;
     let byte_count = pixel_count * 4;
     assert_eq!(ui_rgba.len(), byte_count);
@@ -286,7 +288,9 @@ pub fn generate_pattern_board_svg(
     let mut out = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{min_x} {min_y} {width} {height}\" class=\"pattern-preview-svg\">\n"
     );
-    out.push_str("  <g stroke=\"#3b82f6\" stroke-width=\"1.5\" fill=\"rgba(59, 130, 246, 0.1)\">\n");
+    out.push_str(
+        "  <g stroke=\"#3b82f6\" stroke-width=\"1.5\" fill=\"rgba(59, 130, 246, 0.1)\">\n",
+    );
 
     for panel in panels {
         if panel.vertices.is_empty() {
@@ -301,7 +305,10 @@ pub fn generate_pattern_board_svg(
             }
         }
         d.push('Z');
-        out.push_str(&format!("    <path d=\"{d}\" id=\"panel-{}\" />\n", panel.id));
+        out.push_str(&format!(
+            "    <path d=\"{d}\" id=\"panel-{}\" />\n",
+            panel.id
+        ));
 
         for ((x0, y0), (x1, y1)) in &panel.seam_lines {
             out.push_str(&format!(
