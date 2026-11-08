@@ -232,10 +232,11 @@
       "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "ready",
       "owner": null,
       "vruntime": 3.0,
-      "pr": "https://github.com/NicTanghe/FoldCraft/pull/14"
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/14",
+      "notes": "First slice PR14 merged after all6 CI checks and independent review: metric board transform, captured pan, anchored zoom. Broad ticket remains open: adapter wiring, hit-testing, staged edits and 3D gestures."
     },
     {
       "id": "FC-0020",
