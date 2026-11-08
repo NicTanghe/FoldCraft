@@ -757,7 +757,7 @@ mod visual_preview {
                 continue;
             };
             let texture = &textures[&mesh.texture_id];
-            for f in mesh.indices.chunks_exact(3) {
+            for f in mesh.indices.as_chunks::<3>().0 {
                 let v = [
                     &mesh.vertices[f[0] as usize],
                     &mesh.vertices[f[1] as usize],
