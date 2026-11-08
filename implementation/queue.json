@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 0.75,
+  "clock": 2.75,
   "tickets": [
     {
       "id": "FC-0001",
@@ -10,10 +10,193 @@
       "spent": 3.0,
       "priority": "high",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 0.75,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/1"
+    },
+    {
+      "id": "FC-0002",
+      "title": "Integrate upstream provenance, SVG format accuracy, and corner/cutout specifications",
+      "acceptance": "Merge upstream PR #223 (docs/exo-provenance.md), PR #235 (README.md, src/atelier/workspace.rs), PR #240 (docs/corner-tools.md), and EXO-CAD-013 / EXO-CAD-014 backlog specs from PR #232 and PR #239 into docs/rewrite-backlog.md; pass checks and open PR.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 1.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/4"
+    },
+    {
+      "id": "FC-0003",
+      "title": "Integrate workspace profile external-change detection and concurrent migration hardening",
+      "acceptance": "Merge upstream codex/profile-reconcile-test (src/atelier/workspace_profiles.rs) for cross-process profile write serialization, external change detection, reload, and stale-restore prevention; pass checks and open PR.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "high",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 1.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/3"
+    },
+    {
+      "id": "FC-0004",
+      "title": "Integrate portable fabric albedo textures and linear-light mipmaps",
+      "acceptance": "Merge upstream PR #208 (codex/fabric-textures: appearance.rs, fabrics_ui.rs, render.rs, cloth.wgsl, gpu_bench.rs, template.rs, tests/appearance.rs, docs/fabric-appearance.md); pass CPU and desktop checks and open PR.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "high",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 1.5,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/6"
+    },
+    {
+      "id": "FC-0005",
+      "title": "Integrate persistent pattern piece ruler measurements",
+      "acceptance": "Merge upstream PR #227 (feature/persistent-pattern-measurements: measure.rs, authoring.rs, polygon.rs, linked.rs, geometry.rs, tests/persistent_pattern_measurements.rs, tests/persistent_pom_references.rs) cleanly with current main; pass CPU and desktop checks and open PR.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "high",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 1.5,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/8"
+    },
+    {
+      "id": "FC-0006",
+      "title": "Integrate opt-in static physics-inspired mesh preparation",
+      "acceptance": "Merge upstream PR #230 (codex/physics-inspired-mesh-resolution), fixing PolygonPattern struct initializers (notches, seam_allowances, measurements) in src/mesh_resolution/mesh.rs, src/mesh_resolution/preparation.rs, and src/project.rs; pass CPU and desktop checks and open PR.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "normal",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 2.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/7"
+    },
+    {
+      "id": "FC-0007",
+      "title": "Integrate construction trims, repeat controls, and 2D/3D interior mesh pinning",
+      "acceptance": "Merge upstream codex/pin-trim-integration-review (combining PR #200, PR #212, PR #213, and PR #215) plus the top 4 commits of PR #215 (6a83b59..44a4631 for 2D board trim draft dragging and immutable material path index caching); pass CPU and desktop checks and open PR.",
+      "points": 4.0,
+      "spent": 4.0,
+      "priority": "normal",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/5"
+    },
+    {
+      "id": "FC-0008",
+      "title": "Integrate command palette and simulation reset guards for pending trim drafts",
+      "acceptance": "Merge upstream PR #224 commits (0a7deb9..ef34209 in src/atelier.rs and src/atelier/command_palette.rs) on top of the trim and pin integration; pass CPU and desktop checks and open PR.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "low",
+      "depends_on": [
+        "FC-0007"
+      ],
+      "status": "done",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/2"
+    },
+    {
+      "id": "FC-0009",
+      "title": "Extract UI-agnostic AtelierCore state and add cssimpler workspace dependency",
+      "acceptance": "Decouple Atelier workspace state, worker channels, and transient tool drafts from eframe::App; add cssimpler dependency behind desktop feature without breaking CPU-only build.",
+      "points": 3.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0008"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": null
+    },
+    {
+      "id": "FC-0010",
+      "title": "Implement cssimpler Studio V2 app shell, dark/light CSS tokens, and wgpu viewport compositor",
+      "acceptance": "Render exo-sample-3d 5-row/4-column Studio V2 layout via cssimpler::ui! and studio_v2.css with frameless WindowConfig and hybrid 3D wgpu / 2D board surface composition.",
+      "points": 4.0,
+      "spent": 0,
+      "priority": "high",
+      "depends_on": [
+        "FC-0009"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": null
+    },
+    {
+      "id": "FC-0011",
+      "title": "Port top menu bar, simulation transport, 3D/2D tool rails, radial menu, and command palette to cssimpler",
+      "acceptance": "Route all 12 typed CommandId actions, pending-draft guards (FC-0008), tool switching, and corner tool Radius/Shape controls (FC-0002) through cssimpler.",
+      "points": 3.0,
+      "spent": 0,
+      "priority": "high",
+      "depends_on": [
+        "FC-0010"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": null
+    },
+    {
+      "id": "FC-0012",
+      "title": "Port left Asset/Piece Browser and right 5-category Object Browser to cssimpler",
+      "acceptance": "Render bundled templates, Piece list, and 5-category Object Browser (2D Pattern, Sewing, 3D Form, Material, Environment) with workspace_profiles persistence (FC-0003).",
+      "points": 3.0,
+      "spent": 0,
+      "priority": "normal",
+      "depends_on": [
+        "FC-0010"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": null
+    },
+    {
+      "id": "FC-0013",
+      "title": "Port right Property Editor Part 1 (Information, Selected Line, Arrange, Measurements, and Pins) to cssimpler",
+      "acceptance": "Connect numeric point constructions, notches/allowances, persistent ruler measurements (FC-0005), and contour/interior pins (FC-0007) to cssimpler property accordions.",
+      "points": 3.0,
+      "spent": 0,
+      "priority": "normal",
+      "depends_on": [
+        "FC-0010"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": null
+    },
+    {
+      "id": "FC-0014",
+      "title": "Port right Property Editor Part 2 (Fabric & Appearance, Trims, Mesh Preparation, and Avatar Diagnostics) to cssimpler",
+      "acceptance": "Connect FabricAppearance albedo textures (FC-0004), construction trims & repeat controls (FC-0007), static mesh preparation (FC-0006), and avatar collision diagnostics to cssimpler.",
+      "points": 3.0,
+      "spent": 0,
+      "priority": "normal",
+      "depends_on": [
+        "FC-0010"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 2.75,
+      "pr": null
     }
   ]
 }
