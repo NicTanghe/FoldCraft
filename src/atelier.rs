@@ -20,6 +20,8 @@ mod chrome;
 mod command_palette;
 #[path = "atelier/commands.rs"]
 mod commands;
+#[allow(unused_imports)]
+pub use marvelous_cloth::css_ui;
 #[path = "atelier/documents_ui.rs"]
 mod documents_ui;
 #[path = "atelier/drafting_ui.rs"]
