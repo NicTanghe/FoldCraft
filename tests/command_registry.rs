@@ -1,9 +1,9 @@
-// The registry is intentionally dependency-free, so CPU-only integration
-// tests exercise the exact code used by the desktop adapter.
+// CPU-only integration tests exercise the public contract also reexported
+// by the desktop adapter.
 #[path = "../src/atelier/commands.rs"]
-mod commands;
+mod desktop_commands;
 
-use commands::{
+use marvelous_cloth::workspace_commands::{
     Backend, CapabilityContext, CommandContext, CommandId, REGISTRY, UnavailableReason, UndoPolicy,
     availability,
 };
@@ -154,4 +154,17 @@ fn each_unavailable_reason_has_a_clear_user_message() {
     ] {
         assert!(reason.message().len() >= 12);
     }
+}
+
+#[test]
+fn desktop_adapter_reexports_the_public_command_types_and_registry() {
+    // This assignment fails to compile if the desktop path defines its own IDs.
+    let id: desktop_commands::CommandId = CommandId::ToolEdit;
+    let context: desktop_commands::CapabilityContext = ready();
+    assert_eq!(
+        desktop_commands::availability(id, context),
+        availability(id, context)
+    );
+    assert_eq!(desktop_commands::REGISTRY, REGISTRY);
+    assert_eq!(id.descriptor(), CommandId::ToolEdit.descriptor());
 }
