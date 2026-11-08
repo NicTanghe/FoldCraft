@@ -59,6 +59,9 @@ In the Piece inspector, expand **Construction trims**, choose a type and click
 **New**. Edit local X, Y coordinates in millimetres; paths use one comma-separated
 pair per line. **Position first point on 2D board** moves the whole draft by a
 click; **Apply** validates and commits once, while **Cancel** discards the draft.
+Alternatively drag on the owning panel while this placement tool is armed; the
+draft moves with the original grip offset and becomes final only after Apply.
+Escape or losing focus during a drag restores its pre-drag position.
 For paths that exceed the direct validation estimate, panels up to 20,000
 triangles use a bounded material-space index. Ill-conditioned meshes, excessive
 work or too many attachments are rejected. A preview rebuild allows at most
@@ -134,6 +137,19 @@ objects are removed from the garment.
 Clean view hides the 3D overlay. The 2D preview has a separate 4096-unit work
 budget that also accounts for the extra width-outline segments.
 These overlays are not manufacturing-accurate previews.
+
+An opt-in CPU measurement, `cargo test --locked --features desktop --bin
+cloth-fit benchmark_dense_drag_preview_cpu -j 2 -- --ignored --nocapture`,
+measured a 20,000-triangle panel and 128-point topstitch over 18 timed moves:
+median 10.09 ms, p95 11.06 ms for draft update and preview rebuilding; unchanged
+cache checks were median 0.001 ms. This excludes rendering, visibility, window
+input, GPU and simulation. It is one synthetic machine result, not a frame-rate
+claim; rebuilding the material index on every changed path warrants profiling.
+With a one-panel immutable index cache on the same fixture, a follow-up run
+measured median 0.577 ms and p95 0.705 ms for changed drafts (18 samples).
+The cache is invalidated on garment replacement/remesh and is not used for
+physics. It holds at most one panel, so alternating panels can rebuild it; the
+measurement still excludes rendering, visibility, GPU and simulation.
 
 One local CPU test with 10,000 synthetic triangles and 1,536 rays measured
 170.29 ms exhaustive versus 5.94 ms including BVH construction; after moving
