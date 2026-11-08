@@ -229,26 +229,26 @@
       "title": "Extract UI-independent viewport gesture controller",
       "acceptance": "Plain logical coordinates and explicit viewport ownership drive real board pan/zoom first; later hit-testing and 3D staging remain explicit slices with tests.",
       "points": 4.0,
-      "spent": 0,
+      "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-viewport-controller",
-      "vruntime": 2.75,
-      "pr": null
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/14"
     },
     {
       "id": "FC-0020",
       "title": "Implement CPU corner tooling and synchronized seam cutout domain operations",
       "acceptance": "Reviewable original Rust geometry transactions for corner radius/shape and synchronized cutouts; preserve semantic references or refuse explicitly; slice delivery must not imply whole-ticket completion.",
       "points": 5.0,
-      "spent": 0,
+      "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-corner-domain",
-      "vruntime": 2.75,
-      "pr": null
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/13"
     },
     {
       "id": "FC-0021",
