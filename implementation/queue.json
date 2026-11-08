@@ -197,6 +197,19 @@
       "owner": null,
       "vruntime": 2.75,
       "pr": null
+    },
+    {
+      "id": "FC-0016",
+      "title": "Guard document replacement against unapplied construction trim drafts",
+      "acceptance": "New/Open/Close detect an unapplied trim draft; discard confirmation and cancellation retain existing lifecycle semantics, with meaningful CPU coverage.",
+      "points": 2.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-trim-lifecycle",
+      "vruntime": 2.75,
+      "pr": null
     }
   ]
 }
