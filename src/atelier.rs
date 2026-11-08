@@ -709,7 +709,6 @@ impl Atelier {
 
 #[allow(dead_code)]
 impl Atelier {
-
     pub fn has_pending_trim_draft(&self) -> bool {
         self.authoring.trims.has_pending_history_step()
     }
@@ -742,7 +741,10 @@ impl Atelier {
         core_state::measurement_summaries(&self.project)
     }
 
-    pub fn command_availability(&self, id: commands::CommandId) -> Result<(), commands::UnavailableReason> {
+    pub fn command_availability(
+        &self,
+        id: commands::CommandId,
+    ) -> Result<(), commands::UnavailableReason> {
         commands::availability(id, self.command_context())
     }
 

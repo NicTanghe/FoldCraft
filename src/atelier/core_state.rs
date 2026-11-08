@@ -10,13 +10,13 @@ use super::{
 };
 use marvelous_cloth::{
     fitting::{FittingProject, FittingScene},
-    garment::{export, presets::GarmentKind, seam::BoundaryRef, CompiledGarment},
+    garment::{CompiledGarment, export, presets::GarmentKind, seam::BoundaryRef},
     model::State,
     vbd::{Grab, VbdMetrics, VbdSettings},
 };
 use std::{
     path::{Path, PathBuf},
-    sync::{mpsc, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
 };
 
 pub use workspace_profiles::Store as WorkspaceProfileStore;
@@ -135,10 +135,7 @@ pub struct MeasurementSummary {
 }
 
 /// Reject commands that reload the scene and discard an uncommitted trim draft.
-pub fn check_trim_draft_for_command(
-    id: CommandId,
-    trim_pending: bool,
-) -> Result<(), &'static str> {
+pub fn check_trim_draft_for_command(id: CommandId, trim_pending: bool) -> Result<(), &'static str> {
     if trim_pending {
         return match id {
             CommandId::LoadTshirt | CommandId::LoadDress => {
@@ -226,10 +223,7 @@ pub fn material_summaries(project: &FittingProject) -> Vec<MaterialSummary> {
             density_kg_m2: fabric.properties.density,
             stretch_stiffness: fabric.properties.weft,
             bend_stiffness: fabric.properties.bend_weft,
-            has_texture: project
-                .template
-                .fabric_appearance
-                .contains_key(&fabric.id),
+            has_texture: project.template.fabric_appearance.contains_key(&fabric.id),
         })
         .collect()
 }
@@ -532,8 +526,7 @@ impl AtelierCore {
     pub fn execute_command(&mut self, id: CommandId) -> Result<(), String> {
         commands::availability(id, self.capability_context())
             .map_err(|reason| reason.message().to_owned())?;
-        check_trim_draft_for_command(id, self.has_pending_trim_draft())
-            .map_err(str::to_owned)?;
+        check_trim_draft_for_command(id, self.has_pending_trim_draft()).map_err(str::to_owned)?;
         check_measurement_draft_for_command(id, self.has_pending_measurement_draft())
             .map_err(str::to_owned)?;
         match id {
@@ -616,10 +609,17 @@ impl AtelierCore {
             return Err("Apply or cancel the trim draft before loading another document".into());
         }
         if self.has_pending_measurement_draft() {
-            return Err("Apply or cancel the measurement draft before loading another document".into());
+            return Err(
+                "Apply or cancel the measurement draft before loading another document".into(),
+            );
         }
         let scene = p.compile().map_err(|e| e.to_string())?;
-        if let Some(poly) = p.template.panels.iter().find_map(|panel| panel.polygon.as_ref()) {
+        if let Some(poly) = p
+            .template
+            .panels
+            .iter()
+            .find_map(|panel| panel.polygon.as_ref())
+        {
             let m = poly.meshing_settings();
             self.mesh_mm = m.target_edge_m * 1000.0;
             self.anisotropy = m.anisotropy;
@@ -651,7 +651,9 @@ impl AtelierCore {
             return Err("Apply or cancel the trim draft before resetting the simulation".into());
         }
         if self.has_pending_measurement_draft() {
-            return Err("Apply or cancel the measurement draft before resetting the simulation".into());
+            return Err(
+                "Apply or cancel the measurement draft before resetting the simulation".into(),
+            );
         }
         let mut p = self.project.clone();
         p.state = None;
@@ -777,7 +779,10 @@ mod tests {
         assert!(!core.state().x.is_empty());
         assert!(core.settings().dt > 0.0);
         assert_eq!(core.active_tool(), Tool::Edit);
-        assert_eq!(core.selection().primary_panel, Some(core.project().template.panels[0].id.clone()));
+        assert_eq!(
+            core.selection().primary_panel,
+            Some(core.project().template.panels[0].id.clone())
+        );
         assert!(!core.selection().is_empty());
         assert!(!core.has_pending_trim_draft());
         assert!(!core.has_pending_measurement_draft());
@@ -811,7 +816,10 @@ mod tests {
         let (_dir, mut core) = make_test_core();
 
         // Toggle simulation command
-        assert_eq!(core.command_availability(CommandId::ToggleSimulation), Ok(()));
+        assert_eq!(
+            core.command_availability(CommandId::ToggleSimulation),
+            Ok(())
+        );
 
         // When selection is cleared, tool move is disabled
         core.selection_mut().clear();
@@ -833,7 +841,9 @@ mod tests {
         // Pending trim draft guard prevents reset and reload
         core.set_pending_trim_draft(true);
         assert!(core.has_pending_trim_draft());
-        let reset_err = core.execute_command(CommandId::ResetSimulation).unwrap_err();
+        let reset_err = core
+            .execute_command(CommandId::ResetSimulation)
+            .unwrap_err();
         assert!(reset_err.contains("trim draft"));
         let load_err = core.execute_command(CommandId::LoadTshirt).unwrap_err();
         assert!(load_err.contains("trim draft"));
@@ -842,7 +852,9 @@ mod tests {
         // Pending measurement draft guard prevents reset and reload
         core.set_pending_measurement_draft(true);
         assert!(core.has_pending_measurement_draft());
-        let reset_meas_err = core.execute_command(CommandId::ResetSimulation).unwrap_err();
+        let reset_meas_err = core
+            .execute_command(CommandId::ResetSimulation)
+            .unwrap_err();
         assert!(reset_meas_err.contains("measurement draft"));
         let load_meas_err = core.execute_command(CommandId::LoadTshirt).unwrap_err();
         assert!(load_meas_err.contains("measurement draft"));
