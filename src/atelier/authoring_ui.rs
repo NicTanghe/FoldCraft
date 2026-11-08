@@ -38,6 +38,7 @@ pub(super) struct AuthoringUi {
     pub construction: ConstructionDraft,
     pub sewing: super::sewing_ui::SewingDraft,
     pub sewing_audit: super::sewing_ui::SewingAuditUi,
+    pub trims: super::trims_ui::TrimUi,
     pub radial: super::radial::Radial,
     pub selection: super::selection::Selection,
     pub tool: Tool,
@@ -827,6 +828,24 @@ fn construction_controls(
     }
 }
 
+/// Cancel an unfinished trim gesture even when the requested tool is already
+/// selected. This changes the draft only and never commits an authoring edit.
+pub(super) fn prepare_tool_transition(
+    authoring: &mut AuthoringUi,
+    tool: Tool,
+    rotate: bool,
+) -> bool {
+    if authoring.tool == tool
+        && (tool != Tool::Place || authoring.rotate == rotate)
+        && !authoring.board.freehand.enabled
+        && !authoring.trims.board_placement_active()
+    {
+        return false;
+    }
+    authoring.trims.cancel_board_placement();
+    true
+}
+
 impl Atelier {
     fn dart_properties(&mut self, ui: &mut egui::Ui) {
         if self.authoring.tool != Tool::Edit {
@@ -903,6 +922,10 @@ impl Atelier {
         }
     }
     fn undo_edit(&mut self, redo: bool) {
+        if let Some(message) = self.authoring.trims.intercept_history(redo) {
+            self.status = message.into();
+            return;
+        }
         self.cancel_preview();
         self.authoring.board.clear_preview();
         self.authoring.replace = false;
@@ -1094,30 +1117,38 @@ impl Atelier {
             }
             ui.separator();
             let undo = ui
-                .add_enabled_ui(self.authoring.history.can_undo(), |ui| {
-                    super::icons::icon_only(
-                        ui,
-                        super::icons::Icon::Undo,
-                        32.,
-                        false,
-                        "Undo · Ctrl+Z",
-                    )
-                })
+                .add_enabled_ui(
+                    self.authoring.history.can_undo()
+                        || self.authoring.trims.has_pending_history_step(),
+                    |ui| {
+                        super::icons::icon_only(
+                            ui,
+                            super::icons::Icon::Undo,
+                            32.,
+                            false,
+                            "Undo · Ctrl+Z",
+                        )
+                    },
+                )
                 .inner;
             self.smoke_target("undo", undo.rect.center());
             if undo.clicked() {
                 self.undo_edit(false);
             }
             let redo = ui
-                .add_enabled_ui(self.authoring.history.can_redo(), |ui| {
-                    super::icons::icon_only(
-                        ui,
-                        super::icons::Icon::Redo,
-                        32.,
-                        false,
-                        "Redo · Ctrl+Shift+Z",
-                    )
-                })
+                .add_enabled_ui(
+                    self.authoring.history.can_redo()
+                        && !self.authoring.trims.has_pending_history_step(),
+                    |ui| {
+                        super::icons::icon_only(
+                            ui,
+                            super::icons::Icon::Redo,
+                            32.,
+                            false,
+                            "Redo · Ctrl+Shift+Z",
+                        )
+                    },
+                )
                 .inner;
             self.smoke_target("redo", redo.rect.center());
             if redo.clicked() {
@@ -1126,10 +1157,7 @@ impl Atelier {
         });
     }
     pub(super) fn set_authoring_tool(&mut self, tool: Tool, rotate: bool) {
-        if self.authoring.tool == tool
-            && (tool != Tool::Place || self.authoring.rotate == rotate)
-            && !self.authoring.board.freehand.enabled
-        {
+        if !prepare_tool_transition(&mut self.authoring, tool, rotate) {
             return;
         }
         self.authoring.dart = None;
@@ -1342,6 +1370,7 @@ impl Atelier {
         };
         ui.label(&panel.name);
         self.pin_properties(ui, &panel);
+        self.trim_properties(ui, &panel);
         if let Some(fabric) = self
             .project
             .template
@@ -2863,6 +2892,132 @@ mod transition_tests {
         assert_eq!(state.scene.state.x, frozen_state.x);
         assert_eq!(state.scene.state.v, frozen_state.v);
         assert_eq!(state.scene.state.time, frozen_state.time);
+
+        // The numeric inspector can select an interior vertex, not only a
+        // contour point. Exercise its pin/release through the same installer.
+        let range = state
+            .scene
+            .garment
+            .panels
+            .iter()
+            .find(|p| p.id == panel)
+            .unwrap();
+        let boundary: std::collections::BTreeSet<_> = range
+            .boundaries
+            .values()
+            .flat_map(|vertices| vertices.iter().copied())
+            .collect();
+        let vertex = range
+            .vertices
+            .clone()
+            .find(|i| !boundary.contains(i))
+            .expect("fixture needs an interior vertex");
+        let free = state
+            .scene
+            .garment
+            .panels
+            .iter()
+            .find(|p| p.id != panel)
+            .unwrap()
+            .vertices
+            .start;
+        let uv = state.scene.garment.mesh.uv[vertex];
+        state.scene.state.v[vertex] = DVec3::X;
+        state.scene.state.v[free] = DVec3::Y;
+        let before_pin = state.scene.state.clone();
+        let (pin, candidate) = authoring::prepare_pin_edit(
+            &state.project.template,
+            &state.scene.garment,
+            &state.scene.state,
+            &panel,
+            &[uv],
+            true,
+        )
+        .unwrap();
+        super::super::pins_ui::validate(&pin, &candidate, Some(&state.scene.collider.surface))
+            .unwrap();
+        state
+            .authoring
+            .history
+            .record(state.project.template.clone());
+        *state.pending = true; // Simulate a stale result; this is not a worker run.
+        state.install(pin);
+        assert_eq!(*state.generation, 19);
+        assert!(!*state.pending && !*state.playing);
+        assert!(super::super::current_worker_result(response(18), *state.generation).is_none());
+        assert_eq!(state.scene.state.x, before_pin.x);
+        assert_eq!(state.scene.state.time, before_pin.time);
+        assert_eq!(state.scene.state.v[vertex], DVec3::ZERO);
+        assert_eq!(state.scene.state.v[free], DVec3::Y);
+        let stored = state
+            .project
+            .template
+            .pin_targets
+            .iter()
+            .find(|p| p.panel == panel && p.uv == uv)
+            .unwrap();
+        assert_eq!(stored.world, before_pin.x[vertex]);
+        let json = serde_json::to_vec(&state.project).unwrap();
+        let reopened: FittingProject = serde_json::from_slice(&json).unwrap();
+        assert_eq!(
+            reopened.template.pin_targets,
+            state.project.template.pin_targets
+        );
+
+        let (release, candidate) = authoring::prepare_pin_edit(
+            &state.project.template,
+            &state.scene.garment,
+            &state.scene.state,
+            &panel,
+            &[uv],
+            false,
+        )
+        .unwrap();
+        super::super::pins_ui::validate(&release, &candidate, Some(&state.scene.collider.surface))
+            .unwrap();
+        state
+            .authoring
+            .history
+            .record(state.project.template.clone());
+        state.install(release);
+        assert_eq!(*state.generation, 20);
+        assert_eq!(state.scene.state.x, before_pin.x);
+        assert_eq!(state.scene.state.v[free], DVec3::Y);
+        assert!(
+            !state
+                .project
+                .template
+                .pin_targets
+                .iter()
+                .any(|p| p.panel == panel && p.uv == uv)
+        );
+        let previous = state.scene.garment.clone();
+        let current = state.scene.state.clone();
+        let undo = state
+            .authoring
+            .history
+            .restore_checked(&state.project.template, false, |edit| {
+                super::super::pins_ui::validate(
+                    edit,
+                    &edit.state_after(&previous, &current),
+                    Some(&state.scene.collider.surface),
+                )
+            })
+            .unwrap();
+        state.install(undo);
+        assert_eq!(*state.generation, 21);
+        assert!(super::super::current_worker_result(response(20), *state.generation).is_none());
+        assert_eq!(state.scene.state.x, before_pin.x);
+        assert_eq!(state.scene.state.v[vertex], DVec3::ZERO);
+        assert_eq!(state.scene.state.v[free], DVec3::Y);
+        assert!(
+            state
+                .project
+                .template
+                .pin_targets
+                .iter()
+                .any(|p| p.panel == panel && p.uv == uv && p.world == before_pin.x[vertex])
+        );
     }
     #[test]
     fn named_widgets_markings_stage_cancel_apply_and_show_invalid_input() {
