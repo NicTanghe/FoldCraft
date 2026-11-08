@@ -125,13 +125,26 @@ fn install_template(
     document.dirty = true;
     document.browser = Default::default();
 }
+fn has_document_draft(authoring: &AuthoringUi) -> bool {
+    !authoring.draft.is_empty()
+        || authoring.measure.has_changes()
+        || authoring.trims.has_pending_history_step()
+        || !authoring.ends.is_empty()
+        || authoring.sewing.sides.iter().any(|s| !s.is_empty())
+        || authoring.sewing.start.is_some()
+}
+
+fn needs_document_decision(document: &DocumentUi, authoring: &AuthoringUi) -> bool {
+    document.dirty || authoring.preview.is_some() || has_document_draft(authoring)
+}
+
 impl Atelier {
     pub(super) fn svg_dialog_status(&self) -> (bool, bool, usize, bool) {
         self.document.svg_import.smoke_status()
     }
     pub(super) fn open_svg_import(&mut self) {
-        if self.authoring.preview.is_some() || self.has_document_draft() {
-            self.status = "Finish or cancel the current drawing, placement or sewing before importing patterns".into();
+        if self.authoring.preview.is_some() || has_document_draft(&self.authoring) {
+            self.status = "Finish or cancel the current drawing, placement, sewing or trim draft before importing patterns".into();
             return;
         }
         self.playing = false;
@@ -176,8 +189,8 @@ impl Atelier {
         }
     }
     fn open_pattern_import(&mut self) {
-        if self.authoring.preview.is_some() || self.has_document_draft() {
-            self.status = "Finish or cancel the current drawing, placement or sewing before importing patterns".into();
+        if self.authoring.preview.is_some() || has_document_draft(&self.authoring) {
+            self.status = "Finish or cancel the current drawing, placement, sewing or trim draft before importing patterns".into();
             return;
         }
         self.playing = false;
@@ -282,8 +295,7 @@ impl Atelier {
     }
     fn template_browser_tick(&mut self, ctx: &egui::Context) {
         use template_browser::Action;
-        let dirty =
-            self.document.dirty || self.authoring.preview.is_some() || self.has_document_draft();
+        let dirty = needs_document_decision(&self.document, &self.authoring);
         let action = self.document.browser.show(ctx, dirty);
         match action {
             Some(Action::Cancel) => {
@@ -387,13 +399,6 @@ impl Atelier {
             None => {}
         }
     }
-    fn has_document_draft(&self) -> bool {
-        !self.authoring.draft.is_empty()
-            || self.authoring.measure.has_changes()
-            || !self.authoring.ends.is_empty()
-            || self.authoring.sewing.sides.iter().any(|s| !s.is_empty())
-            || self.authoring.sewing.start.is_some()
-    }
     fn pause_document(&mut self, ctx: &egui::Context) {
         self.playing = false;
         self.generation += 1;
@@ -456,8 +461,8 @@ impl Atelier {
                 self.status = format!(
                     "Saved {}{}",
                     path.display(),
-                    if self.has_document_draft() {
-                        " · unfinished drawing/sewing is not included"
+                    if has_document_draft(&self.authoring) {
+                        " · unapplied drafts are not included"
                     } else {
                         ""
                     }
@@ -472,11 +477,11 @@ impl Atelier {
     }
     fn can_replace_document(&mut self, ctx: &egui::Context) -> bool {
         self.pause_document(ctx);
-        if !self.document.dirty && self.authoring.preview.is_none() && !self.has_document_draft() {
+        if !needs_document_decision(&self.document, &self.authoring) {
             return true;
         }
         match MessageDialog::new().set_title("Unsaved garment")
-            .set_description("Save changes before continuing?\nMeasurement drafts require an explicit apply/discard decision when saving.\nUnfinished drawing/sewing drafts are not saved.\nYes: save · No: discard · Cancel: stay here.")
+            .set_description("Save changes before continuing?\nMeasurement drafts require an explicit apply/discard decision when saving.\nUnfinished drawing/sewing and unapplied trims are not saved. Cancel and Apply trims first to retain them.\nYes: save · No: discard · Cancel: stay here.")
             .set_buttons(MessageButtons::YesNoCancel).show() {
             MessageDialogResult::Yes => self.save_document(ctx, false),
             MessageDialogResult::No => true,
@@ -782,6 +787,99 @@ impl Atelier {
             if self.document.dirty { " *" } else { "" }
         )));
         ctx.request_repaint_after(Duration::from_secs(5));
+    }
+}
+
+#[cfg(test)]
+mod draft_tests {
+    use super::super::{authoring_smoke::widget_harness::Harness, trims_ui::trim_controls};
+    use super::*;
+    use marvelous_cloth::garment::{
+        GarmentTemplate,
+        trims::{Trim, TrimKind},
+    };
+
+    struct Case {
+        authoring: AuthoringUi,
+        template: GarmentTemplate,
+        document: DocumentUi,
+    }
+
+    fn draw(ui: &mut egui::Ui, case: &mut Case) {
+        let panel = &case.template.panels[0];
+        assert!(
+            trim_controls(ui, &mut case.authoring.trims, &case.template, panel, true).is_none()
+        );
+    }
+
+    #[test]
+    fn named_widgets_trim_drafts_guard_clean_document_replacement() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut template = GarmentTemplate::two_panel_demo();
+        template.trims.push(Trim {
+            id: "saved_trim".into(),
+            panel_id: template.panels[0].id.clone(),
+            kind: TrimKind::Zipper {
+                path_m: vec![glam::DVec2::new(0.1, 0.1), glam::DVec2::new(0.2, 0.1)],
+                width_m: 0.01,
+            },
+        });
+        let original = serde_json::to_vec(&template).unwrap();
+        let mut case = Case {
+            authoring: AuthoringUi::default(),
+            template,
+            document: DocumentUi::new(
+                directory.path(),
+                Some(directory.path().join("saved.json")),
+                false,
+            ),
+        };
+        let saved_path = case.document.path.clone();
+        let mut h = Harness::new(egui::vec2(1000., 900.));
+        h.frame(&mut case, &mut draw);
+        h.click("trim.section", &mut case, &mut draw).unwrap();
+        h.frame(&mut case, &mut draw);
+        assert!(!needs_document_decision(&case.document, &case.authoring));
+        h.click("trim.edit.saved_trim", &mut case, &mut draw)
+            .unwrap();
+        assert!(!needs_document_decision(&case.document, &case.authoring));
+        h.frame(&mut case, &mut draw);
+
+        // Even unchanged trim values have pending work while a gesture is armed.
+        h.click("trim.repeat", &mut case, &mut draw).unwrap();
+        assert!(needs_document_decision(&case.document, &case.authoring));
+        h.frame(&mut case, &mut draw);
+        h.click("trim.repeat.cancel", &mut case, &mut draw).unwrap();
+        assert!(!needs_document_decision(&case.document, &case.authoring));
+        h.frame(&mut case, &mut draw);
+        h.click("trim.place_3d", &mut case, &mut draw).unwrap();
+        assert!(needs_document_decision(&case.document, &case.authoring));
+        case.authoring.trims.cancel_board_placement();
+        assert!(!needs_document_decision(&case.document, &case.authoring));
+        h.frame(&mut case, &mut draw);
+        h.click("trim.draw", &mut case, &mut draw).unwrap();
+        assert!(needs_document_decision(&case.document, &case.authoring));
+        h.frame(&mut case, &mut draw);
+        h.click("trim.cancel_path", &mut case, &mut draw).unwrap();
+        assert!(!needs_document_decision(&case.document, &case.authoring));
+        h.frame(&mut case, &mut draw);
+
+        h.replace_text("trim.width", "invalid", &mut case, &mut draw)
+            .unwrap();
+        assert!(needs_document_decision(&case.document, &case.authoring));
+        // Draft editing must require a decision without changing the saved document.
+        assert!(!case.document.dirty);
+        h.click("trim.cancel", &mut case, &mut draw).unwrap();
+        assert!(!needs_document_decision(&case.document, &case.authoring));
+        h.frame(&mut case, &mut draw);
+        h.click("trim.new", &mut case, &mut draw).unwrap();
+        assert!(needs_document_decision(&case.document, &case.authoring));
+        h.click("trim.cancel", &mut case, &mut draw).unwrap();
+        assert!(!needs_document_decision(&case.document, &case.authoring));
+        assert!(!case.document.dirty);
+        assert_eq!(case.document.path, saved_path);
+        assert_eq!(serde_json::to_vec(&case.template).unwrap(), original);
+        assert!(!case.authoring.history.can_undo());
     }
 }
 
