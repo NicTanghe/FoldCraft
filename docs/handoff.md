@@ -8,6 +8,13 @@ The [factory workflow](software-factory.md) supersedes the direct-feature-merge 
 
 Removed the upstream coordinator, task registration, catalog enforcement and mandatory claim/scope process. Direct commits and merges are supported; issues and PRs are optional. The former task catalog is retained as [optional planning context](rewrite-backlog.md). Build, CPU, desktop and packaging checks remain. Entries below describe historical work and session-specific decisions, not current Git permissions or task reservations.
 
+## Upstream hardening integration (FC-0015) — 8 November 2026
+
+Inspected and integrated the remaining unmerged upstream codex branches:
+1. `origin/codex/gltf-attribute-hardening` (`4d7d2dc`): Validate discarded glTF attribute references in `src/gltf_avatar.rs` and `tests/gltf_avatar.rs`. Discarded vertex attributes require existing accessors and matching counts even when geometry-only import discards values. Previously merged upstream as PR #237 (`e754e58`); verified identical in tree and exercised by `tests/gltf_avatar.rs` (13 CPU tests passing).
+2. `origin/codex/cpu-worker-test-harness` (`9ddbeff`): Real simulation worker headless test harness without GPU, CPU recovery after unavailable GPU requests, worker mailbox across in-flight generation changes, and diagnostic requests through the CPU worker in `src/atelier/worker.rs`. Previously merged upstream as PR #238 (`16761c5`); verified identical in tree and exercised by `final_diagnostics_transport_tests` (4 CPU tests passing).
+3. `origin/codex/avatar-import-docs-74` (`80aa49b`): Documented static avatar import acceptance evidence in `docs/rewrite-backlog.md` under EXO-IO-009, recording completed native static avatar import with confirmation, owned canonical OBJ staging, portable save and worker-generation invalidation from PR #74.
+
 ## Default sphere demo mesh controls — 31 October 2026
 
 Plain `cargo run` still launches the original cloth-over-sphere reference
