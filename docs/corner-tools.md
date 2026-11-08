@@ -1,8 +1,8 @@
 # Corner tool implementation plan
 
-Status: proposed, awaiting coordination approval. Corner rounding and coupled
-corner-handle editing are not implemented by this document or its draft PR.
-The owner requested a planning draft before source work starts.
+Status: the full interaction below remains proposed. A limited one-shot CPU
+radius transaction is implemented; see the scope and restrictions at the end of
+this document. Coupled corner-handle editing is not implemented.
 
 Task: [EXO-CAD-014, issue #233](https://github.com/erythrofr/ClothCraft/issues/233).
 The separate [administration PR #239](https://github.com/erythrofr/ClothCraft/pull/239)
@@ -153,3 +153,27 @@ corner assignment and wait for the authoritative board's accepted claim.
 An open draft PR, green CI, task registration or approval of this plan alone
 does not establish source ownership. This plan does not release another session
 or mark a prerequisite complete.
+
+## Initial CPU radius transaction
+
+`Command::RoundCorner` is a one-shot CPU operation, addressed by panel ID and
+outgoing boundary ID with radius in metres. It constructs one ordinary cubic
+fillet between two straight boundaries at a convex corner whose direction change
+is at most 90 degrees. Both retained straight boundaries keep their names; the
+new curve receives a deterministic unused name. The standard tangent cubic
+approximates the circular arc; for a quarter circle its maximum radial error is
+about 0.0273% of the radius (approximately 0.00273 mm at 10 mm radius). This
+is separate from the later curve-flattening and meshing tolerances.
+
+The transaction rejects invalid or oversized radii, curved incident boundaries,
+degenerate or unsupported corners, and any seams, targets, allowances, notches,
+measurements or pins on either affected panel. Graphics and trims use the
+existing contour-change guard. A linked partner is reflected once and the entire
+result must compile before installation. Linked edits that change the normalized
+material frame are also refused because partner placement is not remapped. This
+conservative preflight includes
+unaffected references; no station migration is implemented. The command stores
+no construction source, so a rounded corner cannot be re-edited as a radius.
+Custom Bézier Shape editing, UI gestures, synchronized seam cutouts, and the
+broader reference migration remain unimplemented. This CPU command alone does
+not implement the interaction described above.
