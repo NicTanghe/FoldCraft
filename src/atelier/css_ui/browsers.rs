@@ -25,8 +25,8 @@ use std::path::Path;
 use cssimpler::core::Node;
 use cssimpler::ui;
 
-use marvelous_cloth::fitting::{FittingProject, FittingScene};
-use marvelous_cloth::garment::{
+use crate::fitting::{FittingProject, FittingScene};
+use crate::garment::{
     CompiledGarment,
     seam::BoundaryRef,
     template::{GarmentTemplate, Panel},
@@ -730,10 +730,10 @@ fn render_category_2d_pattern(template: &GarmentTemplate) -> Node {
 fn render_boundary_ref_chain(first: &BoundaryRef, tail: &[BoundaryRef]) -> String {
     let mut parts = Vec::new();
     let edge_str = first.edge.as_deref().unwrap_or(match first.side {
-        marvelous_cloth::garment::seam::Side::Top => "top",
-        marvelous_cloth::garment::seam::Side::Right => "right",
-        marvelous_cloth::garment::seam::Side::Bottom => "bottom",
-        marvelous_cloth::garment::seam::Side::Left => "left",
+        crate::garment::seam::Side::Top => "top",
+        crate::garment::seam::Side::Right => "right",
+        crate::garment::seam::Side::Bottom => "bottom",
+        crate::garment::seam::Side::Left => "left",
     });
     parts.push(format!(
         "{}:{} [{:.2}..{:.2}]",
@@ -742,10 +742,10 @@ fn render_boundary_ref_chain(first: &BoundaryRef, tail: &[BoundaryRef]) -> Strin
 
     for b in tail {
         let edge = b.edge.as_deref().unwrap_or(match b.side {
-            marvelous_cloth::garment::seam::Side::Top => "top",
-            marvelous_cloth::garment::seam::Side::Right => "right",
-            marvelous_cloth::garment::seam::Side::Bottom => "bottom",
-            marvelous_cloth::garment::seam::Side::Left => "left",
+            crate::garment::seam::Side::Top => "top",
+            crate::garment::seam::Side::Right => "right",
+            crate::garment::seam::Side::Bottom => "bottom",
+            crate::garment::seam::Side::Left => "left",
         });
         parts.push(format!(
             " -> {}:{} [{:.2}..{:.2}]",
@@ -1204,11 +1204,11 @@ fn render_category_environment(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::garment::presets::GarmentKind;
+    use crate::garment::shapes::MirrorAxis;
+    use crate::garment::template::MirrorLink;
+    use crate::template_catalog::Selection;
     use cssimpler::core::ElementNode;
-    use marvelous_cloth::garment::presets::GarmentKind;
-    use marvelous_cloth::garment::shapes::MirrorAxis;
-    use marvelous_cloth::garment::template::MirrorLink;
-    use marvelous_cloth::template_catalog::Selection;
 
     // Helper functions for DOM inspection
     fn find_element_by_id<'a>(node: &'a Node, target_id: &str) -> Option<&'a ElementNode> {
