@@ -24,10 +24,12 @@ pub use compositor::{
     extract_viewport_layout, generate_pattern_board_svg, pattern_board_svg_node,
     punch_viewport_cutouts, route_pointer_event, studio_window_config,
 };
+#[allow(unused_imports)]
 pub use palette::{
     ALL_COMMAND_IDS, CommandPaletteState, PaletteAction, PaletteItem, PaletteKey, command_aliases,
     evaluate_availability, is_subsequence, matches_query, render_command_palette,
 };
+#[allow(unused_imports)]
 pub use rails::{
     BackendBadge, CornerMode, CornerToolParams, PinMode, RadialMenuAction, RadialMenuState,
     RadialSector, Rail2dAction, Rail2dState, Rail3dAction, Rail3dState, Tool2d, Tool3d,
