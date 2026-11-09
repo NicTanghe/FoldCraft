@@ -75,7 +75,7 @@ mod worker;
 #[path = "atelier/workspace.rs"]
 mod workspace;
 #[path = "atelier/workspace_profiles.rs"]
-mod workspace_profiles;
+pub mod workspace_profiles;
 use authoring_ui::{AuthoringUi, Tool};
 use worker::Work;
 

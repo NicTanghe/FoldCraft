@@ -148,10 +148,10 @@
       "depends_on": [
         "FC-0010"
       ],
-      "status": "ready",
+      "status": "done",
       "owner": null,
       "vruntime": 2.75,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/18"
     },
     {
       "id": "FC-0012",
@@ -163,10 +163,10 @@
       "depends_on": [
         "FC-0010"
       ],
-      "status": "ready",
+      "status": "done",
       "owner": null,
       "vruntime": 2.75,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/17"
     },
     {
       "id": "FC-0013",
@@ -298,10 +298,10 @@
       "spent": 0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-direct-wgpu",
+      "status": "review",
+      "owner": null,
       "vruntime": 2.9583333333333335,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/24"
     }
   ]
 }
