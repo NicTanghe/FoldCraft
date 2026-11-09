@@ -193,10 +193,10 @@
       "depends_on": [
         "FC-0010"
       ],
-      "status": "ready",
+      "status": "done",
       "owner": null,
       "vruntime": 2.75,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/15"
     },
     {
       "id": "FC-0016",
@@ -232,8 +232,8 @@
       "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "ready",
-      "owner": null,
+      "status": "active",
+      "owner": "codex-props2",
       "vruntime": 3.0,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/14",
       "notes": "First slice PR14 merged after all6 CI checks and independent review: metric board transform, captured pan, anchored zoom. Broad ticket remains open: adapter wiring, hit-testing, staged edits and 3D gestures."
