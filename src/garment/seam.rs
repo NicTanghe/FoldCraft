@@ -15,7 +15,7 @@ pub enum Side {
     Left,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BoundaryRef {
     /// Direction of this segment within a sewing chain, after trimming.

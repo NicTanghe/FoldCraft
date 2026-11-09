@@ -14,6 +14,7 @@ use crate::{
 use glam::{DQuat, DVec2, DVec3, EulerRot};
 pub mod clipboard;
 pub mod constructions;
+mod corner_tool;
 mod geometry;
 mod linked;
 use crate::garment::shapes::{BooleanOp, MirrorAxis, Primitive};
@@ -167,6 +168,12 @@ pub enum Command {
         panel: String,
         edge: String,
         at_m: f64,
+    },
+    /// Round the start of a named outgoing boundary in material metres.
+    RoundCorner {
+        panel: String,
+        edge: String,
+        radius_m: f64,
     },
     /// Create an actual V-shaped cut-and-sewn dart along an unsewn straight
     /// boundary. The triangular material wedge is cut away and the two new
@@ -2165,6 +2172,14 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
                 allow_ease: false,
             });
             normalize(p);
+            selected = Some(panel);
+        }
+        Command::RoundCorner {
+            panel,
+            edge,
+            radius_m,
+        } => {
+            corner_tool::round(source, &mut template, &panel, &edge, radius_m)?;
             selected = Some(panel);
         }
         Command::RemovePoint { panel, point } => {

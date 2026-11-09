@@ -1,4 +1,5 @@
 //! Named presentation snapshots; garment and solver state are intentionally absent.
+#![allow(private_interfaces)]
 use super::{layout::WorkspaceLayout, settings::Preferences};
 use crate::render::appearance::Appearance;
 use eframe::egui;
