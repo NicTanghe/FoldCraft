@@ -6,7 +6,6 @@ use marvelous_cloth::{
     gpu_vbd::contact_filter::GpuContactFilter,
     ogc::{ContactSet, OgcSettings, OgcWorld},
 };
-use wgpu;
 
 fn equal(a: &ContactSet, b: &ContactSet) {
     assert_eq!(a.radii, b.radii);
