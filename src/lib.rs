@@ -1,9 +1,12 @@
 //! SI units throughout: metres, kilograms, seconds, Newtons.
 extern crate self as marvelous_cloth;
+
 pub mod authoring;
 pub mod avatar;
 pub mod avatar_import;
 pub mod avatar_measurements;
+#[path = "atelier/commands.rs"]
+pub mod commands;
 pub mod contact;
 #[cfg(feature = "desktop")]
 #[path = "atelier/css_ui/mod.rs"]
