@@ -133,10 +133,10 @@
       "depends_on": [
         "FC-0009"
       ],
-      "status": "ready",
+      "status": "done",
       "owner": null,
       "vruntime": 2.75,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/16"
     },
     {
       "id": "FC-0011",
