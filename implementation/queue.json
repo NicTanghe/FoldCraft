@@ -148,7 +148,7 @@
       "depends_on": [
         "FC-0010"
       ],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 2.75,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/18"
