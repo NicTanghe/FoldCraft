@@ -2,7 +2,6 @@
 //! state stays on the worker within a generation. Only one result snapshot is
 //! retained when the window is slow or hidden (no growing animation queue).
 use eframe::egui;
-use wgpu;
 use marvelous_cloth::{
     fitting::FittingScene,
     gpu_vbd::GpuVbd,
@@ -17,6 +16,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use wgpu;
 
 /// UI-agnostic repaint / wakeup callback invoked by the worker when a simulation step finishes.
 #[derive(Clone)]

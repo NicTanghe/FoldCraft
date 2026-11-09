@@ -1,6 +1,5 @@
 //! Hardware acceptance gates for sparse directional contacts. Explicit opt-in.
 #![cfg(feature = "desktop")]
-use wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     garment::GarmentTemplate,
@@ -9,6 +8,7 @@ use marvelous_cloth::{
     vbd::{VbdSettings, VbdSolver},
 };
 use std::sync::Arc;
+use wgpu;
 mod common;
 
 fn gpu() -> GpuVbd {

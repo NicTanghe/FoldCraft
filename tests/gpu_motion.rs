@@ -1,6 +1,5 @@
 //! Explicit hardware regression. Never run as part of ordinary CPU checks.
 #![cfg(feature = "desktop")]
-use wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     garment::GarmentTemplate,
@@ -8,6 +7,7 @@ use marvelous_cloth::{
     vbd::{VbdSettings, VbdSolver},
 };
 use std::sync::Arc;
+use wgpu;
 mod common;
 
 #[test]

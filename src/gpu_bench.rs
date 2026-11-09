@@ -1,10 +1,10 @@
 //! Opt-in renderer benchmark. Timestamp results exclude CPU preparation/readback.
 use crate::render::{Camera, DrawModel, Viewport};
 use eframe::{egui, egui_wgpu};
-use wgpu;
 use marvelous_cloth::fitting::FittingScene;
 use marvelous_cloth::garment::appearance::{AlbedoTexture, FabricAppearance};
 use std::{path::Path, sync::Arc, time::Instant};
+use wgpu;
 
 pub fn run(scene: &FittingScene, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     pollster::block_on(run_async(scene, output))

@@ -1,11 +1,11 @@
 //! Optional brush-drag acceptance. Ordinary test runs must not initialize a GPU.
 #![cfg(feature = "desktop")]
-use wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     gpu_vbd::GpuVbd,
     vbd::{Grab, VbdSettings, VbdSolver, grab::surface_patch},
 };
+use wgpu;
 mod common;
 
 #[test]
