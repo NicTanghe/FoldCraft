@@ -21,6 +21,9 @@ pub mod palette;
 pub mod properties_part1;
 pub mod rails;
 
+#[cfg(feature = "desktop")]
+pub mod properties_part2;
+
 #[allow(unused_imports)]
 pub use compositor::{
     InputTarget, PatternPanelPreview, PhysicalRect, ViewportLayoutMap, composite_ui_over_frame,
