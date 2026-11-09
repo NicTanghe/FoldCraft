@@ -20,10 +20,10 @@ mod chrome;
 mod command_palette;
 #[path = "atelier/commands.rs"]
 mod commands;
-#[path = "atelier/css_ui/mod.rs"]
-pub mod css_ui;
 #[path = "atelier/core_state.rs"]
 pub mod core_state;
+#[path = "atelier/css_ui/mod.rs"]
+pub mod css_ui;
 pub use core_state::*;
 #[path = "atelier/documents_ui.rs"]
 mod documents_ui;
