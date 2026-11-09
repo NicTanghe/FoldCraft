@@ -1,6 +1,6 @@
 //! Reusable allocations. Capacity grows, but stale tail bytes are never indexed:
 //! every dispatch, incidence range and readback is bounded by the current scene.
-use eframe::wgpu;
+use wgpu;
 
 pub(super) struct Resources {
     pub buffers: Vec<wgpu::Buffer>,

@@ -1,7 +1,8 @@
 //! Fixed-step worker independent of repaint frequency. The latest controls win;
 //! state stays on the worker within a generation. Only one result snapshot is
 //! retained when the window is slow or hidden (no growing animation queue).
-use eframe::{egui, wgpu};
+use eframe::egui;
+use wgpu;
 use marvelous_cloth::{
     fitting::FittingScene,
     gpu_vbd::GpuVbd,

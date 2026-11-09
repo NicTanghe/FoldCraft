@@ -1,6 +1,6 @@
 //! Optional brush-drag acceptance. Ordinary test runs must not initialize a GPU.
 #![cfg(feature = "desktop")]
-use eframe::wgpu;
+use wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     gpu_vbd::GpuVbd,

@@ -1,6 +1,6 @@
 //! Hardware acceptance gates for sparse directional contacts. Explicit opt-in.
 #![cfg(feature = "desktop")]
-use eframe::wgpu;
+use wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     garment::GarmentTemplate,
