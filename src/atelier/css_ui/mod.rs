@@ -14,6 +14,8 @@
 
 #![allow(dead_code)]
 
+#[cfg(feature = "desktop")]
+pub mod browsers;
 pub mod compositor;
 pub mod palette;
 pub mod rails;
