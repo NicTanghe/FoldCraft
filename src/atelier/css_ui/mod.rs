@@ -14,9 +14,15 @@
 
 #![allow(dead_code)]
 
+#[cfg(feature = "desktop")]
+pub mod browsers;
 pub mod compositor;
 pub mod palette;
+pub mod properties_part1;
 pub mod rails;
+
+#[cfg(feature = "desktop")]
+pub mod properties_part2;
 
 #[allow(unused_imports)]
 pub use compositor::{

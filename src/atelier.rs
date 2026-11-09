@@ -75,8 +75,8 @@ mod worker;
 #[path = "atelier/workspace.rs"]
 mod workspace;
 #[path = "atelier/workspace_profiles.rs"]
-mod workspace_profiles;
-use authoring_ui::AuthoringUi;
+pub mod workspace_profiles;
+use authoring_ui::{AuthoringUi, Tool};
 use worker::Work;
 
 /// Export is not atomic across artifacts: an error may leave earlier files.
