@@ -8,7 +8,6 @@ use marvelous_cloth::{
     vbd::{VbdSettings, VbdSolver},
 };
 use std::sync::Arc;
-use wgpu;
 mod common;
 
 fn gpu() -> GpuVbd {

@@ -16,7 +16,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use wgpu;
 
 /// UI-agnostic repaint / wakeup callback invoked by the worker when a simulation step finishes.
 #[derive(Clone)]

@@ -9,7 +9,6 @@ use crate::{
 };
 use eframe::{egui, egui_wgpu::RenderState};
 use glam::{Mat4, Vec3};
-use wgpu;
 
 pub mod appearance;
 mod environment;

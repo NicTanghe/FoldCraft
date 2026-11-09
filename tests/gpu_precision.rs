@@ -5,7 +5,6 @@ use marvelous_cloth::{
     gpu_vbd::GpuVbd,
     vbd::{VbdSettings, VbdSolver},
 };
-use wgpu;
 mod common;
 
 #[test]

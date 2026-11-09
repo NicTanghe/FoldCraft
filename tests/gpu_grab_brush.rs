@@ -5,7 +5,6 @@ use marvelous_cloth::{
     gpu_vbd::GpuVbd,
     vbd::{Grab, VbdSettings, VbdSolver, grab::surface_patch},
 };
-use wgpu;
 mod common;
 
 #[test]

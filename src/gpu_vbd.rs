@@ -5,7 +5,6 @@ use crate::{
     ogc::potential::Kind,
     vbd::{GpuStepProfile, Grab, VbdMetrics, VbdSettings, VbdSolver},
 };
-use wgpu;
 mod cache;
 pub mod contact_filter;
 use crate::garment::CompiledGarment;
