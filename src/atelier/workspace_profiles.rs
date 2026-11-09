@@ -1,4 +1,5 @@
 //! Named presentation snapshots; garment and solver state are intentionally absent.
+#![allow(private_interfaces)]
 use super::{layout::WorkspaceLayout, settings::Preferences};
 use crate::render::appearance::Appearance;
 use eframe::egui;
@@ -11,7 +12,7 @@ const MAX_PROFILES: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub(super) struct Snapshot {
+pub struct Snapshot {
     layout: WorkspaceLayout,
     appearance: Appearance,
     tools_visible: bool,
@@ -82,7 +83,7 @@ struct Profile {
     snapshot: Snapshot,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(super) struct Store {
+pub struct Store {
     version: u32,
     profiles: Vec<Profile>,
     // Exact bytes read from disk, never serialized. This detects edits by a

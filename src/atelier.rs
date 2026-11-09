@@ -20,8 +20,11 @@ mod chrome;
 mod command_palette;
 #[path = "atelier/commands.rs"]
 mod commands;
-#[allow(unused_imports)]
-pub use marvelous_cloth::css_ui;
+#[path = "atelier/core_state.rs"]
+pub mod core_state;
+#[path = "atelier/css_ui/mod.rs"]
+pub mod css_ui;
+pub use core_state::*;
 #[path = "atelier/documents_ui.rs"]
 mod documents_ui;
 #[path = "atelier/drafting_ui.rs"]
@@ -73,7 +76,7 @@ mod worker;
 mod workspace;
 #[path = "atelier/workspace_profiles.rs"]
 mod workspace_profiles;
-use authoring_ui::{AuthoringUi, Tool};
+use authoring_ui::AuthoringUi;
 use worker::Work;
 
 /// Export is not atomic across artifacts: an error may leave earlier files.
@@ -532,7 +535,7 @@ impl Atelier {
                 settings: self.settings.clone(),
                 grab: self.grab.clone(),
                 gpu: self.gpu,
-                ctx: ctx.clone(),
+                signal: worker::RepaintSignal::from_egui(ctx.clone()),
             },
         );
         self.pending = sent.is_ok() && (self.playing || once);
@@ -702,6 +705,98 @@ impl Atelier {
         if !response.ctx.input(|i| i.pointer.primary_down()) {
             self.grab = None;
             self.drag_plane = None;
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl Atelier {
+    pub fn has_pending_trim_draft(&self) -> bool {
+        self.authoring.trims.has_pending_history_step()
+    }
+
+    pub fn has_pending_measurement_draft(&self) -> bool {
+        self.authoring.measure.has_changes()
+    }
+
+    pub fn piece_summaries(&self) -> Vec<PieceSummary> {
+        core_state::piece_summaries(&self.project, &self.scene)
+    }
+
+    pub fn seam_summaries(&self) -> Vec<SeamSummary> {
+        core_state::seam_summaries(&self.project)
+    }
+
+    pub fn material_summaries(&self) -> Vec<MaterialSummary> {
+        core_state::material_summaries(&self.project)
+    }
+
+    pub fn trim_summaries(&self) -> Vec<TrimSummary> {
+        core_state::trim_summaries(&self.project)
+    }
+
+    pub fn pin_summaries(&self) -> Vec<PinSummary> {
+        core_state::pin_summaries(&self.project)
+    }
+
+    pub fn measurement_summaries(&self) -> Vec<MeasurementSummary> {
+        core_state::measurement_summaries(&self.project)
+    }
+
+    pub fn command_availability(
+        &self,
+        id: commands::CommandId,
+    ) -> Result<(), commands::UnavailableReason> {
+        commands::availability(id, self.command_context())
+    }
+
+    pub fn step_once(&mut self, ctx: &egui::Context) -> bool {
+        self.step(ctx)
+    }
+
+    pub fn reset_drape(&mut self) -> bool {
+        self.reset()
+    }
+
+    pub fn request_final_diagnostics(&self) -> worker::FinalDiagnosticsRequest {
+        worker::request_final_diagnostics(self.generation)
+    }
+
+    pub fn snapshot_core(&self) -> AtelierCore {
+        let profile_path = self.output.join(workspace_profiles::FILE_NAME);
+        let profiles = workspace_profiles::Store::load(&profile_path).unwrap_or_default();
+        AtelierCore {
+            project: self.project.clone(),
+            scene: self.scene.clone(),
+            settings: self.settings.clone(),
+            output: self.output.clone(),
+            generation: self.generation,
+            send: Some(self.send.clone()),
+            receive: self.receive.clone(),
+            signal: worker::RepaintSignal::noop(),
+            playing: self.playing,
+            pending: self.pending,
+            gpu: self.gpu,
+            metrics: self.metrics.clone(),
+            status: self.status.clone(),
+            simulation_error: self.simulation_error.clone(),
+            grab: self.grab.clone(),
+            tool: self.authoring.tool,
+            selection: SelectionState {
+                primary_panel: self.authoring.selected.clone(),
+                panels: self.authoring.selection.panels.iter().cloned().collect(),
+                seam: self.authoring.selection.seam.clone(),
+                edge: self.authoring.edge.clone(),
+                point: self.authoring.anchor.clone(),
+                trim: self.authoring.trims.selected_trim_id().map(str::to_owned),
+            },
+            profiles,
+            mesh_mm: self.mesh_mm,
+            anisotropy: self.anisotropy,
+            mesh_axis: self.mesh_axis,
+            pending_trim_draft: self.has_pending_trim_draft(),
+            pending_measurement_draft: self.has_pending_measurement_draft(),
+            _held_rx: None,
         }
     }
 }
@@ -1272,7 +1367,7 @@ mod command_action_tests {
             settings: VbdSettings::default(),
             grab: None,
             gpu: false,
-            ctx: egui::Context::default(),
+            signal: worker::RepaintSignal::noop(),
             playing: false,
             once: true,
         };
