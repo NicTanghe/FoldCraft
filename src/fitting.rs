@@ -39,6 +39,7 @@ pub struct FittingProject {
     #[serde(default)]
     pub mesh_signature: Option<String>,
 }
+#[derive(Clone)]
 pub struct FittingScene {
     pub garment: Arc<CompiledGarment>,
     pub collider: Arc<MeshCollider>,
