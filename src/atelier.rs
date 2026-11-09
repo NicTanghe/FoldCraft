@@ -22,9 +22,9 @@ mod command_palette;
 mod commands;
 #[path = "atelier/core_state.rs"]
 pub mod core_state;
-pub use core_state::*;
 #[path = "atelier/css_ui/mod.rs"]
 pub mod css_ui;
+pub use core_state::*;
 #[path = "atelier/documents_ui.rs"]
 mod documents_ui;
 #[path = "atelier/drafting_ui.rs"]
