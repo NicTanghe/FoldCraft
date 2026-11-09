@@ -12,6 +12,8 @@ pub mod garment;
 pub mod gltf_avatar;
 #[cfg(feature = "desktop")]
 pub mod gpu_vbd;
+#[cfg(feature = "desktop")]
+pub use cssimpler;
 pub mod issue_report;
 pub mod math;
 /// Opt-in static mesh sizing; evaluated during preparation, never solver steps.

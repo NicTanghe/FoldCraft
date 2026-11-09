@@ -17,21 +17,7 @@ const DEFAULT_ALLOWANCE_MM: f64 = 10.;
 /// Notch length shown when the draft has not been set.
 const DEFAULT_NOTCH_LENGTH_MM: f64 = 5.;
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub(super) enum Tool {
-    Grab,
-    #[default]
-    Edit,
-    Place,
-    Draw,
-    Rectangle,
-    InternalLine,
-    Measure,
-    Sew,
-    Inspect,
-    Ellipse,
-    Sector,
-}
+pub(super) use super::core_state::Tool;
 #[derive(Default)]
 pub(super) struct AuthoringUi {
     pub dart: Option<DartDraft>,
@@ -215,7 +201,8 @@ impl DartDraft {
     }
 
     pub(super) fn matches_boundary(&self, selected: Option<&BoundaryRef>) -> bool {
-        selected.is_some_and(|r| r.panel == self.panel && r.edge.as_deref() == Some(&self.edge))
+        selected
+            .is_some_and(|r| r.panel == self.panel && r.edge.as_deref() == Some(self.edge.as_str()))
     }
 
     pub(super) fn boundary_start(
