@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 2.875,
+  "clock": 3.010416666666667,
   "tickets": [
     {
       "id": "FC-0001",
@@ -118,10 +118,10 @@
       "depends_on": [
         "FC-0008"
       ],
-      "status": "active",
-      "owner": "codex-native-ui-core",
+      "status": "done",
+      "owner": null,
       "vruntime": 2.75,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/19"
     },
     {
       "id": "FC-0010",
@@ -133,10 +133,10 @@
       "depends_on": [
         "FC-0009"
       ],
-      "status": "ready",
+      "status": "done",
       "owner": null,
       "vruntime": 2.75,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/16"
     },
     {
       "id": "FC-0011",
@@ -246,7 +246,7 @@
       "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.0,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/13"
@@ -256,12 +256,12 @@
       "title": "Independently review native UI and hardening PRs",
       "acceptance": "Review PR12 and incoming native UI source/lifecycle changes with pinned evidence, actionable findings, and validated fixes before merge.",
       "points": 3.0,
-      "spent": 0,
+      "spent": 3.0,
       "priority": "urgent",
       "depends_on": [],
       "status": "active",
       "owner": "codex-wave2-review",
-      "vruntime": 2.75,
+      "vruntime": 3.125,
       "pr": null
     },
     {
@@ -276,6 +276,32 @@
       "owner": null,
       "vruntime": 2.875,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/12"
+    },
+    {
+      "id": "FC-0022",
+      "title": "Replace egui and eframe completely with cssimpler desktop UI",
+      "acceptance": "Desktop entry points use real cssimpler UI; direct wgpu rendering/compute; no egui or eframe packages in all-features dependency graph or regenerated lockfile; preserve CPU builds and real authoring/worker behavior. No legacy egui feature.",
+      "points": 8.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-zero-egui",
+      "vruntime": 2.9583333333333335,
+      "pr": null
+    },
+    {
+      "id": "FC-0023",
+      "title": "Remove eframe reexports from GPU simulation and headless GPU CLI",
+      "acceptance": "Compute modules and headless GPU entry use pinned direct wgpu30 dependency; shader/compute behavior preserved. This prerequisite does not complete full egui removal.",
+      "points": 2.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-direct-wgpu",
+      "vruntime": 2.9583333333333335,
+      "pr": null
     }
   ]
 }

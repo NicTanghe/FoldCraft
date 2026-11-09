@@ -1098,6 +1098,10 @@ impl TrimUi {
         }
     }
 
+    pub(super) fn selected_trim_id(&self) -> Option<&str> {
+        self.draft.as_ref().map(|d| d.id.as_str())
+    }
+
     pub(super) fn board_drag_active(&self) -> bool {
         self.board_drag.is_some()
     }
