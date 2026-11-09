@@ -15,12 +15,27 @@
 #![allow(dead_code)]
 
 pub mod compositor;
+pub mod palette;
+pub mod rails;
 
 #[allow(unused_imports)]
 pub use compositor::{
     InputTarget, PatternPanelPreview, PhysicalRect, ViewportLayoutMap, composite_ui_over_frame,
     extract_viewport_layout, generate_pattern_board_svg, pattern_board_svg_node,
     punch_viewport_cutouts, route_pointer_event, studio_window_config,
+};
+#[allow(unused_imports)]
+pub use palette::{
+    ALL_COMMAND_IDS, CommandPaletteState, PaletteAction, PaletteItem, PaletteKey, command_aliases,
+    evaluate_availability, is_subsequence, matches_query, render_command_palette,
+};
+#[allow(unused_imports)]
+pub use rails::{
+    BackendBadge, CornerMode, CornerToolParams, PinMode, RadialMenuAction, RadialMenuState,
+    RadialSector, Rail2dAction, Rail2dState, Rail3dAction, Rail3dState, Tool2d, Tool3d,
+    TopBarAction, TopBarState, play_simulation_disabled_reason, render_2d_rail, render_3d_rail,
+    render_radial_menu, render_top_bar, reset_simulation_disabled_reason,
+    step_simulation_disabled_reason,
 };
 
 use cssimpler::core::{Node, RenderNode};
