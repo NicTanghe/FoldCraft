@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.010416666666667,
+  "clock": 3.027777777777778,
   "tickets": [
     {
       "id": "FC-0001",
@@ -298,7 +298,7 @@
       "spent": 0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 2.9583333333333335,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/24"
