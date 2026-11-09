@@ -186,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut trace = fs::File::create(a.output.join("convergence.jsonl"))?;
     #[cfg(feature = "desktop")]
     let gpu = if a.gpu_control {
-        use eframe::wgpu;
+        use wgpu;
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,

@@ -147,8 +147,8 @@ pub fn run(
         let base = setup.device_descriptor.clone();
         setup.device_descriptor = std::sync::Arc::new(move |adapter| {
             let mut descriptor = base(adapter);
-            descriptor.required_features |= adapter.features()
-                & (eframe::wgpu::Features::TIMESTAMP_QUERY | eframe::wgpu::Features::SUBGROUP);
+            descriptor.required_features |=
+                adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::SUBGROUP);
             descriptor
         });
     }

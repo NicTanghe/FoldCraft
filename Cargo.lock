@@ -1869,6 +1869,7 @@ dependencies = [
  "tempfile",
  "tracing",
  "tracing-subscriber",
+ "wgpu",
 ]
 
 [[package]]

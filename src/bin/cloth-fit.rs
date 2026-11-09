@@ -100,7 +100,7 @@ fn run_ogc(
     project.simulation = Some(settings.clone());
     #[cfg(feature = "desktop")]
     let gpu = if args.gpu_sim {
-        use eframe::wgpu;
+        use wgpu;
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
