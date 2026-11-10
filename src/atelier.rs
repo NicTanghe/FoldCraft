@@ -12,6 +12,8 @@ pub use marvelous_cloth::commands;
 #[allow(unused_imports)]
 pub use marvelous_cloth::css_ui;
 
+// GPU and diagnostic entry points remain available during native adapter migration.
+#[allow(dead_code)]
 #[path = "atelier/worker.rs"]
 pub mod worker;
 

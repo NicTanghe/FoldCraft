@@ -271,7 +271,7 @@ pub fn update_viewport_points(
         .collect();
     scene
         .stage()
-        .attribute(&format!("{path}.points"))
+        .attribute(format!("{path}.points"))
         .map_err(|e| e.to_string())?
         .set(points)
         .map(|_| ())
@@ -301,7 +301,7 @@ pub fn update_viewport_topology(
     ] {
         scene
             .stage()
-            .attribute(&format!("/World/Garment/cloth_mesh.{name}"))
+            .attribute(format!("/World/Garment/cloth_mesh.{name}"))
             .map_err(|e| e.to_string())?
             .set(values)
             .map_err(|e| e.to_string())?;

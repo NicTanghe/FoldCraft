@@ -1192,7 +1192,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .stage()
-                .attribute(&format!("{path}.points"))
+                .attribute(format!("{path}.points"))
                 .unwrap()
                 .get::<Vec<cssimpler::renderer::gpu::openusd::gf::Vec3f>>()
                 .unwrap()
