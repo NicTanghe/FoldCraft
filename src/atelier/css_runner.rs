@@ -1234,6 +1234,39 @@ mod tests {
         app.state_mut().reset_simulation();
         assert_eq!(read_points(app.state()), initial_points);
 
+        // Native USD hosts are hidden if later text paint overlaps their area.
+        // Check expanded diagnostics as well as Ready, across window sizes.
+        for (width, height) in [(1600, 980), (1280, 800), (1024, 768), (800, 600)] {
+            app.set_viewport(cssimpler::renderer::ViewportSize::new(width, height));
+            for message in ["Ready", "Step 124: min dist 0.124 mm, res 0.0e0, 65.2 ms"] {
+                app.state_mut().status_message = message.into();
+                let roots = app.frame(FrameInfo {
+                    delta: Duration::from_millis(16),
+                    frame_index: 4,
+                });
+                let viewport = app
+                    .find_element_bounds_by_id("#runner-viewport-3d-scene")
+                    .unwrap();
+                let paint = cssimpler::core::ExtractedScene::from_render_roots(&roots);
+                for item in paint
+                    .items
+                    .iter()
+                    .filter(|item| item.kind == cssimpler::core::ExtractedPaintKind::TextRun)
+                {
+                    let text = item.layout;
+                    let overlaps = text.x < viewport.x + viewport.width
+                        && viewport.x < text.x + text.width
+                        && text.y < viewport.y + viewport.height
+                        && viewport.y < text.y + text.height;
+                    assert!(
+                        !overlaps,
+                        "text must not hide USD at {width}x{height}: {:?} {:?} over {viewport:?}",
+                        item.text, text
+                    );
+                }
+            }
+        }
+
         // Test Play / Step
         app.state_mut().playing = true;
         app.state_mut().trigger_worker_step(true);

@@ -475,18 +475,31 @@
   color: var(--text-muted);
 }
 
-.status-bar-left {
+.status-bar-left, .status-left {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 16px;
 }
 
-.status-bar-right {
+.status-bar-right, .status-right {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 16px;
+}
+
+/* Keep changing diagnostics on one line inside the footer. Native GPU hosts
+   must not be overlapped by an overflowing status text run. */
+.status-bar {
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.status-left, .status-right, .status-bar-left, .status-bar-right {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* Modals & Command Palette Overlay */

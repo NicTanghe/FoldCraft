@@ -198,3 +198,8 @@ unlike an SVG, their mesh content does not supply an intrinsic DOM size.
 The native preview also includes a static display mesh for the collision surface:
 the loaded mannequin in the fitting workspace and a tessellated analytic sphere
 in the reference demo. This display mesh does not alter collision geometry.
+
+Status groups use a single clipped flex row. Wrapping diagnostics previously
+extended above the footer into the native viewport by less than a pixel;
+cssimpler correctly hid the GPU host because of that overlapping text paint.
+The regression check inspects extracted text paint at multiple window sizes.
