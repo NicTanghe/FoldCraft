@@ -1,7 +1,6 @@
 //! Opt-in equality against the complete f64 detector, including its movement
 //! bounds (not only the subset of contacts that currently exert a force).
 #![cfg(feature = "desktop")]
-use eframe::wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     gpu_vbd::contact_filter::GpuContactFilter,

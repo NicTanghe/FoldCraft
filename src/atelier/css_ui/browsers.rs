@@ -25,15 +25,136 @@ use std::path::Path;
 use cssimpler::core::Node;
 use cssimpler::ui;
 
-use marvelous_cloth::fitting::{FittingProject, FittingScene};
-use marvelous_cloth::garment::{
-    CompiledGarment,
-    seam::BoundaryRef,
-    template::{GarmentTemplate, Panel},
+use marvelous_cloth::{
+    document::atomic_write,
+    fitting::{FittingProject, FittingScene},
+    garment::{
+        CompiledGarment,
+        seam::{BoundaryRef, Side},
+        template::{GarmentTemplate, Panel},
+    },
 };
 
-pub use super::super::workspace_profiles;
-use workspace_profiles::Store;
+pub mod workspace_profiles {
+    use super::atomic_write;
+    use serde::{Deserialize, Serialize};
+    use std::path::Path;
+
+    pub const FILE_NAME: &str = "workspace-profiles.json";
+    const MAX_BYTES: u64 = 256 * 1024;
+    const MAX_PROFILES: usize = 32;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+    pub struct Snapshot {
+        #[serde(default)]
+        pub tools_visible: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub wireframe: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub seam_links: Option<bool>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct Profile {
+        pub name: String,
+        pub snapshot: Snapshot,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct Store {
+        pub version: u32,
+        pub profiles: Vec<Profile>,
+    }
+
+    impl Default for Store {
+        fn default() -> Self {
+            Self {
+                version: 1,
+                profiles: Vec::new(),
+            }
+        }
+    }
+
+    fn valid_name(name: &str) -> Result<(), String> {
+        if name.trim() != name
+            || name.is_empty()
+            || name.chars().count() > 48
+            || name.chars().any(char::is_control)
+        {
+            return Err("Use 1–48 characters, without control characters or outer spaces".into());
+        }
+        Ok(())
+    }
+
+    impl Store {
+        pub fn load(path: &Path) -> Result<Self, String> {
+            if !path.exists() {
+                return Ok(Self::default());
+            }
+            let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+            let store: Self = serde_json::from_str(&text)
+                .map_err(|e| format!("Invalid workspace profiles: {e}"))?;
+            if !matches!(store.version, 1 | 2) || store.profiles.len() > MAX_PROFILES {
+                return Err("Unsupported profile version or too many profiles".into());
+            }
+            let mut names = std::collections::BTreeSet::new();
+            for profile in &store.profiles {
+                valid_name(&profile.name)?;
+                if !names.insert(profile.name.to_lowercase()) {
+                    return Err("Duplicate workspace profile names".into());
+                }
+            }
+            Ok(store)
+        }
+
+        pub fn save_profile(
+            &mut self,
+            path: &Path,
+            name: &str,
+            snapshot: Snapshot,
+            replace: bool,
+        ) -> Result<(), String> {
+            valid_name(name)?;
+            let found = self
+                .profiles
+                .iter()
+                .position(|p| p.name.to_lowercase() == name.to_lowercase());
+            let version = if snapshot.wireframe.is_some() || snapshot.seam_links.is_some() {
+                2
+            } else {
+                self.version
+            };
+            self.version = version;
+            match (found, replace) {
+                (Some(index), true) => {
+                    self.profiles[index] = Profile {
+                        name: name.into(),
+                        snapshot,
+                    }
+                }
+                (Some(_), false) => {
+                    return Err("A profile with this name exists; choose Replace explicitly".into());
+                }
+                (None, true) => return Err("The profile to replace no longer exists".into()),
+                (None, false) if self.profiles.len() < MAX_PROFILES => {
+                    self.profiles.push(Profile {
+                        name: name.into(),
+                        snapshot,
+                    })
+                }
+                _ => return Err("At most 32 workspace profiles are supported".into()),
+            }
+            let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+            if text.len() as u64 > MAX_BYTES {
+                return Err("Workspace profiles exceed 256 KiB".into());
+            }
+            atomic_write(path, text.as_bytes())?;
+            Ok(())
+        }
+    }
+}
+
+pub use workspace_profiles::Store;
 
 /// True-scale SVG export note from FC-0002 / PR #235.
 pub const TRUE_SCALE_SVG_RULER_NOTE: &str = "Physical SVG includes stored seam allowances and sewing-line notches; notches are not duplicated onto the cutting line. Print at actual size and check the 100 mm ruler; sheets are untiled and not cutting-certified.";
@@ -730,10 +851,10 @@ fn render_category_2d_pattern(template: &GarmentTemplate) -> Node {
 fn render_boundary_ref_chain(first: &BoundaryRef, tail: &[BoundaryRef]) -> String {
     let mut parts = Vec::new();
     let edge_str = first.edge.as_deref().unwrap_or(match first.side {
-        marvelous_cloth::garment::seam::Side::Top => "top",
-        marvelous_cloth::garment::seam::Side::Right => "right",
-        marvelous_cloth::garment::seam::Side::Bottom => "bottom",
-        marvelous_cloth::garment::seam::Side::Left => "left",
+        Side::Top => "top",
+        Side::Right => "right",
+        Side::Bottom => "bottom",
+        Side::Left => "left",
     });
     parts.push(format!(
         "{}:{} [{:.2}..{:.2}]",
@@ -742,10 +863,10 @@ fn render_boundary_ref_chain(first: &BoundaryRef, tail: &[BoundaryRef]) -> Strin
 
     for b in tail {
         let edge = b.edge.as_deref().unwrap_or(match b.side {
-            marvelous_cloth::garment::seam::Side::Top => "top",
-            marvelous_cloth::garment::seam::Side::Right => "right",
-            marvelous_cloth::garment::seam::Side::Bottom => "bottom",
-            marvelous_cloth::garment::seam::Side::Left => "left",
+            Side::Top => "top",
+            Side::Right => "right",
+            Side::Bottom => "bottom",
+            Side::Left => "left",
         });
         parts.push(format!(
             " -> {}:{} [{:.2}..{:.2}]",

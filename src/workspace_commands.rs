@@ -319,6 +319,34 @@ pub const REGISTRY: &[CommandDescriptor] = &[
 ];
 
 impl CommandId {
+    pub const ALL: &'static [CommandId] = &[
+        CommandId::ToggleSimulation,
+        CommandId::StepSimulation,
+        CommandId::ResetSimulation,
+        CommandId::ExportSession,
+        CommandId::SplitView,
+        CommandId::GarmentView,
+        CommandId::PatternView,
+        CommandId::ToggleInspector,
+        CommandId::ResetLayout,
+        CommandId::OpenPreferences,
+        CommandId::LoadTshirt,
+        CommandId::LoadDress,
+        CommandId::ToolEdit,
+        CommandId::ToolDraw,
+        CommandId::ToolFreehand,
+        CommandId::ToolRectangle,
+        CommandId::ToolEllipse,
+        CommandId::ToolSector,
+        CommandId::ToolInternalLine,
+        CommandId::ToolSew,
+        CommandId::ToolMove,
+        CommandId::ToolRotate,
+        CommandId::ToolGrab,
+        CommandId::ToolMeasure,
+        CommandId::ToolInspect,
+    ];
+
     pub fn descriptor(self) -> &'static CommandDescriptor {
         REGISTRY
             .iter()

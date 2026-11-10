@@ -1,6 +1,5 @@
 //! Explicit hardware regression. Never run as part of ordinary CPU checks.
 #![cfg(feature = "desktop")]
-use eframe::wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     garment::GarmentTemplate,

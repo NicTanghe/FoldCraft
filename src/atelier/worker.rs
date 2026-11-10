@@ -1,7 +1,7 @@
 //! Fixed-step worker independent of repaint frequency. The latest controls win;
 //! state stays on the worker within a generation. Only one result snapshot is
 //! retained when the window is slow or hidden (no growing animation queue).
-use eframe::{egui, wgpu};
+use eframe::egui;
 use marvelous_cloth::{
     fitting::FittingScene,
     gpu_vbd::GpuVbd,
@@ -17,13 +17,60 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// UI-agnostic repaint / wakeup callback invoked by the worker when a simulation step finishes.
+#[derive(Clone)]
+pub struct RepaintSignal(Arc<dyn Fn() + Send + Sync + 'static>);
+
+impl RepaintSignal {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        Self(Arc::new(f))
+    }
+
+    pub fn noop() -> Self {
+        Self(Arc::new(|| {}))
+    }
+
+    #[allow(dead_code)]
+    pub fn from_fn<F>(f: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        Self::new(f)
+    }
+
+    pub fn from_egui(ctx: egui::Context) -> Self {
+        Self::new(move || {
+            ctx.request_repaint();
+        })
+    }
+
+    pub fn request_repaint(&self) {
+        (self.0)();
+    }
+}
+
+impl Default for RepaintSignal {
+    fn default() -> Self {
+        Self::noop()
+    }
+}
+
+impl std::fmt::Debug for RepaintSignal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RepaintSignal").finish()
+    }
+}
+
 pub struct Work {
     pub generation: u64,
     pub scene: FittingScene,
     pub settings: VbdSettings,
     pub grab: Option<Grab>,
     pub gpu: bool,
-    pub ctx: egui::Context,
+    pub signal: RepaintSignal,
     pub playing: bool,
     pub once: bool,
 }
@@ -38,19 +85,19 @@ pub type Latest = Arc<Mutex<Option<Done>>>;
 /// generation; the request id distinguishes repeated requests in the same
 /// generation. Timestamps alone cannot identify either one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct FinalDiagnosticsRequest {
+pub struct FinalDiagnosticsRequest {
     pub generation: u64,
     pub request_id: u64,
 }
 
 #[derive(Clone)]
-pub(super) struct FinalDiagnosticsResult {
+pub struct FinalDiagnosticsResult {
     pub request: FinalDiagnosticsRequest,
     pub sample: FinalDiagnostics,
 }
 
 #[derive(Clone)]
-pub(super) struct FinalDiagnosticsFailure {
+pub struct FinalDiagnosticsFailure {
     pub request: FinalDiagnosticsRequest,
     pub message: String,
 }
@@ -73,7 +120,7 @@ static NEXT_FINAL_DIAGNOSTICS_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 static FINAL_DIAGNOSTICS: Mutex<Option<FinalDiagnosticsResult>> = Mutex::new(None);
 static FINAL_DIAGNOSTICS_ERROR: Mutex<Option<FinalDiagnosticsFailure>> = Mutex::new(None);
 
-pub(super) fn request_final_diagnostics(generation: u64) -> FinalDiagnosticsRequest {
+pub fn request_final_diagnostics(generation: u64) -> FinalDiagnosticsRequest {
     let request = FinalDiagnosticsRequest {
         generation,
         request_id: NEXT_FINAL_DIAGNOSTICS_REQUEST_ID.fetch_add(1, Ordering::Relaxed),
@@ -85,14 +132,14 @@ pub(super) fn request_final_diagnostics(generation: u64) -> FinalDiagnosticsRequ
     request
 }
 
-pub(super) fn final_diagnostics() -> Option<FinalDiagnosticsResult> {
+pub fn final_diagnostics() -> Option<FinalDiagnosticsResult> {
     FINAL_DIAGNOSTICS
         .lock()
         .ok()
         .and_then(|sample| sample.clone())
 }
 
-pub(super) fn final_diagnostics_error() -> Option<FinalDiagnosticsFailure> {
+pub fn final_diagnostics_error() -> Option<FinalDiagnosticsFailure> {
     FINAL_DIAGNOSTICS_ERROR
         .lock()
         .ok()
@@ -152,15 +199,6 @@ pub fn start(
 ) -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
     let (tx, latest, _thread) = start_inner(
         Some((device, queue)),
-        #[cfg(test)]
-        None,
-    )?;
-    Ok((tx, latest))
-}
-
-pub fn start_cpu() -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
-    let (tx, latest, _thread) = start_inner(
-        None,
         #[cfg(test)]
         None,
     )?;
@@ -325,7 +363,7 @@ fn start_inner(
                 if let Some(hooks) = &hooks {
                     let _ = hooks.published.send(w.generation);
                 }
-                w.ctx.request_repaint();
+                w.signal.request_repaint();
                 // Keep the wall-clock phase through isolated BVH rebuilds and OS
                 // wakeup jitter. Bound catch-up to four steps; never change the
                 // physical dt or iteration budget when the machine is overloaded.
@@ -426,7 +464,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu,
-            ctx: egui::Context::default(),
+            signal: RepaintSignal::noop(),
             playing: false,
             once: true,
         };
@@ -653,7 +691,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu: false,
-            ctx: egui::Context::default(),
+            signal: RepaintSignal::noop(),
             playing: false,
             once: true,
         };
@@ -740,7 +778,7 @@ mod final_diagnostics_transport_tests {
                     settings: settings.clone(),
                     grab: None,
                     gpu,
-                    ctx: egui::Context::default(),
+                    signal: RepaintSignal::noop(),
                     playing: false,
                     once: true,
                 })
@@ -803,5 +841,20 @@ mod final_diagnostics_transport_tests {
         assert_eq!(take_final_diagnostics_request(11), None);
 
         reset();
+    }
+
+    #[test]
+    fn repaint_signal_notifies_listener_without_egui_context() {
+        let fired = Arc::new(AtomicBool::new(false));
+        let fired_clone = Arc::clone(&fired);
+        let signal = RepaintSignal::from_fn(move || {
+            fired_clone.store(true, Ordering::SeqCst);
+        });
+        assert!(!fired.load(Ordering::SeqCst));
+        signal.request_repaint();
+        assert!(fired.load(Ordering::SeqCst));
+
+        let noop = RepaintSignal::noop();
+        noop.request_repaint();
     }
 }

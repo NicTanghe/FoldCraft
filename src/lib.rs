@@ -12,7 +12,8 @@ pub mod avatar_measurements;
 pub mod commands;
 pub mod contact;
 #[cfg(feature = "desktop")]
-pub use atelier::css_ui;
+#[path = "atelier/css_ui/mod.rs"]
+pub mod css_ui;
 pub mod document;
 pub mod energy;
 pub mod fabrics;
@@ -21,6 +22,8 @@ pub mod garment;
 pub mod gltf_avatar;
 #[cfg(feature = "desktop")]
 pub mod gpu_vbd;
+#[cfg(feature = "desktop")]
+pub use cssimpler;
 pub mod issue_report;
 pub mod math;
 /// Opt-in static mesh sizing; evaluated during preparation, never solver steps.
@@ -39,5 +42,7 @@ pub mod solver;
 pub mod solver_lab;
 pub mod template_catalog;
 pub mod vbd;
+/// Logical viewport coordinates and metric-board navigation, independent of UI.
+pub mod viewport_controller;
 /// Typed workspace actions and capability checks, independent of desktop UI.
 pub mod workspace_commands;

@@ -14,24 +14,27 @@
 
 #![allow(dead_code)]
 
+#[cfg(feature = "desktop")]
 pub mod browsers;
 pub mod compositor;
 pub mod palette;
 pub mod properties_part1;
-pub mod properties_part2;
 pub mod rails;
 
+#[cfg(feature = "desktop")]
+pub mod properties_part2;
+
 #[allow(unused_imports)]
-pub use browsers::*;
+pub use compositor::{
+    InputTarget, PatternPanelPreview, PhysicalRect, ViewportLayoutMap, composite_ui_over_frame,
+    extract_viewport_layout, generate_pattern_board_svg, pattern_board_svg_node,
+    punch_viewport_cutouts, route_pointer_event, studio_window_config,
+};
 #[allow(unused_imports)]
 pub use palette::{
     ALL_COMMAND_IDS, CommandPaletteState, PaletteAction, PaletteItem, PaletteKey, command_aliases,
     evaluate_availability, is_subsequence, matches_query, render_command_palette,
 };
-#[allow(unused_imports)]
-pub use properties_part1::*;
-#[allow(unused_imports)]
-pub use properties_part2::*;
 #[allow(unused_imports)]
 pub use rails::{
     BackendBadge, CornerMode, CornerToolParams, PinMode, RadialMenuAction, RadialMenuState,
@@ -41,15 +44,6 @@ pub use rails::{
     step_simulation_disabled_reason,
 };
 
-#[allow(unused_imports)]
-pub use compositor::{
-    InputTarget, PatternPanelPreview, PhysicalRect, ViewportLayoutMap, composite_ui_over_frame,
-    extract_viewport_layout, generate_pattern_board_svg, pattern_board_svg_node,
-    punch_viewport_cutouts, route_pointer_event, studio_window_config,
-};
-
-#[allow(unused_imports)]
-pub use cssimpler::core::LayoutBox;
 use cssimpler::core::{Node, RenderNode};
 use cssimpler::renderer::{RendererError, WindowConfig};
 use cssimpler::style::{StyleError, Stylesheet, build_render_tree_in_viewport, parse_stylesheet};
@@ -449,20 +443,22 @@ pub fn create_studio_v2_app<'a>(
         studio_v2_default_view as StudioV2ViewFn,
     )
     .with_event_handler(|state, event| {
-        if let cssimpler::renderer::EngineEvent::Key(k) = event {
-            if k.state == cssimpler::renderer::ButtonState::Pressed {
-                if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key {
-                    if (ch == "k" || ch == "K") && k.modifiers.control {
-                        state.command_palette_open = !state.command_palette_open;
-                        return true;
-                    }
-                }
-                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key {
-                    if name == "Escape" && state.command_palette_open {
-                        state.command_palette_open = false;
-                        return true;
-                    }
-                }
+        if let cssimpler::renderer::EngineEvent::Key(k) = event
+            && k.state == cssimpler::renderer::ButtonState::Pressed
+        {
+            if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key
+                && (ch == "k" || ch == "K")
+                && k.modifiers.control
+            {
+                state.command_palette_open = !state.command_palette_open;
+                return true;
+            }
+            if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
+                && name == "Escape"
+                && state.command_palette_open
+            {
+                state.command_palette_open = false;
+                return true;
             }
         }
         false
@@ -482,6 +478,7 @@ pub fn run_studio_v2(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cssimpler::core::LayoutBox;
 
     #[test]
     fn test_studio_v2_css_parses_cleanly() {

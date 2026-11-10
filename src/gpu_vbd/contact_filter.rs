@@ -1,7 +1,6 @@
 //! GPU BVH traversal and separating-axis rejection, with conservative f32 padding. No distances,
 //! contact features or OGC movement bounds are accepted from this kernel.
 use crate::ogc::filter::{CandidateFilter, PrimitiveCandidates, SpatialQuery};
-use eframe::wgpu;
 mod broad_phase;
 
 pub struct GpuContactFilter {

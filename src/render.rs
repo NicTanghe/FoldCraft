@@ -7,7 +7,7 @@ use crate::{
     model::{Material, Mesh, State},
     project::Project,
 };
-use eframe::{egui, egui_wgpu::RenderState, wgpu};
+use eframe::{egui, egui_wgpu::RenderState};
 use glam::{Mat4, Vec3};
 
 pub mod appearance;

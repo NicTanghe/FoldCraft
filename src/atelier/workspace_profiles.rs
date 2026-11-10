@@ -1,4 +1,5 @@
 //! Named presentation snapshots; garment and solver state are intentionally absent.
+#![allow(private_interfaces)]
 use super::{layout::WorkspaceLayout, settings::Preferences};
 use crate::render::appearance::Appearance;
 use eframe::egui;
@@ -32,7 +33,7 @@ impl Default for Snapshot {
     }
 }
 impl Snapshot {
-    pub fn capture(
+    pub(super) fn capture(
         prefs: &Preferences,
         tools_visible: bool,
         wireframe: bool,
@@ -55,7 +56,7 @@ impl Snapshot {
         self.layout.sanitize();
         self.appearance.sanitize();
     }
-    pub fn apply(
+    pub(super) fn apply(
         &self,
         prefs: &mut Preferences,
         tools_visible: &mut bool,

@@ -1,6 +1,5 @@
 //! Opt-in precision regression. The fixture contains no user garment data.
 #![cfg(feature = "desktop")]
-use eframe::wgpu;
 use glam::DVec3;
 use marvelous_cloth::{
     gpu_vbd::GpuVbd,

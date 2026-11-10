@@ -1,5 +1,9 @@
 # Architecture and invariants
 
+## Desktop replacement requirement
+
+The target desktop UI is cssimpler only. FC-0022 tracks removal of egui/eframe from every feature and the lockfile, with direct wgpu rendering/compute and UI-independent worker, authoring and camera interfaces. The existing egui implementation described in historical sections below remains migration work until that dependency check passes. Keeping an optional legacy egui frontend does not satisfy the target.
+
 The CPU-only [solver consistency experiments](solver-consistency.md) live in
 `solver_lab`. Their matrix-free coupled solve shares the exact material factors
 and existing OGC guards. They are not wired into the editor or GPU worker.

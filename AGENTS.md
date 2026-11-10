@@ -33,6 +33,12 @@ The second command only compiles. The authorized GPU pass is reproduced with `sc
 - Fiber guides are geometric surface attachments. They add no physical yarns, yarn contacts or measured calibration.
 - Keep `model`, `energy`, `garment`, `contact` and `solver` independent of egui/wgpu. Editing and rendering consume the compiled model.
 
+## UI replacement target
+
+The owner requires cssimpler to replace the desktop UI completely. The final repository must have no egui, eframe, egui-wgpu or egui-winit dependency, including through optional or legacy features. Use direct wgpu for rendering/compute and plain Rust types across authoring, worker, camera and viewport interfaces. Do not treat a cssimpler launch path alongside the existing egui editor as a completed migration. Preserve real document, history, selection and simulation behavior through native adapters.
+
+Validate removal with the all-features dependency graph and regenerated Cargo.lock, plus CPU-only and desktop builds. Migration prerequisites may temporarily retain old dependencies, but must explicitly remain incomplete under FC-0022 until the full graph is clean. New subagents default to GPT-6.1 Terra High; use GPT-6.1 Sol High for difficult problems.
+
 ## Contributions
 
 Follow [the software factory](docs/software-factory.md). `implementation/queue.json` is the authoritative implementation queue; select work with `scripts/factory.py`, using weighted virtual deadlines and priority boosts. Agents communicate in gitignored `comms/`. Every feature uses a branch and PR, merged through `gh`. The owner authorizes commit, push, PR creation, Codex ticket/PR reviews, sensible review fixes and merge for assigned feature work without repeated permission requests. Inspect findings, fix valid issues and explain declined suggestions. Keep queue bookkeeping in the dispatcher checkout. No upstream coordinator approval is required.
