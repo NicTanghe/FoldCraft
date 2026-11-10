@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.0694444444444446,
+  "clock": 3.102777777777778,
   "tickets": [
     {
       "id": "FC-0001",
@@ -362,13 +362,13 @@
       "title": "Audit and repair CPU-only regression baseline on Windows",
       "acceptance": "Run locked CPU checks with two jobs/threads; fix isolated verified failures outside paused UI/CAD areas and record exact evidence in a PR.",
       "points": 3.0,
-      "spent": 0,
+      "spent": 3.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "cpu-audit-20261110",
-      "vruntime": 3.0277777777777777,
-      "pr": null
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.4027777777777777,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/28"
     },
     {
       "id": "FC-0029",
@@ -388,13 +388,13 @@
       "title": "Establish USD-first static interchange contract and independent fixtures",
       "acceptance": "Inspect USD runtime options and static avatar/garment scope, document supported versus planned behavior, add independent fixtures and validation for the chosen first USD slice; no UI/CAD overlap.",
       "points": 3.0,
-      "spent": 0,
+      "spent": 3.0,
       "priority": "high",
       "depends_on": [],
-      "status": "active",
-      "owner": "usd-interchange-20261110",
-      "vruntime": 3.027777777777778,
-      "pr": null
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.777777777777778,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/27"
     }
   ]
 }
