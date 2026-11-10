@@ -407,10 +407,10 @@
         "FC-0030",
         "FC-0022"
       ],
-      "status": "active",
-      "owner": "cssimpler_agent",
+      "status": "done",
+      "owner": null,
       "vruntime": 4.0,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/33"
     }
   ]
 }
