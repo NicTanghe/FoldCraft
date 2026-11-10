@@ -293,12 +293,16 @@ if ($Verify) {
             $launchOutput = Join-Path $verifyRoot 'ui-smoke'
             Invoke-PackagedClothFit -Label 'ui-smoke' `
                 -EditorArguments @('--steps', '0', '--threads', '2', '--project', $seedProject, '--ui-smoke', '--output', $launchOutput)
-            foreach ($required in @('ui.png', 'fitting-project.json')) {
+            foreach ($required in @('ui.png', 'ui.json', 'fitting-project.json')) {
                 if (-not (Test-Path -LiteralPath (Join-Path $launchOutput $required) -PathType Leaf)) {
                     throw "Editor launch/capture smoke did not produce $required in $launchOutput"
                 }
             }
-            Write-Host 'CLI project seed/load and native editor window launch/capture passed.'
+            $capture = Get-Content -LiteralPath (Join-Path $launchOutput 'ui.json') -Raw | ConvertFrom-Json
+            if ($capture.native_frames -lt 2 -or $capture.width -le 0 -or $capture.height -le 0) {
+                throw 'Native USD capture did not report two rendered frames and drawable dimensions'
+            }
+            Write-Host 'CLI project seed/load and native USD viewport launch/capture passed (excludes UI chrome).'
             Write-Host 'Native Save/Export/edit is not exercised; adapter/driver certification is separate.'
         } finally {
             Pop-Location

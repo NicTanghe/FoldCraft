@@ -203,3 +203,10 @@ Status groups use a single clipped flex row. Wrapping diagnostics previously
 extended above the footer into the native viewport by less than a pixel;
 cssimpler correctly hid the GPU host because of that overlapping text paint.
 The regression check inspects extracted text paint at multiple window sizes.
+
+`cloth-fit --steps 0 --ui-smoke` is an explicit native GPU smoke run. After
+two native USD frames it writes a GPU-rendered viewport image to `ui.png` and
+its dimensions/frame count/scope to `ui.json`, then exits normally. The capture
+excludes UI chrome, editing and simulation; it rejects uniform images. Normal
+launches do not capture/read back GPU images. Portable Windows verification
+checks this lifecycle and its evidence.

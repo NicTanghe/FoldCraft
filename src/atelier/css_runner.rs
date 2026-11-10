@@ -160,6 +160,8 @@ pub enum ObjectCategory {
 // ============================================================================
 
 pub struct CssRunnerState {
+    pub smoke: bool,
+    pub smoke_done: std::rc::Rc<std::cell::Cell<bool>>,
     pub usd_scene: Option<cssimpler::renderer::gpu::usd::UsdScene>,
     pub project: FittingProject,
     pub scene: FittingScene,
@@ -201,6 +203,8 @@ impl CssRunnerState {
         let initial_scene = scene.clone();
 
         Self {
+            smoke: false,
+            smoke_done: Default::default(),
             usd_scene: None,
             project,
             scene,
@@ -1058,6 +1062,9 @@ pub fn create_runner_app<'a>(
         .expect("load generated USD viewport scene");
     state.usd_scene = Some(usd_scene.clone());
 
+    let smoke = state.smoke;
+    let smoke_done = state.smoke_done.clone();
+    let smoke_output = state.files.output.join("ui.png");
     let app = App::new(
         state,
         stylesheet,
@@ -1066,22 +1073,43 @@ pub fn create_runner_app<'a>(
     )
     .with_event_handler(handle_runner_event)
     .with_render_mode(RenderMode::OnInvalidation)
-    .with_continuous_updates(true);
+    .with_continuous_updates(true)
+    .with_exit_when(|state| state.smoke_done.get());
 
-    #[cfg(feature = "desktop")]
-    let app = app.with_usd_viewport(
-        "runner-viewport-3d-scene",
-        usd_scene,
-        cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
-    );
-
-    app
+    if smoke {
+        app.with_gpu_viewport(
+            "runner-viewport-3d-scene",
+            Default::default(),
+            move |init| {
+                let redraw = init.redraw.clone();
+                let renderer = cssimpler::renderer::gpu::usd::UsdRenderer::new(
+                    init,
+                    usd_scene,
+                    cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
+                )?;
+                Ok(Box::new(super::usd_smoke::SmokeViewport {
+                    renderer,
+                    output: smoke_output,
+                    done: smoke_done,
+                    redraw,
+                    frames: 0,
+                }))
+            },
+        )
+    } else {
+        app.with_usd_viewport(
+            "runner-viewport-3d-scene",
+            usd_scene,
+            cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
+        )
+    }
 }
 
 pub fn run(
     project: FittingProject,
     scene: FittingScene,
     files: DocumentFiles,
+    smoke: bool,
 ) -> Result<(), String> {
     let stylesheet =
         Box::leak(Box::new(load_studio_stylesheet().map_err(|e| {
@@ -1091,11 +1119,16 @@ pub fn run(
     // Start background simulation worker on CPU
     let (tx, latest) = worker::start_cpu().map_err(|e| format!("Failed to start worker: {e}"))?;
 
-    let state = CssRunnerState::new(project, scene, files, tx, latest);
+    let mut state = CssRunnerState::new(project, scene, files, tx, latest);
+    state.smoke = smoke;
+    let smoke_done = state.smoke_done.clone();
     let app = create_runner_app(state, stylesheet);
     let config = WindowConfig::new("ClothCraft | Simulation Studio V2", 1600, 980);
     app.run(config)
         .map_err(|e| format!("CSSimpler application error: {e}"))?;
+    if smoke && !smoke_done.get() {
+        return Err("Native smoke closed before USD capture completed".into());
+    }
     Ok(())
 }
 
