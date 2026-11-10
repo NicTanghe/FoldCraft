@@ -1,6 +1,5 @@
 //! Opt-in renderer benchmark. Timestamp results exclude CPU preparation/readback.
-use crate::render::{Camera, DrawModel, Viewport};
-use eframe::{egui, egui_wgpu};
+use crate::render::{Camera, DrawModel, RenderState, Viewport};
 use marvelous_cloth::fitting::FittingScene;
 use marvelous_cloth::garment::appearance::{AlbedoTexture, FabricAppearance};
 use std::{path::Path, sync::Arc, time::Instant};
@@ -30,17 +29,13 @@ async fn run_async(scene: &FittingScene, output: &Path) -> Result<(), Box<dyn st
             ..Default::default()
         })
         .await?;
-    let renderer =
-        egui_wgpu::Renderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, Default::default());
-    let state = egui_wgpu::RenderState {
-        adapter: adapter.clone(),
-        available_adapters: vec![adapter],
-        instance,
+    let device = Arc::new(device);
+    let queue = Arc::new(queue);
+    let state = RenderState {
+        adapter: Arc::new(adapter),
         device: device.clone(),
         queue: queue.clone(),
         target_format: wgpu::TextureFormat::Rgba8Unorm,
-        renderer: Arc::new(egui::mutex::RwLock::new(renderer)),
-        surface_config: egui_wgpu::SurfaceConfig::LOW_LATENCY,
     };
     let mut viewport = Viewport::new(state);
     let timed = viewport.enable_timing();

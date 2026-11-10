@@ -44,7 +44,7 @@ struct Args {
     /// Capture the actual native UI then close (explicit GPU smoke).
     #[arg(long)]
     ui_smoke: bool,
-    /// Exercise a real egui pointer drag, verify an accepted grab step, capture and close.
+    /// Exercise a real pointer drag, verify an accepted grab step, capture and close.
     #[arg(long)]
     ui_interaction_smoke: bool,
     /// Measure five seconds of actual window cadence and physical clock, then close.

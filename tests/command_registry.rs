@@ -23,7 +23,7 @@ fn ready() -> CapabilityContext {
 fn every_command_has_a_unique_stable_key_and_a_real_descriptor() {
     let mut keys = std::collections::BTreeSet::new();
     let mut ids = std::collections::HashSet::new();
-    assert_eq!(REGISTRY.len(), 25);
+    assert_eq!(REGISTRY.len(), 27);
     assert_eq!(CommandId::ALL.len(), REGISTRY.len());
     for desc in REGISTRY {
         assert!(!desc.label.trim().is_empty());

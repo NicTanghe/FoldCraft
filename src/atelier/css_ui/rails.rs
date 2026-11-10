@@ -3,7 +3,7 @@
 
 use cssimpler::core::Node;
 use cssimpler::ui;
-use marvelous_cloth::authoring::CornerRule;
+pub use marvelous_cloth::authoring::CornerRule;
 use marvelous_cloth::commands::CommandId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

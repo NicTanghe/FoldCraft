@@ -12,8 +12,6 @@ use std::{
 
 #[cfg(feature = "desktop")]
 mod editor;
-#[cfg(feature = "desktop")]
-use marvelous_cloth::render;
 
 #[derive(Parser)]
 #[command(
