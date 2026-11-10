@@ -498,6 +498,142 @@ impl PolygonPattern {
         Err("Notch cannot be placed on this boundary".into())
     }
 
+    /// Centerline segment [origin, tip] of one notch marker in material coordinates.
+    /// Outward direction is perpendicular to the directed boundary segment.
+    pub fn notch_segment(&self, edge: &str, notch: &Notch) -> Result<[DVec2; 2], String> {
+        let points = self
+            .closed_boundary(edge)
+            .ok_or_else(|| format!("Notch references unknown boundary {edge}"))?;
+        let total = polyline_length(&points);
+        if total <= 1e-9 {
+            return Err("Notch boundary has zero length".into());
+        }
+        validate_notch(notch, total)?;
+        let distance = total * notch.at;
+        let mut consumed = 0.;
+        for pair in points.windows(2) {
+            let segment = pair[1] - pair[0];
+            let length = segment.length();
+            if length <= 1e-12 {
+                continue;
+            }
+            if consumed + length >= distance {
+                let base = pair[0] + segment * ((distance - consumed) / length);
+                let tangent = segment / length;
+                let outward = DVec2::new(tangent.y, -tangent.x);
+                return Ok([base, base + outward * notch.length_m]);
+            }
+            consumed += length;
+        }
+        Err("Notch cannot be placed on this boundary".into())
+    }
+
+    /// Single boundary cutting guide. Outward offset in material coordinates
+    /// along the named boundary. Corner joins and intersection cleanup with
+    /// adjacent edges are not performed; use `cutting_contour` for the complete
+    /// joined loop.
+    pub fn allowance_guide(&self, edge: &str) -> Result<Option<Vec<DVec2>>, String> {
+        let points = self
+            .closed_boundary(edge)
+            .ok_or_else(|| format!("Boundary {edge} not found"))?;
+        let Some(&width) = self.seam_allowances.get(edge) else {
+            return Ok(None);
+        };
+        if !width.is_finite() || width <= 0. || width > MAX_ALLOWANCE_M {
+            return Err(format!(
+                "Invalid seam allowance width; must be in (0, {} mm]",
+                MAX_ALLOWANCE_M * 1000.
+            ));
+        }
+        if points.len() < 2 {
+            return Err("Degenerate boundary".into());
+        }
+        let mut guide = Vec::with_capacity(points.len());
+        for (i, point) in points.iter().enumerate() {
+            let tangent = if i == 0 {
+                points[1] - points[0]
+            } else if i + 1 == points.len() {
+                points[i] - points[i - 1]
+            } else {
+                points[i + 1] - points[i - 1]
+            };
+            let length = tangent.length();
+            if length <= 1e-12 {
+                return Err("Degenerate allowance guide".into());
+            }
+            let outward = DVec2::new(tangent.y, -tangent.x) / length;
+            guide.push(*point + outward * width);
+        }
+        Ok(Some(guide))
+    }
+
+    /// Set a uniform seam allowance (in metres) across all outer edges of the polygon.
+    /// If `width_m == 0.0`, all existing seam allowances on the panel are cleared.
+    pub fn set_panel_seam_allowance(&mut self, width_m: f64) -> Result<(), String> {
+        if !width_m.is_finite() || width_m < 0. || width_m > MAX_ALLOWANCE_M {
+            return Err(format!(
+                "Panel seam allowance must be in [0, {} mm]",
+                MAX_ALLOWANCE_M * 1000.
+            ));
+        }
+        if width_m == 0. {
+            self.seam_allowances.clear();
+            return Ok(());
+        }
+        self.validate_outer_structure()?;
+        for edge in &self.edges {
+            self.seam_allowances.insert(edge.clone(), width_m);
+        }
+        self.validate_markings()?;
+        Ok(())
+    }
+
+    /// Clear all seam allowances on this polygon.
+    pub fn clear_seam_allowances(&mut self) {
+        self.seam_allowances.clear();
+    }
+
+    /// Create two symmetrical notches around a center station with specified metric spacing.
+    /// Validates both notches before mutating the polygon.
+    pub fn add_paired_notches(
+        &mut self,
+        edge: &str,
+        center_t: f64,
+        spacing_m: f64,
+        length_m: f64,
+        kind: NotchKind,
+    ) -> Result<[Notch; 2], String> {
+        if !center_t.is_finite() || !(0.0..1.0).contains(&center_t) || center_t == 0. {
+            return Err("Paired notches require an interior station in (0, 1)".into());
+        }
+        if !spacing_m.is_finite() || spacing_m <= 0. || spacing_m > 0.2 {
+            return Err("Paired notch spacing must be in (0, 200 mm]".into());
+        }
+        let points = self
+            .closed_boundary(edge)
+            .ok_or_else(|| format!("Notch references unknown boundary {edge}"))?;
+        let total = polyline_length(&points);
+        if total <= 1e-9 {
+            return Err(format!("Boundary {edge} has zero length"));
+        }
+        let half_spacing = spacing_m * 0.5;
+        let center_distance = total * center_t;
+        let dist_a = center_distance - half_spacing;
+        let dist_b = center_distance + half_spacing;
+        let t_a = dist_a / total;
+        let t_b = dist_b / total;
+        let notch_a = Notch::new(t_a, length_m, kind);
+        let notch_b = Notch::new(t_b, length_m, kind);
+        validate_notch(&notch_a, total)?;
+        validate_notch(&notch_b, total)?;
+        let list = self.notches.entry(edge.to_string()).or_default();
+        list.push(notch_a);
+        list.push(notch_b);
+        list.sort_by(|a, b| a.at.total_cmp(&b.at));
+        self.validate_markings()?;
+        Ok([notch_a, notch_b])
+    }
+
     /// The joined cutting contour implied by the stored allowances, or `None` when
     /// no allowance is set. A boundary that cannot be offset without the contour
     /// intruding into the material or self-intersecting is refused explicitly.
