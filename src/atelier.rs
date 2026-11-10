@@ -12,6 +12,8 @@ pub use marvelous_cloth::commands;
 #[allow(unused_imports)]
 pub use marvelous_cloth::css_ui;
 
+// GPU and diagnostic entry points remain available during native adapter migration.
+#[allow(dead_code)]
 #[path = "atelier/worker.rs"]
 pub mod worker;
 
@@ -31,10 +33,13 @@ pub fn run(
     project: FittingProject,
     scene: FittingScene,
     files: DocumentFiles,
-    _smoke: bool,
+    smoke: bool,
     _drag_test: bool,
     _perf_test: bool,
     _authoring_test: bool,
 ) -> Result<(), String> {
-    css_runner::run(project, scene, files)
+    css_runner::run(project, scene, files, smoke)
 }
+
+#[path = "atelier/usd_smoke.rs"]
+mod usd_smoke;

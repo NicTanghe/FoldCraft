@@ -393,9 +393,11 @@ mod tests {
 
     #[test]
     fn test_viewport_layout_map_conversion() {
-        let mut map = ViewportLayoutMap::default();
-        map.viewport_3d = Some(LayoutBox::new(200.0, 100.0, 800.0, 600.0));
-        map.viewport_2d = Some(LayoutBox::new(1000.0, 100.0, 600.0, 600.0));
+        let map = ViewportLayoutMap {
+            viewport_3d: Some(LayoutBox::new(200.0, 100.0, 800.0, 600.0)),
+            viewport_2d: Some(LayoutBox::new(1000.0, 100.0, 600.0, 600.0)),
+            ..Default::default()
+        };
 
         let phys_3d = map.viewport_3d_physical(1.5).unwrap();
         assert_eq!(phys_3d, PhysicalRect::new(300, 150, 1200, 900));
@@ -408,14 +410,18 @@ mod tests {
 
     #[test]
     fn test_route_pointer_event() {
-        let mut layout = ViewportLayoutMap::default();
-        layout.viewport_3d = Some(LayoutBox::new(0.0, 40.0, 600.0, 500.0));
-        layout.viewport_2d = Some(LayoutBox::new(600.0, 40.0, 600.0, 500.0));
-        layout.top_bar = Some(LayoutBox::new(0.0, 0.0, 1200.0, 40.0));
-        layout.command_palette_modal = Some(LayoutBox::new(300.0, 150.0, 600.0, 300.0));
+        let layout = ViewportLayoutMap {
+            viewport_3d: Some(LayoutBox::new(0.0, 40.0, 600.0, 500.0)),
+            viewport_2d: Some(LayoutBox::new(600.0, 40.0, 600.0, 500.0)),
+            top_bar: Some(LayoutBox::new(0.0, 0.0, 1200.0, 40.0)),
+            command_palette_modal: Some(LayoutBox::new(300.0, 150.0, 600.0, 300.0)),
+            ..Default::default()
+        };
 
-        let mut state = StudioV2State::default();
-        state.layout_mode = ViewLayoutMode::Split;
+        let mut state = StudioV2State {
+            layout_mode: ViewLayoutMode::Split,
+            ..Default::default()
+        };
 
         // Chrome hit (top bar)
         assert_eq!(

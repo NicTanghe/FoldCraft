@@ -180,3 +180,33 @@ and malformed syntax. Each invalid input must exit 1 without a Python traceback.
 
 These references define the bounded original implementation. They do not imply
 support for every OpenUSD schema, Hydra renderer, asset resolver or DCC extension.
+
+## Native viewport rendering
+
+Both cssimpler editors use the registered USD viewport as their sole 3D renderer.
+The previous CPU-projected SVG triangle overlay has been removed; the 2D pattern
+boards still use SVG. This removes duplicate mesh projection and DOM construction
+on UI rebuilds. The USD snapshot is loaded at application creation and retained as a shared stage.
+Accepted simulation results update its point attributes on the event thread, so
+the native renderer observes stage revisions without file export/reload. Reference
+editor reset/remeshing also updates display topology. Worker scheduling remains
+separate follow-up work.
+
+Native USD host elements have explicit flex sizing and minimum drawable dimensions;
+unlike an SVG, their mesh content does not supply an intrinsic DOM size.
+
+The native preview also includes a static display mesh for the collision surface:
+the loaded mannequin in the fitting workspace and a tessellated analytic sphere
+in the reference demo. This display mesh does not alter collision geometry.
+
+Status groups use a single clipped flex row. Wrapping diagnostics previously
+extended above the footer into the native viewport by less than a pixel;
+cssimpler correctly hid the GPU host because of that overlapping text paint.
+The regression check inspects extracted text paint at multiple window sizes.
+
+`cloth-fit --steps 0 --ui-smoke` is an explicit native GPU smoke run. After
+two native USD frames it writes a GPU-rendered viewport image to `ui.png` and
+its dimensions/frame count/scope to `ui.json`, then exits normally. The capture
+excludes UI chrome, editing and simulation; it rejects uniform images. Normal
+launches do not capture/read back GPU images. Portable Windows verification
+checks this lifecycle and its evidence.

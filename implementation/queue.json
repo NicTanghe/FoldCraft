@@ -411,6 +411,19 @@
       "owner": null,
       "vruntime": 4.0,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/33"
+    },
+    {
+      "id": "FC-0032",
+      "title": "Remove duplicate SVG 3D rendering from cssimpler editors",
+      "acceptance": "Both native editors retain their USD viewport registration and contain no SVG 3D mesh generation; 2D SVG boards remain; desktop compilation passes",
+      "points": 1.0,
+      "spent": 1.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.125,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/34"
     }
   ]
 }

@@ -160,6 +160,9 @@ pub enum ObjectCategory {
 // ============================================================================
 
 pub struct CssRunnerState {
+    pub smoke: bool,
+    pub smoke_done: std::rc::Rc<std::cell::Cell<bool>>,
+    pub usd_scene: Option<cssimpler::renderer::gpu::usd::UsdScene>,
     pub project: FittingProject,
     pub scene: FittingScene,
     pub initial_scene: FittingScene,
@@ -200,6 +203,9 @@ impl CssRunnerState {
         let initial_scene = scene.clone();
 
         Self {
+            smoke: false,
+            smoke_done: Default::default(),
+            usd_scene: None,
             project,
             scene,
             initial_scene,
@@ -248,6 +254,20 @@ impl CssRunnerState {
         }
     }
 
+    pub fn sync_usd_points(&mut self) {
+        if let Some(scene) = &self.usd_scene {
+            for panel in &self.scene.garment.panels {
+                if let Err(error) = marvelous_cloth::usd_scene::update_viewport_points(
+                    scene,
+                    &marvelous_cloth::usd_scene::viewport_panel_path(&panel.id),
+                    &self.scene.state.x[panel.vertices.clone()],
+                ) {
+                    self.status_message = format!("USD update error: {error}");
+                }
+            }
+        }
+    }
+
     pub fn reset_simulation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.scene = self.initial_scene.clone();
@@ -257,6 +277,7 @@ impl CssRunnerState {
         self.worker_pending = false;
         self.playing = false;
         self.status_message = "Reset simulation state".to_string();
+        self.sync_usd_points();
     }
 
     pub fn save_project(&mut self) {
@@ -291,8 +312,12 @@ impl CssRunnerState {
 
 pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidation {
     // 1. Poll simulation worker result
-    if let Ok(mut guard) = state.worker_latest.lock()
-        && let Some(done) = guard.take()
+    let done = state
+        .worker_latest
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+    if let Some(done) = done
         && done.generation == state.generation
     {
         state.worker_pending = false;
@@ -309,6 +334,7 @@ pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidat
                     metrics.step_ms
                 );
                 state.last_metrics = Some(metrics);
+                state.sync_usd_points();
             }
             Err(e) => {
                 state.playing = false;
@@ -646,9 +672,7 @@ fn build_runner_stage(state: &CssRunnerState) -> Node {
     }
 }
 
-fn build_runner_3d_viewport(state: &CssRunnerState) -> Node {
-    let svg_nodes = render_runner_3d_svg(state);
-
+fn build_runner_3d_viewport(_state: &CssRunnerState) -> Node {
     ui! {
         <div id="viewport-3d" class="viewport-container">
             <div class="viewport-header">
@@ -657,9 +681,6 @@ fn build_runner_3d_viewport(state: &CssRunnerState) -> Node {
             </div>
             <div class="canvas-area">
                 <div id="runner-viewport-3d-scene" class="viewport"></div>
-                <svg viewBox="0 0 640 480" class="svg-canvas">
-                    {svg_nodes}
-                </svg>
             </div>
         </div>
     }
@@ -940,107 +961,7 @@ fn build_runner_command_palette(state: &CssRunnerState) -> Node {
 }
 
 // ============================================================================
-// 3D Perspective SVG Projection Engine (Garment + Avatar)
-// ============================================================================
-
-fn render_runner_3d_svg(state: &CssRunnerState) -> Vec<Node> {
-    let mut nodes = Vec::new();
-
-    // Canvas background
-    nodes.push(ui! {
-        <rect width="640" height="480" fill="#111318" />
-    });
-
-    let w = 640.0_f32;
-    let h = 480.0_f32;
-    let aspect = w / h;
-    let view_proj = state.camera.matrix(aspect);
-
-    let light_dir = glam::Vec3::new(0.35, 0.85, 0.4).normalize();
-
-    // 1. Render sampled Avatar Surface Mesh triangles (mannequin)
-    let avatar_tris = &state.scene.collider.surface.triangles;
-    let avatar_verts = &state.scene.collider.surface.vertices;
-
-    let stride = (avatar_tris.len() / 600).max(1);
-    for i in (0..avatar_tris.len()).step_by(stride) {
-        let tri = avatar_tris[i];
-        let p0 = avatar_verts[tri[0]];
-        let p1 = avatar_verts[tri[1]];
-        let p2 = avatar_verts[tri[2]];
-
-        let v0 = glam::Vec3::new(p0.x as f32, p0.y as f32, p0.z as f32);
-        let v1 = glam::Vec3::new(p1.x as f32, p1.y as f32, p1.z as f32);
-        let v2 = glam::Vec3::new(p2.x as f32, p2.y as f32, p2.z as f32);
-
-        let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
-        let diffuse = normal.dot(light_dir).abs().clamp(0.2, 0.85);
-
-        let c0 = view_proj.project_point3(v0);
-        let c1 = view_proj.project_point3(v1);
-        let c2 = view_proj.project_point3(v2);
-
-        let x0 = (c0.x * 0.5 + 0.5) * w;
-        let y0 = (1.0 - (c0.y * 0.5 + 0.5)) * h;
-        let x1 = (c1.x * 0.5 + 0.5) * w;
-        let y1 = (1.0 - (c1.y * 0.5 + 0.5)) * h;
-        let x2 = (c2.x * 0.5 + 0.5) * w;
-        let y2 = (1.0 - (c2.y * 0.5 + 0.5)) * h;
-
-        let points = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
-        let gray = (140.0 * diffuse) as u8;
-        let color = format!("rgb({gray},{gray},{gray})");
-
-        nodes.push(ui! {
-            <polygon points={points} fill={color} stroke="none" />
-        });
-    }
-
-    // 2. Render Garment Mesh triangles
-    let garment_tris = &state.scene.garment.mesh.triangles;
-    let positions = &state.scene.state.x;
-
-    let cloth_stride = (garment_tris.len() / 800).max(1);
-    for i in (0..garment_tris.len()).step_by(cloth_stride) {
-        let tri = &garment_tris[i];
-        let p0 = positions[tri.vertices[0]];
-        let p1 = positions[tri.vertices[1]];
-        let p2 = positions[tri.vertices[2]];
-
-        let v0 = glam::Vec3::new(p0.x as f32, p0.y as f32, p0.z as f32);
-        let v1 = glam::Vec3::new(p1.x as f32, p1.y as f32, p1.z as f32);
-        let v2 = glam::Vec3::new(p2.x as f32, p2.y as f32, p2.z as f32);
-
-        let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
-        let diffuse = normal.dot(light_dir).abs().clamp(0.2, 0.95);
-
-        let c0 = view_proj.project_point3(v0);
-        let c1 = view_proj.project_point3(v1);
-        let c2 = view_proj.project_point3(v2);
-
-        let x0 = (c0.x * 0.5 + 0.5) * w;
-        let y0 = (1.0 - (c0.y * 0.5 + 0.5)) * h;
-        let x1 = (c1.x * 0.5 + 0.5) * w;
-        let y1 = (1.0 - (c1.y * 0.5 + 0.5)) * h;
-        let x2 = (c2.x * 0.5 + 0.5) * w;
-        let y2 = (1.0 - (c2.y * 0.5 + 0.5)) * h;
-
-        let points = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
-        let r = (220.0 * diffuse) as u8;
-        let g = (235.0 * diffuse) as u8;
-        let b = (255.0 * diffuse) as u8;
-        let color = format!("rgb({r},{g},{b})");
-
-        nodes.push(ui! {
-            <polygon points={points} fill={color} stroke="#3b82f6" stroke-width="0.5" />
-        });
-    }
-
-    nodes
-}
-
-// ============================================================================
-// 2D Pattern Board SVG Viewport Engine
+// 2D Pattern Board SVG
 // ============================================================================
 
 fn render_runner_2d_svg(state: &CssRunnerState) -> Vec<Node> {
@@ -1117,7 +1038,7 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> Vec<Node> {
 
 #[allow(clippy::type_complexity)]
 pub fn create_runner_app<'a>(
-    state: CssRunnerState,
+    mut state: CssRunnerState,
     stylesheet: &'a Stylesheet,
 ) -> App<
     'a,
@@ -1133,8 +1054,17 @@ pub fn create_runner_app<'a>(
     let usda =
         marvelous_cloth::usd_scene::garment_stage_usda(&state.scene.garment, &state.scene.state)
             .unwrap_or_default();
+    let usda =
+        marvelous_cloth::usd_scene::append_viewport_surface(usda, &state.scene.collider.surface);
     let _ = std::fs::write(&preview_path, usda);
 
+    let usd_scene = cssimpler::renderer::gpu::usd::UsdScene::open(&preview_path)
+        .expect("load generated USD viewport scene");
+    state.usd_scene = Some(usd_scene.clone());
+
+    let smoke = state.smoke;
+    let smoke_done = state.smoke_done.clone();
+    let smoke_output = state.files.output.join("ui.png");
     let app = App::new(
         state,
         stylesheet,
@@ -1142,22 +1072,44 @@ pub fn create_runner_app<'a>(
         build_runner_ui as fn(&CssRunnerState) -> Node,
     )
     .with_event_handler(handle_runner_event)
-    .with_render_mode(RenderMode::OnInvalidation);
+    .with_render_mode(RenderMode::OnInvalidation)
+    .with_continuous_updates(true)
+    .with_exit_when(|state| state.smoke_done.get());
 
-    #[cfg(feature = "desktop")]
-    let app = app.with_usd_viewport(
-        "runner-viewport-3d-scene",
-        preview_path,
-        cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
-    );
-
-    app
+    if smoke {
+        app.with_gpu_viewport(
+            "runner-viewport-3d-scene",
+            Default::default(),
+            move |init| {
+                let redraw = init.redraw.clone();
+                let renderer = cssimpler::renderer::gpu::usd::UsdRenderer::new(
+                    init,
+                    usd_scene,
+                    cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
+                )?;
+                Ok(Box::new(super::usd_smoke::SmokeViewport {
+                    renderer,
+                    output: smoke_output,
+                    done: smoke_done,
+                    redraw,
+                    frames: 0,
+                }))
+            },
+        )
+    } else {
+        app.with_usd_viewport(
+            "runner-viewport-3d-scene",
+            usd_scene,
+            cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
+        )
+    }
 }
 
 pub fn run(
     project: FittingProject,
     scene: FittingScene,
     files: DocumentFiles,
+    smoke: bool,
 ) -> Result<(), String> {
     let stylesheet =
         Box::leak(Box::new(load_studio_stylesheet().map_err(|e| {
@@ -1167,11 +1119,16 @@ pub fn run(
     // Start background simulation worker on CPU
     let (tx, latest) = worker::start_cpu().map_err(|e| format!("Failed to start worker: {e}"))?;
 
-    let state = CssRunnerState::new(project, scene, files, tx, latest);
+    let mut state = CssRunnerState::new(project, scene, files, tx, latest);
+    state.smoke = smoke;
+    let smoke_done = state.smoke_done.clone();
     let app = create_runner_app(state, stylesheet);
     let config = WindowConfig::new("ClothCraft | Simulation Studio V2", 1600, 980);
     app.run(config)
         .map_err(|e| format!("CSSimpler application error: {e}"))?;
+    if smoke && !smoke_done.get() {
+        return Err("Native smoke closed before USD capture completed".into());
+    }
     Ok(())
 }
 
@@ -1203,6 +1160,7 @@ mod tests {
         let (tx, latest) = worker::start_cpu().expect("start cpu worker");
         let state = CssRunnerState::new(project, scene, files, tx, latest);
         let mut app = create_runner_app(state, &stylesheet);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
 
         // Headless frame advance
         let scene = app.frame(FrameInfo {
@@ -1211,8 +1169,30 @@ mod tests {
         });
         assert!(!scene.is_empty(), "runner scene should not be empty");
 
+        let collider_points = app
+            .state()
+            .usd_scene
+            .as_ref()
+            .unwrap()
+            .stage()
+            .attribute("/Collider.points")
+            .unwrap()
+            .get::<Vec<cssimpler::renderer::gpu::openusd::gf::Vec3f>>()
+            .unwrap()
+            .unwrap();
+        assert!(
+            !collider_points.is_empty(),
+            "collision geometry must be visible in USD"
+        );
         // Verify layout containers
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
+        let usd_bounds = app
+            .find_element_bounds_by_id("#runner-viewport-3d-scene")
+            .expect("USD viewport exists");
+        assert!(
+            usd_bounds.width > 100.0 && usd_bounds.height > 100.0,
+            "USD viewport must have drawable area: {usd_bounds:?}"
+        );
         assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
         assert!(app.find_element_bounds_by_id("#right-dock").is_some());
 
@@ -1235,6 +1215,90 @@ mod tests {
             rgba.iter().any(|&b| b > 0),
             "rendered buffer should have painted pixels"
         );
+
+        // Deliver an accepted worker snapshot without running GPU work.
+        let read_points = |state: &CssRunnerState| {
+            let path =
+                marvelous_cloth::usd_scene::viewport_panel_path(&state.scene.garment.panels[0].id);
+            state
+                .usd_scene
+                .as_ref()
+                .unwrap()
+                .stage()
+                .attribute(format!("{path}.points"))
+                .unwrap()
+                .get::<Vec<cssimpler::renderer::gpu::openusd::gf::Vec3f>>()
+                .unwrap()
+                .unwrap()
+        };
+        let initial_points = read_points(app.state());
+        let mut moved = app.state().scene.state.clone();
+        moved.x[0].y += 0.01;
+        *app.state().worker_latest.lock().unwrap() = Some(worker::Done {
+            generation: app.state().generation,
+            had_grab: false,
+            result: Ok((moved, VbdMetrics::default())),
+        });
+        update_runner(
+            app.state_mut(),
+            FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 2,
+            },
+        );
+        assert_ne!(read_points(app.state()), initial_points);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 3,
+        });
+        let bounds = app
+            .find_element_bounds_by_id("#runner-viewport-3d-scene")
+            .unwrap();
+        assert!(
+            bounds.width > 100.0
+                && bounds.height > 100.0
+                && bounds.x >= 0.0
+                && bounds.x + bounds.width <= 1600.0
+                && bounds.y + bounds.height <= 980.0,
+            "live USD host must remain inside the window: {bounds:?}"
+        );
+
+        app.state_mut().reset_simulation();
+        assert_eq!(read_points(app.state()), initial_points);
+
+        // Native USD hosts are hidden if later text paint overlaps their area.
+        // Check expanded diagnostics as well as Ready, across window sizes.
+        for (width, height) in [(1600, 980), (1280, 800), (1024, 768), (800, 600)] {
+            app.set_viewport(cssimpler::renderer::ViewportSize::new(width, height));
+            for message in ["Ready", "Step 124: min dist 0.124 mm, res 0.0e0, 65.2 ms"] {
+                app.state_mut().status_message = message.into();
+                let roots = app.frame(FrameInfo {
+                    delta: Duration::from_millis(16),
+                    frame_index: 4,
+                });
+                let viewport = app
+                    .find_element_bounds_by_id("#runner-viewport-3d-scene")
+                    .unwrap();
+                let paint = cssimpler::core::ExtractedScene::from_render_roots(&roots);
+                for item in paint
+                    .items
+                    .iter()
+                    .filter(|item| item.kind == cssimpler::core::ExtractedPaintKind::TextRun)
+                {
+                    let text = item.layout;
+                    let overlaps = text.x < viewport.x + viewport.width
+                        && viewport.x < text.x + text.width
+                        && text.y < viewport.y + viewport.height
+                        && viewport.y < text.y + text.height;
+                    assert!(
+                        !overlaps,
+                        "text must not hide USD at {width}x{height}: {:?} {:?} over {viewport:?}",
+                        item.text, text
+                    );
+                }
+            }
+        }
 
         // Test Play / Step
         app.state_mut().playing = true;

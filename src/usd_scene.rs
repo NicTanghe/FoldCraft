@@ -250,3 +250,130 @@ pub fn mesh_stage_usda(
     out.push_str("] (\n                interpolation = \"vertex\"\n            )\n            color3f[] primvars:displayColor = [(0.62, 0.68, 0.78)] (\n                interpolation = \"constant\"\n            )\n        }\n    }\n}\n");
     Ok(out)
 }
+
+/// Update transient display positions on the event thread, preserving USD identity.
+#[cfg(feature = "desktop")]
+pub fn update_viewport_points(
+    scene: &cssimpler::renderer::gpu::usd::UsdScene,
+    path: &str,
+    positions: &[glam::DVec3],
+) -> Result<(), String> {
+    use cssimpler::renderer::gpu::openusd::gf;
+    if positions
+        .iter()
+        .any(|p| p.to_array().into_iter().any(|v| !finite_float(v)))
+    {
+        return Err("USD display positions must be finite f32 values".into());
+    }
+    let points: Vec<_> = positions
+        .iter()
+        .map(|p| gf::vec3f(p.x as f32, p.y as f32, p.z as f32))
+        .collect();
+    scene
+        .stage()
+        .attribute(format!("{path}.points"))
+        .map_err(|e| e.to_string())?
+        .set(points)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Transient USD mesh path derived from a semantic panel ID.
+#[cfg(feature = "desktop")]
+pub fn viewport_panel_path(id: &str) -> String {
+    format!("/World/Garment/{}", prim_name(id))
+}
+
+#[cfg(feature = "desktop")]
+pub fn update_viewport_topology(
+    scene: &cssimpler::renderer::gpu::usd::UsdScene,
+    mesh: &crate::model::Mesh,
+) -> Result<(), String> {
+    for (name, values) in [
+        ("faceVertexCounts", vec![3_i32; mesh.triangles.len()]),
+        (
+            "faceVertexIndices",
+            mesh.triangles
+                .iter()
+                .flat_map(|t| t.vertices.map(|i| i as i32))
+                .collect(),
+        ),
+    ] {
+        scene
+            .stage()
+            .attribute(format!("/World/Garment/cloth_mesh.{name}"))
+            .map_err(|e| e.to_string())?
+            .set(values)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Add a static collision surface to a display stage without changing physics.
+pub fn append_viewport_surface(mut usda: String, surface: &crate::avatar::SurfaceMesh) -> String {
+    // Put the display-only mesh alongside World so garment panel identity is unchanged.
+    usda.push_str("\ndef Mesh \"Collider\"\n{\n uniform token subdivisionScheme = \"none\"\n uniform bool doubleSided = true\n color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]\n point3f[] points = [");
+    for (i, p) in surface.vertices.iter().enumerate() {
+        if i > 0 {
+            usda.push(',');
+        }
+        write!(usda, "({},{},{})", p.x as f32, p.y as f32, p.z as f32).unwrap();
+    }
+    usda.push_str("]\n int[] faceVertexCounts = [");
+    for i in 0..surface.triangles.len() {
+        if i > 0 {
+            usda.push(',');
+        }
+        usda.push('3');
+    }
+    usda.push_str("]\n int[] faceVertexIndices = [");
+    for (i, t) in surface.triangles.iter().enumerate() {
+        if i > 0 {
+            usda.push(',');
+        }
+        write!(usda, "{},{},{}", t[0], t[1], t[2]).unwrap();
+    }
+    usda.push_str("]\n}\n");
+    usda
+}
+
+/// Tessellate the analytic reference collider for display only.
+pub fn viewport_sphere(sphere: &crate::contact::Sphere) -> crate::avatar::SurfaceMesh {
+    use glam::DVec3;
+    let mut vertices = vec![sphere.center + DVec3::Y * sphere.radius];
+    let mut triangles = Vec::new();
+    const N: usize = 32;
+    const R: usize = 15;
+    for ring in 1..=R {
+        let theta = std::f64::consts::PI * ring as f64 / (R + 1) as f64;
+        for j in 0..N {
+            let phi = std::f64::consts::TAU * j as f64 / N as f64;
+            vertices.push(
+                sphere.center
+                    + sphere.radius
+                        * DVec3::new(
+                            theta.sin() * phi.cos(),
+                            theta.cos(),
+                            theta.sin() * phi.sin(),
+                        ),
+            );
+        }
+    }
+    let bottom = vertices.len();
+    vertices.push(sphere.center - DVec3::Y * sphere.radius);
+    for j in 0..N {
+        let next = (j + 1) % N;
+        triangles.push([0, 1 + next, 1 + j]);
+        for ring in 0..R - 1 {
+            let a = 1 + ring * N + j;
+            let b = 1 + ring * N + next;
+            triangles.push([a, b, a + N]);
+            triangles.push([b, b + N, a + N]);
+        }
+        triangles.push([1 + (R - 1) * N + j, 1 + (R - 1) * N + next, bottom]);
+    }
+    crate::avatar::SurfaceMesh {
+        vertices,
+        triangles,
+    }
+}
