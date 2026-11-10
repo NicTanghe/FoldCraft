@@ -1050,6 +1050,8 @@ pub fn create_runner_app<'a>(
     let usda =
         marvelous_cloth::usd_scene::garment_stage_usda(&state.scene.garment, &state.scene.state)
             .unwrap_or_default();
+    let usda =
+        marvelous_cloth::usd_scene::append_viewport_surface(usda, &state.scene.collider.surface);
     let _ = std::fs::write(&preview_path, usda);
 
     let usd_scene = cssimpler::renderer::gpu::usd::UsdScene::open(&preview_path)
@@ -1134,6 +1136,21 @@ mod tests {
         });
         assert!(!scene.is_empty(), "runner scene should not be empty");
 
+        let collider_points = app
+            .state()
+            .usd_scene
+            .as_ref()
+            .unwrap()
+            .stage()
+            .attribute("/Collider.points")
+            .unwrap()
+            .get::<Vec<cssimpler::renderer::gpu::openusd::gf::Vec3f>>()
+            .unwrap()
+            .unwrap();
+        assert!(
+            !collider_points.is_empty(),
+            "collision geometry must be visible in USD"
+        );
         // Verify layout containers
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
         let usd_bounds = app
@@ -1197,6 +1214,23 @@ mod tests {
             },
         );
         assert_ne!(read_points(app.state()), initial_points);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 3,
+        });
+        let bounds = app
+            .find_element_bounds_by_id("#runner-viewport-3d-scene")
+            .unwrap();
+        assert!(
+            bounds.width > 100.0
+                && bounds.height > 100.0
+                && bounds.x >= 0.0
+                && bounds.x + bounds.width <= 1600.0
+                && bounds.y + bounds.height <= 980.0,
+            "live USD host must remain inside the window: {bounds:?}"
+        );
+
         app.state_mut().reset_simulation();
         assert_eq!(read_points(app.state()), initial_points);
 

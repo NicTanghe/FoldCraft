@@ -194,3 +194,7 @@ separate follow-up work.
 
 Native USD host elements have explicit flex sizing and minimum drawable dimensions;
 unlike an SVG, their mesh content does not supply an intrinsic DOM size.
+
+The native preview also includes a static display mesh for the collision surface:
+the loaded mannequin in the fitting workspace and a tessellated analytic sphere
+in the reference demo. This display mesh does not alter collision geometry.

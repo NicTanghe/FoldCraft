@@ -308,3 +308,72 @@ pub fn update_viewport_topology(
     }
     Ok(())
 }
+
+/// Add a static collision surface to a display stage without changing physics.
+pub fn append_viewport_surface(mut usda: String, surface: &crate::avatar::SurfaceMesh) -> String {
+    // Put the display-only mesh alongside World so garment panel identity is unchanged.
+    usda.push_str("\ndef Mesh \"Collider\"\n{\n uniform token subdivisionScheme = \"none\"\n uniform bool doubleSided = true\n color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]\n point3f[] points = [");
+    for (i, p) in surface.vertices.iter().enumerate() {
+        if i > 0 {
+            usda.push(',');
+        }
+        write!(usda, "({},{},{})", p.x as f32, p.y as f32, p.z as f32).unwrap();
+    }
+    usda.push_str("]\n int[] faceVertexCounts = [");
+    for i in 0..surface.triangles.len() {
+        if i > 0 {
+            usda.push(',');
+        }
+        usda.push('3');
+    }
+    usda.push_str("]\n int[] faceVertexIndices = [");
+    for (i, t) in surface.triangles.iter().enumerate() {
+        if i > 0 {
+            usda.push(',');
+        }
+        write!(usda, "{},{},{}", t[0], t[1], t[2]).unwrap();
+    }
+    usda.push_str("]\n}\n");
+    usda
+}
+
+/// Tessellate the analytic reference collider for display only.
+pub fn viewport_sphere(sphere: &crate::contact::Sphere) -> crate::avatar::SurfaceMesh {
+    use glam::DVec3;
+    let mut vertices = vec![sphere.center + DVec3::Y * sphere.radius];
+    let mut triangles = Vec::new();
+    const N: usize = 32;
+    const R: usize = 15;
+    for ring in 1..=R {
+        let theta = std::f64::consts::PI * ring as f64 / (R + 1) as f64;
+        for j in 0..N {
+            let phi = std::f64::consts::TAU * j as f64 / N as f64;
+            vertices.push(
+                sphere.center
+                    + sphere.radius
+                        * DVec3::new(
+                            theta.sin() * phi.cos(),
+                            theta.cos(),
+                            theta.sin() * phi.sin(),
+                        ),
+            );
+        }
+    }
+    let bottom = vertices.len();
+    vertices.push(sphere.center - DVec3::Y * sphere.radius);
+    for j in 0..N {
+        let next = (j + 1) % N;
+        triangles.push([0, 1 + next, 1 + j]);
+        for ring in 0..R - 1 {
+            let a = 1 + ring * N + j;
+            let b = 1 + ring * N + next;
+            triangles.push([a, b, a + N]);
+            triangles.push([b, b + N, a + N]);
+        }
+        triangles.push([1 + (R - 1) * N + j, 1 + (R - 1) * N + next, bottom]);
+    }
+    crate::avatar::SurfaceMesh {
+        vertices,
+        triangles,
+    }
+}

@@ -1105,6 +1105,14 @@ pub fn create_editor_app<'a>(
     }
     let usda =
         marvelous_cloth::usd_scene::mesh_stage_usda(&state.mesh, &state.state).unwrap_or_default();
+    let usda = if let Some(sphere) = &state.active.sphere {
+        marvelous_cloth::usd_scene::append_viewport_surface(
+            usda,
+            &marvelous_cloth::usd_scene::viewport_sphere(sphere),
+        )
+    } else {
+        usda
+    };
     let _ = std::fs::write(&preview_path, usda);
 
     let usd_scene = cssimpler::renderer::gpu::usd::UsdScene::open(&preview_path)
@@ -1164,6 +1172,21 @@ mod tests {
         });
         assert!(!scene.is_empty(), "scene nodes should not be empty");
 
+        let collider_points = app
+            .state()
+            .usd_scene
+            .as_ref()
+            .unwrap()
+            .stage()
+            .attribute("/Collider.points")
+            .unwrap()
+            .get::<Vec<cssimpler::renderer::gpu::openusd::gf::Vec3f>>()
+            .unwrap()
+            .unwrap();
+        assert!(
+            !collider_points.is_empty(),
+            "collision geometry must be visible in USD"
+        );
         // Verify key layout containers exist
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
         let usd_bounds = app
