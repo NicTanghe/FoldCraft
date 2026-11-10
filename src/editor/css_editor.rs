@@ -7,8 +7,9 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Instant;
 
 use cssimpler::app::{App, Invalidation, RenderMode};
 use cssimpler::core::Node;
@@ -146,6 +147,108 @@ pub enum EditorTab {
 }
 
 // ============================================================================
+// ============================================================================
+// Reference Simulation Worker
+// ============================================================================
+
+pub struct RefWork {
+    pub generation: u64,
+    pub mesh: Arc<Mesh>,
+    pub state: State,
+    pub material: marvelous_cloth::model::Material,
+    pub solver: marvelous_cloth::solver::SolverSettings,
+    pub sphere: Option<marvelous_cloth::contact::Sphere>,
+    pub playing: bool,
+    pub once: bool,
+}
+
+pub struct RefDone {
+    pub generation: u64,
+    pub result: Result<(State, Metrics), String>,
+}
+
+pub type RefLatest = Arc<Mutex<Option<RefDone>>>;
+
+pub fn start_reference_worker() -> Result<(mpsc::Sender<RefWork>, RefLatest), std::io::Error> {
+    let (tx, rx) = mpsc::channel::<RefWork>();
+    let latest: RefLatest = Arc::new(Mutex::new(None));
+    let output = latest.clone();
+    std::thread::Builder::new()
+        .name("cloth-reference".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let mut active: Option<RefWork> = None;
+            let mut deadline = Instant::now();
+            loop {
+                let wait = active.as_ref().and_then(|w| {
+                    if w.once {
+                        Some(std::time::Duration::ZERO)
+                    } else if w.playing {
+                        Some(deadline.saturating_duration_since(Instant::now()))
+                    } else {
+                        None
+                    }
+                });
+                let incoming = match wait {
+                    Some(dur) => rx.recv_timeout(dur).ok(),
+                    None => rx.recv().ok(),
+                };
+                if let Some(work) = incoming {
+                    accept_ref(&mut active, work, &mut deadline);
+                    while let Ok(work) = rx.try_recv() {
+                        accept_ref(&mut active, work, &mut deadline);
+                    }
+                }
+                let Some(work) = active.as_mut() else {
+                    continue;
+                };
+                if !work.once && (!work.playing || Instant::now() < deadline) {
+                    continue;
+                }
+                let was_once = work.once;
+                work.once = false;
+
+                let outcome = ReferenceSolver::step(
+                    &work.mesh,
+                    &mut work.state,
+                    &work.material,
+                    &work.solver,
+                    work.sphere.as_ref(),
+                )
+                .map(|m| (work.state.clone(), m));
+
+                let generation = work.generation;
+                if let Ok(mut slot) = output.lock() {
+                    *slot = Some(RefDone {
+                        generation,
+                        result: outcome,
+                    });
+                }
+                if !was_once {
+                    let dt = work.solver.dt.max(0.001);
+                    deadline = Instant::now() + std::time::Duration::from_secs_f64(dt);
+                }
+            }
+        })?;
+    Ok((tx, latest))
+}
+
+fn accept_ref(active: &mut Option<RefWork>, mut new: RefWork, deadline: &mut Instant) {
+    if let Some(old) = active {
+        if old.generation == new.generation {
+            std::mem::swap(&mut old.state, &mut new.state);
+            new.once |= old.once;
+            if new.playing && !old.playing {
+                *deadline = Instant::now();
+            }
+        } else {
+            *deadline = Instant::now();
+        }
+    }
+    *active = Some(new);
+}
+
+// ============================================================================
 // State Struct
 // ============================================================================
 
@@ -180,6 +283,9 @@ pub struct CssEditorState {
     // Pointer / camera drag state
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
+    pub worker_tx: mpsc::Sender<RefWork>,
+    pub worker_latest: RefLatest,
+    pub generation: u64,
 }
 
 impl CssEditorState {
@@ -200,6 +306,8 @@ impl CssEditorState {
                 "40".to_string(),
             )
         };
+
+        let (worker_tx, worker_latest) = start_reference_worker().expect("start reference worker");
 
         Self {
             usd_scene: None,
@@ -229,34 +337,54 @@ impl CssEditorState {
             mesh_prep_error: None,
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
+            worker_tx,
+            worker_latest,
+            generation: 1,
         }
     }
 
+    pub fn send_control_state(&mut self, once: bool) {
+        let work = RefWork {
+            generation: self.generation,
+            mesh: self.mesh.clone(),
+            state: self.state.clone(),
+            material: self.active.material.clone(),
+            solver: self.active.solver.clone(),
+            sphere: self.active.sphere.clone(),
+            playing: self.playing,
+            once,
+        };
+        let _ = self.worker_tx.send(work);
+    }
+
+    pub fn trigger_step(&mut self) {
+        self.send_control_state(true);
+    }
+
     pub fn step(&mut self) {
-        match ReferenceSolver::step(
-            &self.mesh,
-            &mut self.state,
-            &self.active.material,
-            &self.active.solver,
-            self.active.sphere.as_ref(),
-        ) {
-            Ok(m) => {
-                self.step_count += 1;
-                self.step_ms = m.step_ms;
-                self.status_message = format!(
-                    "Step {}: max pen {:.3} mm, residual {:.1e}, {:.1} ms",
-                    self.step_count,
-                    m.max_vertex_penetration_m * 1000.0,
-                    m.residual_rms_n,
-                    m.step_ms
-                );
-                self.metrics = Some(m);
-                self.sync_usd_points();
+        self.trigger_step();
+        let deadline = Instant::now() + std::time::Duration::from_millis(1000);
+        while Instant::now() < deadline {
+            if let Some(done) = self.worker_latest.lock().ok().and_then(|mut g| g.take()) {
+                if done.generation == self.generation {
+                    if let Ok((new_state, m)) = done.result {
+                        self.state = new_state;
+                        self.step_count += 1;
+                        self.step_ms = m.step_ms;
+                        self.status_message = format!(
+                            "Step {}: max pen {:.3} mm, residual {:.1e}, {:.1} ms",
+                            self.step_count,
+                            m.max_vertex_penetration_m * 1000.0,
+                            m.residual_rms_n,
+                            m.step_ms
+                        );
+                        self.metrics = Some(m);
+                        self.sync_usd_points();
+                        break;
+                    }
+                }
             }
-            Err(e) => {
-                self.playing = false;
-                self.status_message = format!("Solver error: {e}");
-            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
     }
 
@@ -273,6 +401,8 @@ impl CssEditorState {
     }
 
     pub fn reset(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.playing = false;
         if let Ok((mesh, state)) = self.active.build() {
             self.mesh = Arc::new(mesh);
             self.state = state;
@@ -287,6 +417,7 @@ impl CssEditorState {
                 self.status_message = format!("USD topology error: {error}");
             }
             self.sync_usd_points();
+            self.send_control_state(false);
         }
     }
 
@@ -362,13 +493,47 @@ impl CssEditorState {
 // ============================================================================
 
 pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidation {
+    let done = state
+        .worker_latest
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+    let mut had_result = false;
+    if let Some(done) = done
+        && done.generation == state.generation
+    {
+        match done.result {
+            Ok((new_state, m)) => {
+                had_result = true;
+                state.state = new_state;
+                state.step_count += 1;
+                state.step_ms = m.step_ms;
+                state.status_message = format!(
+                    "Step {}: max pen {:.3} mm, residual {:.1e}, {:.1} ms",
+                    state.step_count,
+                    m.max_vertex_penetration_m * 1000.0,
+                    m.residual_rms_n,
+                    m.step_ms
+                );
+                state.metrics = Some(m);
+                state.sync_usd_points();
+            }
+            Err(e) => {
+                state.playing = false;
+                state.status_message = format!("Solver error: {e}");
+                state.send_control_state(false);
+            }
+        }
+    }
+
     let actions = PENDING_ACTIONS.swap(0, Ordering::Relaxed);
 
     if actions & ACT_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
+        state.send_control_state(false);
     }
     if actions & ACT_STEP != 0 {
-        state.step();
+        state.trigger_step();
     }
     if actions & ACT_RESET != 0 {
         state.reset();
@@ -442,9 +607,12 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
     }
 
     if state.playing {
-        state.step();
-        Invalidation::Paint
-    } else if actions != 0 {
+        if had_result {
+            Invalidation::Paint
+        } else {
+            Invalidation::Clean
+        }
+    } else if actions != 0 || had_result {
         Invalidation::Structure
     } else {
         Invalidation::Clean
@@ -458,6 +626,7 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
                 if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key {
                     if ch == " " {
                         state.playing = !state.playing;
+                        state.send_control_state(false);
                         return true;
                     }
                     if ch == "k" && (k.modifiers.control || k.modifiers.super_key) {

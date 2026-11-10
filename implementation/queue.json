@@ -424,6 +424,22 @@
       "owner": null,
       "vruntime": 3.125,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/34"
+    },
+    {
+      "id": "FC-0033",
+      "title": "Fix CSSimpler performance regressions: backend selection, decoupled workers, control signaling, and idle invalidation",
+      "acceptance": "Wire GPU simulation backend into css_runner; decouple ReferenceSolver into background worker; fix pause/reset worker control signaling and eliminate per-frame scene resubmission; return Clean when idle in update_runner; re-wire ui_perf_smoke and smoke flags; pass CPU and desktop checks.",
+      "points": 3.0,
+      "spent": 0.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0031",
+        "FC-0032"
+      ],
+      "status": "active",
+      "owner": "cssimpler_agent",
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/35"
     }
   ]
 }
