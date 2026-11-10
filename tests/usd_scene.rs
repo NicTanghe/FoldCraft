@@ -114,3 +114,16 @@ fn nonfinite_and_float_overflow_snapshots_are_rejected() {
     garment.mesh.uv[0].y = f64::NAN;
     assert!(garment_stage_usda(&garment, &garment.initial_state).is_err());
 }
+
+#[test]
+fn mesh_stage_usda_publishes_model_mesh() {
+    let project = marvelous_cloth::project::Project::default();
+    let (mesh, state) = project.build().unwrap();
+    let usda = marvelous_cloth::usd_scene::mesh_stage_usda(&mesh, &state).unwrap();
+    assert!(usda.starts_with("#usda 1.0\n"));
+    assert!(usda.contains("def Mesh \"cloth_mesh\""));
+    assert!(usda.contains("custom string clothcraft:panelId = \"cloth\""));
+    assert!(usda.contains("point3f[] points = ["));
+    assert!(usda.contains("int[] faceVertexCounts = ["));
+    assert!(usda.contains("int[] faceVertexIndices = ["));
+}

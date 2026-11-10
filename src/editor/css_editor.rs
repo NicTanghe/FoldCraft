@@ -656,9 +656,10 @@ fn build_3d_viewport(state: &CssEditorState) -> Node {
         <div id="viewport-3d" class="viewport-container">
             <div class="viewport-header">
                 <span class="viewport-title">"3D CLOTH VIEWPORT"</span>
-                <span class="viewport-sub">"Double-precision CPU reference"</span>
+                <span class="viewport-sub">"USD native 3D viewport"</span>
             </div>
             <div class="canvas-area">
+                <div id="viewport-3d-scene" class="viewport"></div>
                 <svg viewBox="0 0 600 450" class="svg-canvas">
                     {svg_nodes}
                 </svg>
@@ -1202,14 +1203,31 @@ pub fn create_editor_app<'a>(
     fn(&CssEditorState) -> Node,
     Invalidation,
 > {
-    App::new(
+    let preview_path = state.output_dir.join("editor_preview.usda");
+    if let Some(parent) = preview_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let usda =
+        marvelous_cloth::usd_scene::mesh_stage_usda(&state.mesh, &state.state).unwrap_or_default();
+    let _ = std::fs::write(&preview_path, usda);
+
+    let app = App::new(
         state,
         stylesheet,
         update_editor as fn(&mut CssEditorState, FrameInfo) -> Invalidation,
         build_editor_ui as fn(&CssEditorState) -> Node,
     )
     .with_event_handler(handle_editor_event)
-    .with_render_mode(RenderMode::OnInvalidation)
+    .with_render_mode(RenderMode::OnInvalidation);
+
+    #[cfg(feature = "desktop")]
+    let app = app.with_usd_viewport(
+        "viewport-3d-scene",
+        preview_path,
+        cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
+    );
+
+    app
 }
 
 pub fn run(project: Project, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
