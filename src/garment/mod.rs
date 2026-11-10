@@ -2,6 +2,7 @@
 //! No mesh indices are persisted in the authoring format.
 pub mod appearance;
 pub mod curves;
+pub mod darts;
 pub mod diagnostics;
 pub mod domain;
 pub mod dxf_import;

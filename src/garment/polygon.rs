@@ -486,4 +486,27 @@ impl PolygonPattern {
         }
         Ok(MeshedPolygon { mesh, boundaries })
     }
+
+    /// Cut a dart into this polygon along `edge`.
+    pub fn insert_cut_sewn_dart(
+        &mut self,
+        edge: &str,
+        left_t: f64,
+        right_t: f64,
+        apex: DVec2,
+        dart_id: &str,
+    ) -> Result<super::darts::DartResult, String> {
+        super::darts::cut_sewn_dart(self, edge, left_t, right_t, apex, dart_id)
+    }
+
+    /// Validate dart parameters against this polygon contour without mutating it.
+    pub fn validate_dart(
+        &self,
+        edge: &str,
+        left_t: f64,
+        right_t: f64,
+        apex: DVec2,
+    ) -> Result<super::darts::ValidatedDart, String> {
+        super::darts::validate_dart(self, edge, left_t, right_t, apex)
+    }
 }

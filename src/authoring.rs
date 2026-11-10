@@ -2,8 +2,8 @@
 //! Compile before accepting an edit. Reset physical state only when Edit requests it.
 use crate::{
     garment::{
-        CompiledGarment, GarmentTemplate, curves,
-        markings::{self, Notch},
+        CompiledGarment, GarmentTemplate, curves, darts,
+        markings::{self, Notch, NotchKind},
         meshing::MeshingSettings,
         polygon::{PatternMeasurement, PolygonPattern},
         seam::{BoundaryRef, SeamSpec},
@@ -215,12 +215,28 @@ pub enum Command {
         edge: String,
         width_m: f64,
     },
+    /// Outward seam allowance in metres across all outer boundaries of a panel;
+    /// `0.0` clears the allowances.
+    PanelSeamAllowance {
+        panel: String,
+        width_m: f64,
+    },
     /// Insert (`index: None`) or replace one notch on a named closed boundary.
     SetNotch {
         panel: String,
         edge: String,
         index: Option<usize>,
         notch: Notch,
+    },
+    /// Two symmetrical matching notches around an arclength station, added
+    /// as one atomic authoring/history transaction.
+    NotchPair {
+        panel: String,
+        edge: String,
+        center_t: f64,
+        spacing_m: f64,
+        depth_m: f64,
+        kind: NotchKind,
     },
     /// Remove one notch by its index in the boundary's list.
     RemoveNotch {
@@ -2057,17 +2073,6 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             right_t,
             apex,
         } => {
-            if !left_t.is_finite()
-                || !right_t.is_finite()
-                || left_t <= 0.01
-                || right_t >= 0.99
-                || right_t - left_t < 0.005
-                || !apex.is_finite()
-            {
-                return Err(
-                    "Dart requires two distinct interior edge stations and a finite apex".into(),
-                );
-            }
             // All chain segments count, including tails and trimmed/reversed sides.
             if seam_uses(&template, &panel, &edge) {
                 return Err("Dart placement on an already sewn edge is not supported; select an unsewn boundary".into());
@@ -2088,89 +2093,11 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
                 .polygon
                 .as_mut()
                 .ok_or("Dart requires an editable physical polygon")?;
-            let i = polygon
-                .edges
-                .iter()
-                .position(|name| name == &edge)
-                .ok_or("Dart source edge not found")?;
-            if polygon.curves.contains_key(&edge)
-                || polygon.target_lengths.contains_key(&edge)
-                || polygon
-                    .measurements
-                    .iter()
-                    .any(|m| m.a.edge == edge || m.b.edge == edge)
-            {
-                return Err(
-                    "Dart on a curved or annotated boundary needs explicit reference remapping"
-                        .into(),
-                );
-            }
-            let a = polygon.points[i];
-            let b = polygon.points[(i + 1) % polygon.points.len()];
-            let delta = b - a;
-            let length = delta.length();
-            if length < 0.02 {
-                return Err("Dart source edge must be at least 20 mm".into());
-            }
-            let left = a.lerp(b, left_t);
-            let right = a.lerp(b, right_t);
-            let intake = left.distance(right);
-            if !(0.003..=0.15).contains(&intake) {
-                return Err("Dart intake must be between 3 and 150 mm".into());
-            }
-            let inward = DVec2::new(-delta.y, delta.x) / length;
-            let mid = (left + right) * 0.5;
-            let height = (apex - mid).dot(inward);
-            if !(0.008..=0.5).contains(&height) || (apex - mid).dot(delta / length).abs() > 1e-6 {
-                return Err(
-                    "Dart apex must lie 8–500 mm inward on the intake perpendicular bisector"
-                        .into(),
-                );
-            }
-            if !polygon.holes.is_empty() || !polygon.lines.is_empty() {
-                return Err(
-                    "Darts on existing holes/internal lines need topology-aware migration".into(),
-                );
-            }
             let suffix = unused_id("dart", template.seams.iter().map(|s| s.id.clone()));
-            let first = format!("{suffix}_leg_a");
-            let second = format!("{suffix}_leg_b");
-            let trailing = format!("{suffix}_after");
-            if [&first, &second, &trailing]
-                .iter()
-                .any(|candidate| polygon.edges.contains(candidate))
-            {
-                return Err("Dart edge identifier collision".into());
-            }
-            polygon.points.splice((i + 1)..(i + 1), [left, apex, right]);
-            polygon.edges.splice(
-                (i + 1)..(i + 1),
-                [first.clone(), second.clone(), trailing.clone()],
-            );
-            // The original sew side before the first leg retains its name.
-            template.seams.push(SeamSpec {
-                id: suffix,
-                a: BoundaryRef {
-                    panel: panel.clone(),
-                    side: crate::garment::seam::Side::Top,
-                    edge: Some(first),
-                    range: [0., 1.],
-                    reversed: false,
-                },
-                b: BoundaryRef {
-                    panel: panel.clone(),
-                    side: crate::garment::seam::Side::Top,
-                    edge: Some(second),
-                    range: [0., 1.],
-                    reversed: false,
-                },
-                a_tail: vec![],
-                b_tail: vec![],
-                reverse_b: true,
-                notches: vec![],
-                stiffness: 50_000.,
-                allow_ease: false,
-            });
+            let dart_result = darts::cut_sewn_dart(polygon, &edge, left_t, right_t, apex, &suffix)?;
+            template
+                .seams
+                .push(darts::dart_seam_spec(&panel, &dart_result));
             normalize(p);
             selected = Some(panel);
         }
@@ -2390,6 +2317,19 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             }
             selected = Some(panel);
         }
+        Command::PanelSeamAllowance { panel, width_m } => {
+            let p = template
+                .panels
+                .iter_mut()
+                .find(|p| p.id == panel)
+                .ok_or("Panel not found")?;
+            let polygon = p
+                .polygon
+                .as_mut()
+                .ok_or("This panel has no editable contour")?;
+            polygon.set_panel_seam_allowance(width_m)?;
+            selected = Some(panel);
+        }
         Command::SetNotch {
             panel,
             edge,
@@ -2415,6 +2355,26 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
                 Some(_) => return Err("Notch index out of range".into()),
                 None => list.push(notch),
             }
+            selected = Some(panel);
+        }
+        Command::NotchPair {
+            panel,
+            edge,
+            center_t,
+            spacing_m,
+            depth_m,
+            kind,
+        } => {
+            let p = template
+                .panels
+                .iter_mut()
+                .find(|p| p.id == panel)
+                .ok_or("Panel not found")?;
+            let polygon = p
+                .polygon
+                .as_mut()
+                .ok_or("This panel has no editable contour")?;
+            polygon.add_paired_notches(&edge, center_t, spacing_m, depth_m, kind)?;
             selected = Some(panel);
         }
         Command::RemoveNotch { panel, edge, index } => {
