@@ -14,7 +14,10 @@ use crate::{
 use glam::{DQuat, DVec2, DVec3, EulerRot};
 pub mod clipboard;
 pub mod constructions;
-mod corner_tool;
+pub mod corner_tool;
+pub mod cutout;
+pub use corner_tool::CornerRule;
+pub use cutout::{CutoutPolicy, CutoutSeamPolicy, CutoutShape, SynchronizedCutoutParams};
 mod geometry;
 mod linked;
 use crate::garment::shapes::{BooleanOp, MirrorAxis, Primitive};
@@ -175,6 +178,24 @@ pub enum Command {
         edge: String,
         radius_m: f64,
     },
+    /// Round the start of a named outgoing boundary in material metres with optional tension and continuity rule.
+    RoundCornerShape {
+        panel: String,
+        edge: String,
+        radius_m: f64,
+        tension: f64,
+        rule: corner_tool::CornerRule,
+    },
+    /// Adjust a corner Bézier handle with tangent continuity constraints.
+    AdjustCornerHandle {
+        panel: String,
+        edge: String,
+        handle_index: usize,
+        position: DVec2,
+        rule: corner_tool::CornerRule,
+    },
+    /// Synchronize a geometric material cutout across a sewn boundary pair.
+    SynchronizedCutout(cutout::SynchronizedCutoutParams),
     /// Create an actual V-shaped cut-and-sewn dart along an unsewn straight
     /// boundary. The triangular material wedge is cut away and the two new
     /// equal-length dart legs become a persistent same-panel solver seam.
@@ -2181,6 +2202,47 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
         } => {
             corner_tool::round(source, &mut template, &panel, &edge, radius_m)?;
             selected = Some(panel);
+        }
+        Command::RoundCornerShape {
+            panel,
+            edge,
+            radius_m,
+            tension,
+            rule,
+        } => {
+            corner_tool::round_shape(
+                source,
+                &mut template,
+                &panel,
+                &edge,
+                radius_m,
+                tension,
+                rule,
+            )?;
+            selected = Some(panel);
+        }
+        Command::AdjustCornerHandle {
+            panel,
+            edge,
+            handle_index,
+            position,
+            rule,
+        } => {
+            corner_tool::adjust_handle(
+                source,
+                &mut template,
+                &panel,
+                &edge,
+                handle_index,
+                position,
+                rule,
+            )?;
+            selected = Some(panel);
+        }
+        Command::SynchronizedCutout(params) => {
+            let sel = params.source_panel.clone();
+            cutout::synchronized_cutout(source, &mut template, &params)?;
+            selected = Some(sel);
         }
         Command::RemovePoint { panel, point } => {
             let (removed, incoming, outgoing) = {

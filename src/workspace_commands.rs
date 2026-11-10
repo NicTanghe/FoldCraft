@@ -33,6 +33,8 @@ pub enum CommandId {
     ToolGrab,
     ToolMeasure,
     ToolInspect,
+    ToolCorner,
+    ToolCutout,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -316,6 +318,24 @@ pub const REGISTRY: &[CommandDescriptor] = &[
         NotUndoable,
         NativeWorkspace
     ),
+    entry!(
+        ToolCorner,
+        "tool.corner",
+        "Round or shape corners",
+        Tool,
+        None,
+        NotUndoable,
+        NativeWorkspace
+    ),
+    entry!(
+        ToolCutout,
+        "tool.cutout",
+        "Synchronized seam cutout",
+        Tool,
+        None,
+        NotUndoable,
+        NativeWorkspace
+    ),
 ];
 
 impl CommandId {
@@ -345,6 +365,8 @@ impl CommandId {
         CommandId::ToolGrab,
         CommandId::ToolMeasure,
         CommandId::ToolInspect,
+        CommandId::ToolCorner,
+        CommandId::ToolCutout,
     ];
 
     pub fn descriptor(self) -> &'static CommandDescriptor {

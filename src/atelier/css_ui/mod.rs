@@ -37,10 +37,10 @@ pub use palette::{
 };
 #[allow(unused_imports)]
 pub use rails::{
-    BackendBadge, CornerMode, CornerToolParams, PinMode, RadialMenuAction, RadialMenuState,
-    RadialSector, Rail2dAction, Rail2dState, Rail3dAction, Rail3dState, Tool2d, Tool3d,
-    TopBarAction, TopBarState, play_simulation_disabled_reason, render_2d_rail, render_3d_rail,
-    render_radial_menu, render_top_bar, reset_simulation_disabled_reason,
+    BackendBadge, CornerMode, CornerRule, CornerToolParams, PinMode, RadialMenuAction,
+    RadialMenuState, RadialSector, Rail2dAction, Rail2dState, Rail3dAction, Rail3dState, Tool2d,
+    Tool3d, TopBarAction, TopBarState, play_simulation_disabled_reason, render_2d_rail,
+    render_3d_rail, render_radial_menu, render_top_bar, reset_simulation_disabled_reason,
     step_simulation_disabled_reason,
 };
 
