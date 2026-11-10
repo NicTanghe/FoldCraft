@@ -420,7 +420,7 @@
       "spent": 1.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.125,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/34"
