@@ -1128,6 +1128,7 @@ mod tests {
         let project = Project::default();
         let state = CssEditorState::new(project, PathBuf::from("target/test_editor_out"));
         let mut app = create_editor_app(state, &stylesheet);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
 
         // Advance one frame headlessly
         let scene = app.frame(FrameInfo {
@@ -1138,6 +1139,13 @@ mod tests {
 
         // Verify key layout containers exist
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
+        let usd_bounds = app
+            .find_element_bounds_by_id("#viewport-3d-scene")
+            .expect("USD viewport exists");
+        assert!(
+            usd_bounds.width > 100.0 && usd_bounds.height > 100.0,
+            "USD viewport must have drawable area: {usd_bounds:?}"
+        );
         assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
         assert!(app.find_element_bounds_by_id("#right-dock").is_some());
 

@@ -188,3 +188,6 @@ The previous CPU-projected SVG triangle overlay has been removed; the 2D pattern
 boards still use SVG. This removes duplicate mesh projection and DOM construction
 on UI rebuilds. The existing USD snapshot is still loaded at application creation;
 live simulation updates and worker scheduling are separate follow-up work.
+
+Native USD host elements have explicit flex sizing and minimum drawable dimensions;
+unlike an SVG, their mesh content does not supply an intrinsic DOM size.

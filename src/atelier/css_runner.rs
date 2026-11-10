@@ -1098,6 +1098,7 @@ mod tests {
         let (tx, latest) = worker::start_cpu().expect("start cpu worker");
         let state = CssRunnerState::new(project, scene, files, tx, latest);
         let mut app = create_runner_app(state, &stylesheet);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
 
         // Headless frame advance
         let scene = app.frame(FrameInfo {
@@ -1108,6 +1109,13 @@ mod tests {
 
         // Verify layout containers
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
+        let usd_bounds = app
+            .find_element_bounds_by_id("#runner-viewport-3d-scene")
+            .expect("USD viewport exists");
+        assert!(
+            usd_bounds.width > 100.0 && usd_bounds.height > 100.0,
+            "USD viewport must have drawable area: {usd_bounds:?}"
+        );
         assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
         assert!(app.find_element_bounds_by_id("#right-dock").is_some());
 

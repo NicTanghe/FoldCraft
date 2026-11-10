@@ -287,6 +287,31 @@
   overflow: hidden;
 }
 
+/* Native viewport hosts need explicit area: USD content has no DOM size. */
+.viewport-container {
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.viewport-header {
+  flex-shrink: 0;
+}
+
+.canvas-area {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.viewport {
+  flex: 1;
+  min-width: 100px;
+  min-height: 100px;
+}
+
 /* 3D-only mode */
 .stage-3d-only #viewport-3d {
   flex: 1;
