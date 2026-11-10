@@ -18,13 +18,14 @@ mod board;
 mod chrome;
 #[path = "atelier/command_palette.rs"]
 mod command_palette;
-use crate::commands;
+pub use marvelous_cloth::commands;
 #[path = "atelier/core_state.rs"]
 pub mod core_state;
 #[path = "atelier/css_runner.rs"]
 pub mod css_runner;
-pub use crate::css_ui;
 pub use core_state::*;
+#[allow(unused_imports)]
+pub use marvelous_cloth::css_ui;
 #[path = "atelier/documents_ui.rs"]
 mod documents_ui;
 #[path = "atelier/drafting_ui.rs"]
@@ -345,8 +346,6 @@ fn palette_shortcut(
         PaletteShortcut::Open
     }
 }
-
-
 
 fn reset_arrangement_button(ui: &mut egui::Ui, trim_pending: bool) -> bool {
     let reason = check_trim_draft_for_command(commands::CommandId::ResetSimulation, trim_pending);

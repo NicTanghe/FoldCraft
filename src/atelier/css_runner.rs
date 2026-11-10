@@ -298,24 +298,24 @@ pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidat
     {
         state.worker_pending = false;
         match done.result {
-                    Ok((new_state, metrics)) => {
-                        state.scene.state = new_state;
-                        state.step_count += 1;
-                        state.step_ms = metrics.step_ms;
-                        state.status_message = format!(
-                            "Step {}: min dist {:.3} mm, res {:.1e}, {:.1} ms",
-                            state.step_count,
-                            metrics.minimum_distance_m * 1000.0,
-                            metrics.residual_rms_n.unwrap_or(0.0),
-                            metrics.step_ms
-                        );
-                        state.last_metrics = Some(metrics);
-                    }
-                    Err(e) => {
-                        state.playing = false;
-                        state.status_message = format!("Worker error: {e}");
-                    }
-                }
+            Ok((new_state, metrics)) => {
+                state.scene.state = new_state;
+                state.step_count += 1;
+                state.step_ms = metrics.step_ms;
+                state.status_message = format!(
+                    "Step {}: min dist {:.3} mm, res {:.1e}, {:.1} ms",
+                    state.step_count,
+                    metrics.minimum_distance_m * 1000.0,
+                    metrics.residual_rms_n.unwrap_or(0.0),
+                    metrics.step_ms
+                );
+                state.last_metrics = Some(metrics);
+            }
+            Err(e) => {
+                state.playing = false;
+                state.status_message = format!("Worker error: {e}");
+            }
+        }
     }
 
     // 2. Process pending UI actions
