@@ -1,4 +1,4 @@
-//! A CPU-only frontend; never imports eframe/wgpu or opens a window.
+//! A CPU-only frontend; never imports graphics libraries or opens a window.
 use clap::{Parser, Subcommand};
 use marvelous_cloth::{
     garment::{GarmentTemplate, export, production_metrics},

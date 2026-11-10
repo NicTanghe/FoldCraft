@@ -1,7 +1,6 @@
 //! Fixed-step worker independent of repaint frequency. The latest controls win;
 //! state stays on the worker within a generation. Only one result snapshot is
 //! retained when the window is slow or hidden (no growing animation queue).
-use eframe::egui;
 use marvelous_cloth::{
     fitting::FittingScene,
     gpu_vbd::GpuVbd,
@@ -39,12 +38,6 @@ impl RepaintSignal {
         F: Fn() + Send + Sync + 'static,
     {
         Self::new(f)
-    }
-
-    pub fn from_egui(ctx: egui::Context) -> Self {
-        Self::new(move || {
-            ctx.request_repaint();
-        })
     }
 
     pub fn request_repaint(&self) {
@@ -180,7 +173,7 @@ fn clear_final_diagnostics() {
 fn accept(active: &mut Option<Work>, mut new: Work, deadline: &mut Instant) {
     if let Some(old) = active {
         if old.generation == new.generation {
-            // Never roll back to the slightly older snapshot displayed by egui.
+            // Never roll back to the slightly older snapshot displayed by the UI.
             std::mem::swap(&mut old.scene.state, &mut new.scene.state);
             new.once |= old.once;
             if new.playing && !old.playing {
@@ -487,77 +480,43 @@ mod final_diagnostics_transport_tests {
         let mut editor_scene = editor_project.compile().unwrap();
         let original = serde_json::to_vec(&editor_project.template).unwrap();
         let initial_editor_state = editor_scene.state.clone();
-        let mut authoring_ui = super::super::authoring_ui::AuthoringUi::default();
-        let mut issue = super::super::issue_ui::IssueUi::default();
-        let (mut dirty, mut generation, mut playing, mut pending) = (false, 11, true, true);
-        let (mut metrics, mut grab, mut plane, mut error) = (None, None, None, None);
-        let mut status = String::new();
-        {
-            use marvelous_cloth::authoring::{self, Command};
-            let mut transition = super::super::authoring_ui::EditorTransition {
-                authoring: &mut authoring_ui,
-                project: &mut editor_project,
-                scene: &mut editor_scene,
-                issue: &mut issue,
-                dirty: &mut dirty,
-                generation: &mut generation,
-                playing: &mut playing,
-                pending: &mut pending,
-                metrics: &mut metrics,
-                grab: &mut grab,
-                drag_plane: &mut plane,
-                simulation_error: &mut error,
-                status: &mut status,
-                dt: settings.dt,
-            };
-            let edit = authoring::apply(
-                &transition.project.template,
-                Command::FabricAppearance {
-                    fabric: transition.project.template.fabrics[0].id.clone(),
-                    appearance: Some(Default::default()),
-                },
-            )
-            .unwrap();
-            assert!(!edit.reset_simulation);
-            transition
-                .authoring
-                .history
-                .record(transition.project.template.clone());
-            transition.install(edit);
-            let edited = serde_json::to_vec(&transition.project.template).unwrap();
-            assert_ne!(edited, original);
-            assert_eq!(transition.scene.state.x, initial_editor_state.x);
-            assert_eq!(transition.scene.state.v, initial_editor_state.v);
-            assert_eq!(transition.scene.state.time, initial_editor_state.time);
-            let undo = transition
-                .authoring
-                .history
-                .restore(&transition.project.template, false)
-                .unwrap();
-            transition.install(undo);
-            assert_eq!(
-                serde_json::to_vec(&transition.project.template).unwrap(),
-                original
-            );
-            assert_eq!(transition.scene.state.x, initial_editor_state.x);
-            assert_eq!(transition.scene.state.v, initial_editor_state.v);
-            assert_eq!(transition.scene.state.time, initial_editor_state.time);
-            let redo = transition
-                .authoring
-                .history
-                .restore(&transition.project.template, true)
-                .unwrap();
-            transition.install(redo);
-            assert_eq!(
-                serde_json::to_vec(&transition.project.template).unwrap(),
-                edited
-            );
-            assert_eq!(transition.scene.state.x, initial_editor_state.x);
-            assert_eq!(transition.scene.state.v, initial_editor_state.v);
-            assert_eq!(transition.scene.state.time, initial_editor_state.time);
-            assert!(*transition.playing && *transition.pending);
-            assert_eq!(*transition.generation, 11);
-        }
+        let mut history = marvelous_cloth::authoring::History::default();
+        let edit = marvelous_cloth::authoring::apply(
+            &editor_project.template,
+            marvelous_cloth::authoring::Command::FabricAppearance {
+                fabric: editor_project.template.fabrics[0].id.clone(),
+                appearance: Some(Default::default()),
+            },
+        )
+        .unwrap();
+        assert!(!edit.reset_simulation);
+        history.record(editor_project.template.clone());
+        editor_project.template = edit.template;
+        let edited = serde_json::to_vec(&editor_project.template).unwrap();
+        assert_ne!(edited, original);
+        assert_eq!(editor_scene.state.x, initial_editor_state.x);
+        assert_eq!(editor_scene.state.v, initial_editor_state.v);
+        assert_eq!(editor_scene.state.time, initial_editor_state.time);
+        let undo = history.restore(&editor_project.template, false).unwrap();
+        editor_project.template = undo.template;
+        assert_eq!(
+            serde_json::to_vec(&editor_project.template).unwrap(),
+            original
+        );
+        assert_eq!(editor_scene.state.x, initial_editor_state.x);
+        assert_eq!(editor_scene.state.v, initial_editor_state.v);
+        assert_eq!(editor_scene.state.time, initial_editor_state.time);
+        let redo = history.restore(&editor_project.template, true).unwrap();
+        editor_project.template = redo.template;
+        assert_eq!(
+            serde_json::to_vec(&editor_project.template).unwrap(),
+            edited
+        );
+        assert_eq!(editor_scene.state.x, initial_editor_state.x);
+        assert_eq!(editor_scene.state.v, initial_editor_state.v);
+        assert_eq!(editor_scene.state.time, initial_editor_state.time);
+        let generation = 11;
+        let mut pending = true;
         let optical_template = serde_json::to_vec(&editor_project.template).unwrap();
         // The UI may submit its old displayed state while a real step is in flight.
         worker.tx.as_ref().unwrap().send(work(11, false)).unwrap();
@@ -853,7 +812,7 @@ mod final_diagnostics_transport_tests {
     }
 
     #[test]
-    fn repaint_signal_notifies_listener_without_egui_context() {
+    fn repaint_signal_notifies_listener_without_external_context() {
         let fired = Arc::new(AtomicBool::new(false));
         let fired_clone = Arc::clone(&fired);
         let signal = RepaintSignal::from_fn(move || {

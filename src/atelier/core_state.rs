@@ -1,13 +1,13 @@
 //! UI-agnostic Atelier workspace core state, command registry facade, and worker boundaries.
 //!
 //! Decouples project data, compiled scene, simulation settings, worker channels,
-//! selection state, tool modes, and draft guards from `eframe::App`.
+//! selection state, tool modes, and draft guards from the desktop window shell.
 #![allow(dead_code)]
 use super::{
     commands::{self, CapabilityContext, CommandId, UnavailableReason},
     worker::{self, FinalDiagnosticsRequest, Latest, RepaintSignal, Work},
-    workspace_profiles,
 };
+use marvelous_cloth::css_ui::browsers::workspace_profiles;
 use marvelous_cloth::{
     fitting::{FittingProject, FittingScene},
     garment::{CompiledGarment, export, presets::GarmentKind, seam::BoundaryRef},
@@ -36,6 +36,8 @@ pub enum Tool {
     Inspect,
     Ellipse,
     Sector,
+    Corner,
+    Cutout,
 }
 
 /// 2D / 3D selection state across pieces, seams, edges, points, and trims.
@@ -568,6 +570,8 @@ impl AtelierCore {
             CommandId::ToolGrab => self.set_active_tool(Tool::Grab),
             CommandId::ToolMeasure => self.set_active_tool(Tool::Measure),
             CommandId::ToolInspect => self.set_active_tool(Tool::Inspect),
+            CommandId::ToolCorner => self.set_active_tool(Tool::Corner),
+            CommandId::ToolCutout => self.set_active_tool(Tool::Cutout),
         }
         Ok(())
     }

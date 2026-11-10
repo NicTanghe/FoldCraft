@@ -1,7 +1,6 @@
 //! Native CSSimpler Studio V2 Garment Workspace Runner for `cloth-fit --view`.
 //!
-//! Replaces legacy egui viewport when launching `cloth-fit --view` with the full
-//! reworked native CSSimpler Studio V2 garment workspace.
+//! The complete native CSSimpler Studio V2 garment workspace for `cloth-fit --view`.
 //!
 //! Provides:
 //! - Real simulation execution backed by `FittingProject`, `FittingScene`, `VbdSettings`,

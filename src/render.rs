@@ -7,8 +7,57 @@ use crate::{
     model::{Material, Mesh, State},
     project::Project,
 };
-use eframe::{egui, egui_wgpu::RenderState};
 use glam::{Mat4, Vec3};
+
+#[derive(Clone)]
+pub struct RenderState {
+    pub adapter: std::sync::Arc<wgpu::Adapter>,
+    pub device: std::sync::Arc<wgpu::Device>,
+    pub queue: std::sync::Arc<wgpu::Queue>,
+    pub target_format: wgpu::TextureFormat,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewRect {
+    pub min: glam::Vec2,
+    pub max: glam::Vec2,
+}
+
+impl ViewRect {
+    pub fn new(min: glam::Vec2, max: glam::Vec2) -> Self {
+        Self { min, max }
+    }
+    pub fn from_min_size(min: glam::Vec2, size: glam::Vec2) -> Self {
+        Self {
+            min,
+            max: min + size,
+        }
+    }
+    pub fn width(&self) -> f32 {
+        (self.max.x - self.min.x).abs()
+    }
+    pub fn height(&self) -> f32 {
+        (self.max.y - self.min.y).abs()
+    }
+    pub fn left(&self) -> f32 {
+        self.min.x.min(self.max.x)
+    }
+    pub fn right(&self) -> f32 {
+        self.min.x.max(self.max.x)
+    }
+    pub fn top(&self) -> f32 {
+        self.min.y.min(self.max.y)
+    }
+    pub fn bottom(&self) -> f32 {
+        self.min.y.max(self.max.y)
+    }
+    pub fn center(&self) -> glam::Vec2 {
+        (self.min + self.max) * 0.5
+    }
+    pub fn contains(&self, p: glam::Vec2) -> bool {
+        p.x >= self.left() && p.x <= self.right() && p.y >= self.top() && p.y <= self.bottom()
+    }
+}
 
 pub mod appearance;
 mod environment;
@@ -313,7 +362,7 @@ impl Camera {
         projection * view
     }
     /// Project a world point into window coordinates; `None` behind the camera.
-    pub fn project(&self, world: Vec3, rect: egui::Rect) -> Option<egui::Pos2> {
+    pub fn project(&self, world: Vec3, rect: ViewRect) -> Option<glam::Vec2> {
         let width = rect.width().max(1.);
         let height = rect.height().max(1.);
         let clip = self.matrix(width / height) * world.extend(1.);
@@ -321,19 +370,19 @@ impl Camera {
             return None;
         }
         let ndc = clip.truncate() / clip.w;
-        Some(egui::pos2(
+        Some(glam::vec2(
             rect.left() + (ndc.x * 0.5 + 0.5) * width,
             rect.top() + (0.5 - ndc.y * 0.5) * height,
         ))
     }
     /// Orbit by a pointer drag in pixels.
-    pub fn orbit_by(&mut self, delta: egui::Vec2) {
+    pub fn orbit_by(&mut self, delta: glam::Vec2) {
         self.yaw -= delta.x * ORBIT_RADIANS_PER_PIXEL;
         self.pitch = (self.pitch + delta.y * ORBIT_RADIANS_PER_PIXEL).clamp(-MAX_PITCH, MAX_PITCH);
     }
     /// Pan so the scene follows the pointer: the world point under the pointer
     /// moves with it, at the target plane's exact scale.
-    pub fn pan_by(&mut self, delta: egui::Vec2, rect: egui::Rect) {
+    pub fn pan_by(&mut self, delta: glam::Vec2, rect: ViewRect) {
         let world_per_pixel = 2. * self.distance * Self::half_tan() / rect.height().max(1.);
         self.target += (self.right() * -delta.x + self.up() * delta.y) * world_per_pixel;
     }
@@ -347,7 +396,7 @@ impl Camera {
         self.distance = (self.distance * factor).clamp(MIN_DISTANCE, MAX_DISTANCE);
     }
     /// Zoom while keeping the world point under the cursor exactly in place.
-    pub fn zoom_at(&mut self, cursor: egui::Pos2, rect: egui::Rect, factor: f32) {
+    pub fn zoom_at(&mut self, cursor: glam::Vec2, rect: ViewRect, factor: f32) {
         if factor <= 0. || factor.is_nan() {
             return;
         }
@@ -358,7 +407,7 @@ impl Camera {
         self.distance = distance;
     }
     /// Intersection of the cursor ray with the focal plane through the target.
-    fn focal_point(&self, cursor: egui::Pos2, rect: egui::Rect) -> Vec3 {
+    fn focal_point(&self, cursor: glam::Vec2, rect: ViewRect) -> Vec3 {
         let (origin, direction) = self.ray(cursor, rect);
         // `ray` is f64 for picking precision; the camera itself is f32.
         let (origin, direction) = (origin.as_vec3(), direction.as_vec3());
@@ -369,27 +418,12 @@ impl Camera {
         }
         origin + direction * ((self.target - origin).dot(forward) / denominator)
     }
-    /// Wheel zoom towards the cursor when it is over the viewport.
-    fn wheel_zoom(&mut self, response: &egui::Response) {
-        if !response.hovered() {
-            return;
-        }
-        let scroll = response.ctx.input(|i| i.smooth_scroll_delta.y);
-        if scroll == 0. {
-            return;
-        }
-        let factor = (-scroll * 0.002).exp();
-        match response.hover_pos() {
-            Some(cursor) => self.zoom_at(cursor, response.rect, factor),
-            None => self.zoom(factor),
-        }
-    }
     /// Ask the next interaction pass to frame this bounding sphere.
     pub fn request_frame(&mut self, center: Vec3, radius: f32) {
         self.pending_frame = Some((center, radius));
     }
     /// Apply a pending frame request with the real viewport rectangle.
-    pub fn apply_pending_frame(&mut self, rect: egui::Rect) -> bool {
+    pub fn apply_pending_frame(&mut self, rect: ViewRect) -> bool {
         match self.pending_frame.take() {
             Some((center, radius)) => {
                 self.frame_in(center, radius, rect);
@@ -400,7 +434,7 @@ impl Camera {
     }
     /// Frame a bounding sphere, keeping the current orbit direction and fitting
     /// both viewport axes.
-    pub fn frame_in(&mut self, center: Vec3, radius: f32, rect: egui::Rect) {
+    pub fn frame_in(&mut self, center: Vec3, radius: f32, rect: ViewRect) {
         self.save_pose();
         self.target = center;
         let aspect = (rect.width() / rect.height().max(1.)).max(1e-3);
@@ -411,7 +445,7 @@ impl Camera {
     }
     /// Frame a bounding sphere without a viewport; assumes a square viewport.
     pub fn frame(&mut self, center: Vec3, radius: f32) {
-        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(1.));
+        let rect = ViewRect::from_min_size(glam::Vec2::ZERO, glam::Vec2::splat(1.));
         self.frame_in(center, radius, rect);
     }
     /// Point the camera along a canonical direction, keeping target and distance.
@@ -451,34 +485,7 @@ impl Camera {
             None => false,
         }
     }
-    pub fn interact(&mut self, response: &egui::Response) {
-        self.apply_pending_frame(response.rect);
-        let delta = response.ctx.input(|i| i.pointer.delta());
-        if response.dragged_by(egui::PointerButton::Primary) {
-            self.orbit_by(delta);
-        }
-        if response.dragged_by(egui::PointerButton::Secondary)
-            || response.dragged_by(egui::PointerButton::Middle)
-        {
-            self.pan_by(delta, response.rect);
-        }
-        self.wheel_zoom(response);
-        if response.double_clicked() {
-            self.reset_view();
-        }
-    }
-    pub fn garment_interact(&mut self, response: &egui::Response) {
-        self.apply_pending_frame(response.rect);
-        let delta = response.ctx.input(|i| i.pointer.delta());
-        if response.dragged_by(egui::PointerButton::Secondary) {
-            self.orbit_by(delta);
-        }
-        if response.dragged_by(egui::PointerButton::Middle) {
-            self.pan_by(delta, response.rect);
-        }
-        self.wheel_zoom(response);
-    }
-    pub fn ray(&self, position: egui::Pos2, rect: egui::Rect) -> (glam::DVec3, glam::DVec3) {
+    pub fn ray(&self, position: glam::Vec2, rect: ViewRect) -> (glam::DVec3, glam::DVec3) {
         let inv = self.matrix(rect.width() / rect.height()).inverse();
         let u = 2. * (position.x - rect.left()) / rect.width() - 1.;
         let v = 1. - 2. * (position.y - rect.top()) / rect.height();
@@ -502,7 +509,6 @@ pub struct Viewport {
     color_texture: wgpu::Texture,
     depth: wgpu::TextureView,
     size: [u32; 2],
-    texture_id: egui::TextureId,
     vertices: wgpu::Buffer,
     capacity: u64,
     timers: Option<Timers>,
@@ -680,11 +686,6 @@ impl Viewport {
         let albedo_bind = Self::albedo_bind(device, &pipeline, &albedo_view, &albedo_sampler);
         let color = color_texture.create_view(&Default::default());
         let depth = Self::target(device, [1, 1], true, samples).create_view(&Default::default());
-        let texture_id = render_state.renderer.write().register_native_texture(
-            device,
-            &color,
-            wgpu::FilterMode::Linear,
-        );
         let capacity = 1024;
         let vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("viewport-vertices"),
@@ -704,7 +705,6 @@ impl Viewport {
             color_texture,
             depth,
             size: [1, 1],
-            texture_id,
             vertices,
             capacity,
             timers: None,
@@ -731,7 +731,7 @@ impl Viewport {
         wire: bool,
         heat: bool,
         contacts: bool,
-    ) -> egui::TextureId {
+    ) -> &wgpu::TextureView {
         self.draw_scene(
             size,
             camera,
@@ -759,7 +759,7 @@ impl Viewport {
         wire: bool,
         heat: bool,
         contacts: bool,
-    ) -> egui::TextureId {
+    ) -> &wgpu::TextureView {
         let DrawModel {
             marked_faces,
             mesh,
@@ -803,15 +803,6 @@ impl Viewport {
             });
             self.size = size;
             self.samples = samples;
-            self.render_state
-                .renderer
-                .write()
-                .update_egui_texture_from_wgpu_texture(
-                    device,
-                    &self.color,
-                    wgpu::FilterMode::Linear,
-                    self.texture_id,
-                );
         }
         let matrix = camera.matrix(size[0] as f32 / size[1] as f32);
         self.render_state.queue.write_buffer(
@@ -1159,7 +1150,13 @@ impl Viewport {
             encoder.copy_buffer_to_buffer(&t.resolve, 0, &t.read, 0, 16);
         }
         self.render_state.queue.submit([encoder.finish()]);
-        self.texture_id
+        &self.color
+    }
+    pub fn texture_view(&self) -> &wgpu::TextureView {
+        &self.color
+    }
+    pub fn texture(&self) -> &wgpu::Texture {
+        &self.color_texture
     }
     pub fn enable_timing(&mut self) -> bool {
         let d = &self.render_state.device;
@@ -1264,14 +1261,6 @@ fn read_buffer(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Result<Vec<u8>, 
     buffer.unmap();
     Ok(data)
 }
-impl Drop for Viewport {
-    fn drop(&mut self) {
-        self.render_state
-            .renderer
-            .write()
-            .free_texture(&self.texture_id);
-    }
-}
 
 /// Camera navigation is pure math: these tests need no GPU and no window.
 #[cfg(test)]
@@ -1321,8 +1310,8 @@ mod tests {
     }
     use super::*;
 
-    fn viewport(width: f32, height: f32) -> egui::Rect {
-        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(width, height))
+    fn viewport(width: f32, height: f32) -> ViewRect {
+        ViewRect::from_min_size(glam::Vec2::ZERO, glam::vec2(width, height))
     }
 
     fn close(actual: f32, expected: f32, tolerance: f32, what: &str) {
@@ -1334,7 +1323,7 @@ mod tests {
 
     /// World point under a window position, on the focal plane through the
     /// target. This is the inverse of `Camera::project` for that plane.
-    fn unproject(camera: &Camera, position: egui::Pos2, rect: egui::Rect) -> Vec3 {
+    fn unproject(camera: &Camera, position: glam::Vec2, rect: ViewRect) -> Vec3 {
         let (origin, direction) = camera.ray(position, rect);
         let (origin, direction) = (origin.as_vec3(), direction.as_vec3());
         let forward = camera.forward();
@@ -1428,7 +1417,7 @@ mod tests {
                 orthographic,
                 ..Default::default()
             };
-            let cursor = egui::pos2(
+            let cursor = glam::vec2(
                 rect.left() + 0.18 * rect.width(),
                 rect.top() + 0.72 * rect.height(),
             );
@@ -1476,7 +1465,7 @@ mod tests {
     #[test]
     fn zoom_clamps_and_keeps_the_anchor() {
         let rect = viewport(800., 800.);
-        let cursor = egui::pos2(rect.left() + 40., rect.top() + 660.);
+        let cursor = glam::vec2(rect.left() + 40., rect.top() + 660.);
         let mut camera = Camera::default();
         let anchor = unproject(&camera, cursor, rect);
         camera.zoom_at(cursor, rect, 1e6);
@@ -1501,7 +1490,7 @@ mod tests {
         let rect = viewport(1000., 800.);
         let mut camera = Camera::default();
         let world = camera.target + camera.right() * 0.25 - camera.up() * 0.15;
-        let delta = egui::Vec2::new(37., -21.);
+        let delta = glam::vec2(37., -21.);
         let before = camera.project(world, rect).unwrap();
         camera.pan_by(delta, rect);
         let after = camera.project(world, rect).unwrap();
@@ -1515,13 +1504,13 @@ mod tests {
     #[test]
     fn orbit_clamps_at_the_poles_and_keeps_the_model_upright_below_them() {
         let mut camera = Camera::default();
-        camera.orbit_by(egui::Vec2::new(0., 100_000.));
+        camera.orbit_by(glam::vec2(0., 100_000.));
         close(camera.pitch, MAX_PITCH, 1e-6, "pitch");
-        camera.orbit_by(egui::Vec2::new(0., -200_000.));
+        camera.orbit_by(glam::vec2(0., -200_000.));
         close(camera.pitch, -MAX_PITCH, 1e-6, "pitch");
         // Below the poles the camera up stays the world Y axis on screen.
         let mut camera = Camera::default();
-        camera.orbit_by(egui::Vec2::new(20., 10.));
+        camera.orbit_by(glam::vec2(20., 10.));
         close(camera.up().y, camera.pitch.cos(), 1e-5, "up.y");
         assert!(camera.up().y > 0., "model flipped after a small orbit");
         // The poles themselves are still upright and finite.
