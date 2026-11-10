@@ -3,6 +3,7 @@
 
 use cssimpler::core::Node;
 use cssimpler::ui;
+use marvelous_cloth::authoring::CornerRule;
 use marvelous_cloth::commands::CommandId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -457,6 +458,7 @@ pub struct CornerToolParams {
     pub mode: CornerMode,
     pub radius_mm: f64,
     pub tension: f64,
+    pub rule: CornerRule,
 }
 
 impl Default for CornerToolParams {
@@ -465,6 +467,22 @@ impl Default for CornerToolParams {
             mode: CornerMode::Radius,
             radius_mm: 10.0,
             tension: 0.55,
+            rule: CornerRule::Smooth,
+        }
+    }
+}
+
+impl CornerToolParams {
+    pub fn to_command(&self, panel: &str, edge: &str) -> marvelous_cloth::authoring::Command {
+        marvelous_cloth::authoring::Command::RoundCornerShape {
+            panel: panel.to_string(),
+            edge: edge.to_string(),
+            radius_m: marvelous_cloth::authoring::mm_to_m(self.radius_mm),
+            tension: match self.mode {
+                CornerMode::Radius => 0.55,
+                CornerMode::Shape => self.tension,
+            },
+            rule: self.rule,
         }
     }
 }
@@ -504,6 +522,7 @@ pub enum Rail2dAction {
     SetCornerMode(CornerMode),
     SetCornerRadius(f64),
     SetCornerTension(f64),
+    SetCornerRule(CornerRule),
 }
 
 impl Rail2dState {
@@ -525,6 +544,10 @@ impl Rail2dState {
             }
             Rail2dAction::SetCornerTension(t) => {
                 self.corner_params.tension = t;
+                self.active_tool = Tool2d::Corner(self.corner_params.clone());
+            }
+            Rail2dAction::SetCornerRule(rule) => {
+                self.corner_params.rule = rule;
                 self.active_tool = Tool2d::Corner(self.corner_params.clone());
             }
         }
@@ -1022,10 +1045,12 @@ mod tests {
             mode: CornerMode::Shape,
             radius_mm: 15.0,
             tension: 0.8,
+            rule: CornerRule::Smooth,
         })));
         assert_eq!(state.corner_params.mode, CornerMode::Shape);
         assert_eq!(state.corner_params.radius_mm, 15.0);
         assert_eq!(state.corner_params.tension, 0.8);
+        assert_eq!(state.corner_params.rule, CornerRule::Smooth);
 
         let node_corner = render_2d_rail(&state);
         let mut mode_btns_shape = Vec::new();

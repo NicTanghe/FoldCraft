@@ -280,3 +280,353 @@ fn forty_five_degree_fillet_has_correct_tangencies_and_radius() {
         .fold(0.0_f64, f64::max);
     assert!(error < 0.000_002_73, "error in metres: {error}");
 }
+
+#[test]
+fn shape_mode_varies_curvature_and_preserves_error_at_nominal_tension() {
+    let t = fixture();
+    let panel = t.panels[0].id.clone();
+    let edge = t.panels[0].polygon.as_ref().unwrap().edges[1].clone();
+
+    // Nominal tension (0.55228...) produces the exact circle approximation
+    let edit_nominal = authoring::apply(
+        &t,
+        Command::RoundCornerShape {
+            panel: panel.clone(),
+            edge: edge.clone(),
+            radius_m: 0.01,
+            tension: authoring::corner_tool::CIRCLE_TENSION,
+            rule: authoring::CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    let poly_nom = edit_nominal.template.panels[0].polygon.as_ref().unwrap();
+    let ctrl_nom = poly_nom.curves[&poly_nom.edges[1]];
+    let cubic_nom = [
+        poly_nom.points[1],
+        ctrl_nom[0],
+        ctrl_nom[1],
+        poly_nom.points[2],
+    ];
+    let center = DVec2::new(0.39, 0.01);
+    let err_nom = (0..=10000)
+        .map(|i| (curves::cubic(cubic_nom, i as f64 / 10000.0).distance(center) - 0.01).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(err_nom < 0.000_002_73);
+
+    // Flatter curve with lower tension (0.25)
+    let edit_flat = authoring::apply(
+        &t,
+        Command::RoundCornerShape {
+            panel: panel.clone(),
+            edge: edge.clone(),
+            radius_m: 0.01,
+            tension: 0.25,
+            rule: authoring::CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    let poly_flat = edit_flat.template.panels[0].polygon.as_ref().unwrap();
+    let ctrl_flat = poly_flat.curves[&poly_flat.edges[1]];
+    let handle_nom_len = (ctrl_nom[0] - poly_nom.points[1]).length();
+    let handle_flat_len = (ctrl_flat[0] - poly_flat.points[1]).length();
+    assert!(handle_flat_len < handle_nom_len);
+
+    // Squarer curve with higher tension (0.85)
+    let edit_square = authoring::apply(
+        &t,
+        Command::RoundCornerShape {
+            panel: panel.clone(),
+            edge: edge.clone(),
+            radius_m: 0.01,
+            tension: 0.85,
+            rule: authoring::CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    let poly_square = edit_square.template.panels[0].polygon.as_ref().unwrap();
+    let ctrl_square = poly_square.curves[&poly_square.edges[1]];
+    let handle_square_len = (ctrl_square[0] - poly_square.points[1]).length();
+    assert!(handle_square_len > handle_nom_len);
+}
+
+#[test]
+fn handle_adjustments_enforce_sharp_smooth_and_symmetric_rules() {
+    let t = fixture();
+    let panel = t.panels[0].id.clone();
+    let edge = t.panels[0].polygon.as_ref().unwrap().edges[2].clone(); // top-right corner
+
+    let rounded = authoring::apply(
+        &t,
+        Command::RoundCorner {
+            panel: panel.clone(),
+            edge: edge.clone(),
+            radius_m: 0.01,
+        },
+    )
+    .unwrap()
+    .template;
+
+    let poly = rounded.panels[0].polygon.as_ref().unwrap();
+    let fillet_edge = poly.edges[2].clone();
+    let anchor = poly.points[2];
+    let original_ctrl0 = poly.curves[&fillet_edge][0];
+
+    // Sharp: incident handles move independently
+    let sharp_target = original_ctrl0 + DVec2::new(-0.002, 0.002);
+    let edit_sharp = authoring::apply(
+        &rounded,
+        Command::AdjustCornerHandle {
+            panel: panel.clone(),
+            edge: fillet_edge.clone(),
+            handle_index: 0,
+            position: sharp_target,
+            rule: authoring::CornerRule::Sharp,
+        },
+    )
+    .unwrap();
+    let poly_sharp = edit_sharp.template.panels[0].polygon.as_ref().unwrap();
+    assert!((poly_sharp.curves[&fillet_edge][0] - sharp_target).length() < 1e-12);
+    // Edge 1 was straight; in Sharp mode it remains straight
+    assert!(!poly_sharp.curves.contains_key(&poly_sharp.edges[1]));
+
+    // Symmetric: opposite collinear handles with equal lengths
+    let symmetric_target = anchor + DVec2::new(-0.004, 0.003); // length 0.005
+    let edit_sym = authoring::apply(
+        &rounded,
+        Command::AdjustCornerHandle {
+            panel: panel.clone(),
+            edge: fillet_edge.clone(),
+            handle_index: 0,
+            position: symmetric_target,
+            rule: authoring::CornerRule::Symmetric,
+        },
+    )
+    .unwrap();
+    let poly_sym = edit_sym.template.panels[0].polygon.as_ref().unwrap();
+    assert!((poly_sym.curves[&fillet_edge][0] - symmetric_target).length() < 1e-12);
+    // Edge 1 is now curved with handle pointing opposite to symmetric_target with equal length (0.005)
+    let opp_handle = poly_sym.curves[&poly_sym.edges[1]][1];
+    let expected_opp = anchor - DVec2::new(-0.004, 0.003);
+    assert!((opp_handle - expected_opp).length() < 1e-12);
+    assert!(((opp_handle - anchor).length() - 0.005).abs() < 1e-12);
+
+    // Smooth: opposite collinear handles with independent lengths
+    let smooth_target = anchor + DVec2::new(-0.008, 0.006); // length 0.010
+    let edit_smooth = authoring::apply(
+        &edit_sym.template,
+        Command::AdjustCornerHandle {
+            panel: panel.clone(),
+            edge: fillet_edge.clone(),
+            handle_index: 0,
+            position: smooth_target,
+            rule: authoring::CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    let poly_smooth = edit_smooth.template.panels[0].polygon.as_ref().unwrap();
+    let new_opp_handle = poly_smooth.curves[&poly_smooth.edges[1]][1];
+    let dir = (smooth_target - anchor).normalize();
+    let opp_dir = (new_opp_handle - anchor).normalize();
+    // Opposite collinear: dir + opp_dir == 0
+    assert!((dir + opp_dir).length() < 1e-10);
+    // Retains its previous length (0.005)
+    assert!(((new_opp_handle - anchor).length() - 0.005).abs() < 1e-10);
+}
+
+fn two_panel_sewn_fixture() -> GarmentTemplate {
+    use marvelous_cloth::garment::seam::{BoundaryRef, Side};
+    let base = fixture();
+    let dup = authoring::apply(
+        &base,
+        Command::Duplicate {
+            panel: base.panels[0].id.clone(),
+        },
+    )
+    .unwrap()
+    .template;
+    let p1 = &dup.panels[0];
+    let p2 = &dup.panels[1];
+    let poly1 = p1.polygon.as_ref().unwrap();
+    let poly2 = p2.polygon.as_ref().unwrap();
+    authoring::apply(
+        &dup,
+        Command::Sew {
+            a: BoundaryRef {
+                reversed: false,
+                panel: p1.id.clone(),
+                side: Side::Right,
+                edge: Some(poly1.edges[1].clone()),
+                range: [0.0, 1.0],
+            },
+            b: BoundaryRef {
+                reversed: false,
+                panel: p2.id.clone(),
+                side: Side::Left,
+                edge: Some(poly2.edges[3].clone()),
+                range: [0.0, 1.0],
+            },
+            reverse: false,
+            ease: false,
+        },
+    )
+    .unwrap()
+    .template
+}
+
+#[test]
+fn synchronized_cutout_spans_35_to_45_percent_across_sewn_boundaries() {
+    let t = two_panel_sewn_fixture();
+    let seam_id = t.seams[0].id.clone();
+    let source_panel = t.seams[0].a.panel.clone();
+    let target_panel = t.seams[0].b.panel.clone();
+
+    let params = authoring::SynchronizedCutoutParams {
+        seam_id: seam_id.clone(),
+        source_panel: source_panel.clone(),
+        interval: [0.35, 0.45],
+        depth_m: 0.015,
+        shape: authoring::CutoutShape::VNotch,
+        policy: authoring::CutoutPolicy::Correspondence,
+        seam_policy: authoring::CutoutSeamPolicy::SewCutout,
+    };
+
+    let edit = authoring::apply(&t, Command::SynchronizedCutout(params.clone())).unwrap();
+    assert!(edit.reset_simulation);
+
+    let p_src = edit
+        .template
+        .panels
+        .iter()
+        .find(|p| p.id == source_panel)
+        .unwrap();
+    let p_tgt = edit
+        .template
+        .panels
+        .iter()
+        .find(|p| p.id == target_panel)
+        .unwrap();
+
+    let poly_src = p_src.polygon.as_ref().unwrap();
+    let poly_tgt = p_tgt.polygon.as_ref().unwrap();
+
+    // Both panels gained cutout vertices (V-notch adds vertices)
+    assert!(poly_src.points.len() > 4);
+    assert!(poly_tgt.points.len() > 4);
+
+    // Seam was split into lead, trail, and sewn cutout rims
+    assert!(edit.template.seams.iter().any(|s| s.id.contains("lead")));
+    assert!(edit.template.seams.iter().any(|s| s.id.contains("trail")));
+    assert!(edit.template.seams.iter().any(|s| s.id.contains("rim")));
+
+    // Test Open seam policy leaves rims unsewn
+    let mut params_open = params;
+    params_open.seam_policy = authoring::CutoutSeamPolicy::Open;
+    let edit_open = authoring::apply(&t, Command::SynchronizedCutout(params_open)).unwrap();
+    assert!(
+        !edit_open
+            .template
+            .seams
+            .iter()
+            .any(|s| s.id.contains("rim"))
+    );
+    assert!(
+        edit_open
+            .template
+            .seams
+            .iter()
+            .any(|s| s.id.contains("lead"))
+    );
+    assert!(
+        edit_open
+            .template
+            .seams
+            .iter()
+            .any(|s| s.id.contains("trail"))
+    );
+
+    // Undo / Redo roundtrip
+    let mut history = History::default();
+    history.record(t.clone());
+    let undo = history.restore(&edit.template, false).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&undo.template).unwrap(),
+        serde_json::to_vec(&t).unwrap()
+    );
+    let redo = history.restore(&undo.template, true).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&redo.template).unwrap(),
+        serde_json::to_vec(&edit.template).unwrap()
+    );
+    let json = serde_json::to_vec(&redo.template).unwrap();
+    let loaded: GarmentTemplate = serde_json::from_slice(&json).unwrap();
+    loaded.compile().unwrap();
+}
+
+#[test]
+fn synchronized_cutout_reversed_seam_alignment() {
+    let mut t = two_panel_sewn_fixture();
+    t.seams[0].reverse_b = true;
+
+    let seam_id = t.seams[0].id.clone();
+    let source_panel = t.seams[0].a.panel.clone();
+
+    let params = authoring::SynchronizedCutoutParams {
+        seam_id: seam_id.clone(),
+        source_panel: source_panel.clone(),
+        interval: [0.35, 0.45],
+        depth_m: 0.015,
+        shape: authoring::CutoutShape::Rectangular,
+        policy: authoring::CutoutPolicy::Correspondence,
+        seam_policy: authoring::CutoutSeamPolicy::Open,
+    };
+
+    let edit = authoring::apply(&t, Command::SynchronizedCutout(params)).unwrap();
+    edit.template.compile().unwrap();
+}
+
+#[test]
+fn synchronized_cutout_rejects_invalid_inputs_without_mutation() {
+    let t = two_panel_sewn_fixture();
+    let seam_id = t.seams[0].id.clone();
+    let source_panel = t.seams[0].a.panel.clone();
+    let before = serde_json::to_vec(&t).unwrap();
+
+    // Invalid interval
+    let bad_interval = authoring::SynchronizedCutoutParams {
+        seam_id: seam_id.clone(),
+        source_panel: source_panel.clone(),
+        interval: [0.6, 0.4],
+        depth_m: 0.01,
+        shape: authoring::CutoutShape::VNotch,
+        policy: authoring::CutoutPolicy::Correspondence,
+        seam_policy: authoring::CutoutSeamPolicy::Open,
+    };
+    assert!(authoring::apply(&t, Command::SynchronizedCutout(bad_interval)).is_err());
+    assert_eq!(before, serde_json::to_vec(&t).unwrap());
+
+    // Invalid depth
+    let bad_depth = authoring::SynchronizedCutoutParams {
+        seam_id: seam_id.clone(),
+        source_panel: source_panel.clone(),
+        interval: [0.3, 0.4],
+        depth_m: -0.01,
+        shape: authoring::CutoutShape::VNotch,
+        policy: authoring::CutoutPolicy::Correspondence,
+        seam_policy: authoring::CutoutSeamPolicy::Open,
+    };
+    assert!(authoring::apply(&t, Command::SynchronizedCutout(bad_depth)).is_err());
+    assert_eq!(before, serde_json::to_vec(&t).unwrap());
+
+    // Non-existent seam
+    let bad_seam = authoring::SynchronizedCutoutParams {
+        seam_id: "missing_seam".into(),
+        source_panel: source_panel.clone(),
+        interval: [0.3, 0.4],
+        depth_m: 0.01,
+        shape: authoring::CutoutShape::VNotch,
+        policy: authoring::CutoutPolicy::Correspondence,
+        seam_policy: authoring::CutoutSeamPolicy::Open,
+    };
+    assert!(authoring::apply(&t, Command::SynchronizedCutout(bad_seam)).is_err());
+    assert_eq!(before, serde_json::to_vec(&t).unwrap());
+}
