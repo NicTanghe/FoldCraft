@@ -372,3 +372,143 @@ pub fn pattern_board_svg_node(
 
     Node::from(svg_el)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cssimpler::core::LayoutBox;
+
+    #[test]
+    fn test_physical_rect_operations() {
+        let rect = PhysicalRect::new(100, 50, 400, 300);
+        assert!(!rect.is_empty());
+        assert!(rect.contains(100, 50));
+        assert!(rect.contains(499, 349));
+        assert!(!rect.contains(500, 350));
+        assert!(!rect.contains(99, 49));
+
+        let empty = PhysicalRect::default();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_viewport_layout_map_conversion() {
+        let mut map = ViewportLayoutMap::default();
+        map.viewport_3d = Some(LayoutBox::new(200.0, 100.0, 800.0, 600.0));
+        map.viewport_2d = Some(LayoutBox::new(1000.0, 100.0, 600.0, 600.0));
+
+        let phys_3d = map.viewport_3d_physical(1.5).unwrap();
+        assert_eq!(phys_3d, PhysicalRect::new(300, 150, 1200, 900));
+
+        let phys_2d = map.viewport_2d_physical(1.0).unwrap();
+        assert_eq!(phys_2d, PhysicalRect::new(1000, 100, 600, 600));
+
+        assert!(map.to_physical(None, 1.0).is_none());
+    }
+
+    #[test]
+    fn test_route_pointer_event() {
+        let mut layout = ViewportLayoutMap::default();
+        layout.viewport_3d = Some(LayoutBox::new(0.0, 40.0, 600.0, 500.0));
+        layout.viewport_2d = Some(LayoutBox::new(600.0, 40.0, 600.0, 500.0));
+        layout.top_bar = Some(LayoutBox::new(0.0, 0.0, 1200.0, 40.0));
+        layout.command_palette_modal = Some(LayoutBox::new(300.0, 150.0, 600.0, 300.0));
+
+        let mut state = StudioV2State::default();
+        state.layout_mode = ViewLayoutMode::Split;
+
+        // Chrome hit (top bar)
+        assert_eq!(
+            route_pointer_event(100.0, 20.0, &layout, &state),
+            InputTarget::UiChrome
+        );
+
+        // 3D Viewport hit
+        assert_eq!(
+            route_pointer_event(300.0, 200.0, &layout, &state),
+            InputTarget::Viewport3D
+        );
+
+        // 2D Viewport hit
+        assert_eq!(
+            route_pointer_event(800.0, 200.0, &layout, &state),
+            InputTarget::Viewport2D
+        );
+
+        // Modal captures when command palette is open
+        state.command_palette_open = true;
+        assert_eq!(
+            route_pointer_event(300.0, 200.0, &layout, &state),
+            InputTarget::ModalOrOverlay
+        );
+
+        // 3D-only mode routes only to 3D
+        state.command_palette_open = false;
+        state.layout_mode = ViewLayoutMode::ThreeDOnly;
+        assert_eq!(
+            route_pointer_event(800.0, 200.0, &layout, &state),
+            InputTarget::UiChrome
+        );
+        assert_eq!(
+            route_pointer_event(300.0, 200.0, &layout, &state),
+            InputTarget::Viewport3D
+        );
+    }
+
+    #[test]
+    fn test_punch_viewport_cutouts_and_composition() {
+        let width = 20;
+        let height = 20;
+        let mut ui_buffer = vec![255_u8; width * height * 4]; // Opaque white UI
+
+        // Punch a 10x10 cutout in center
+        let cutouts = [LayoutBox::new(5.0, 5.0, 10.0, 10.0)];
+        punch_viewport_cutouts(&mut ui_buffer, width, height, &cutouts, 1.0);
+
+        // Verify cutout has alpha=0
+        for y in 5..15 {
+            for x in 5..15 {
+                let idx = (y * width + x) * 4;
+                assert_eq!(ui_buffer[idx + 3], 0, "cutout pixel should have alpha=0");
+            }
+        }
+        // Verify border has alpha=255
+        assert_eq!(ui_buffer[3], 255);
+
+        // Test composite over underlying frame
+        let mut underlying_frame = vec![128_u8; width * height * 4]; // Underlying frame gray
+        composite_ui_over_frame(&ui_buffer, &mut underlying_frame, width, height);
+
+        // Cutout area preserved untouched
+        for y in 5..15 {
+            for x in 5..15 {
+                let idx = (y * width + x) * 4;
+                assert_eq!(
+                    underlying_frame[idx], 128,
+                    "underlying frame must pass through cutout untouched"
+                );
+            }
+        }
+
+        // Chrome area overwritten with UI
+        assert_eq!(underlying_frame[0], 255);
+    }
+
+    #[test]
+    fn test_pattern_board_svg_generation() {
+        let panels = vec![PatternPanelPreview {
+            id: "front".to_string(),
+            label: "Front Panel".to_string(),
+            vertices: vec![(0.0, 0.0), (100.0, 0.0), (100.0, 150.0), (0.0, 150.0)],
+            seam_lines: vec![((0.0, 0.0), (100.0, 0.0))],
+        }];
+
+        let svg_str = generate_pattern_board_svg(&panels, (0.0, 0.0, 200.0, 200.0));
+        assert!(svg_str.contains("Front Panel"));
+        assert!(svg_str.contains("panel-front"));
+        assert!(svg_str.contains("<line"));
+
+        let svg_node = pattern_board_svg_node(&panels, (0.0, 0.0, 200.0, 200.0));
+        assert!(matches!(svg_node, Node::Element(_)));
+    }
+}

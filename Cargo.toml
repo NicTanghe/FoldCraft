@@ -30,7 +30,7 @@ wgpu = { version = "30.0.1", optional = true }
 bytemuck = { version = "1", optional = true }
 pollster = { version = "1.0.1", optional = true }
 image = { version = "0.25.10", optional = true, default-features = false, features = ["png"] }
-cssimpler = { git = "https://github.com/NicTanghe/cssimpler.git", rev = "835d89156e8a64800e200ebcd41d6049aada9d9f", optional = true }
+cssimpler = { git = "https://github.com/NicTanghe/cssimpler.git", rev = "432ca62385add6ceff70744a9fbcda1cdfff2c13", optional = true }
 
 [dev-dependencies]
 naga = { version = "30.0.1", features = ["wgsl-in"] }

@@ -311,7 +311,7 @@
       "spent": 0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.027777777777778,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/22"
@@ -326,8 +326,8 @@
       "depends_on": [
         "FC-0024"
       ],
-      "status": "ready",
-      "owner": null,
+      "status": "active",
+      "owner": "cssimpler-ui-agent",
       "vruntime": 3.027777777777778,
       "pr": null
     },
