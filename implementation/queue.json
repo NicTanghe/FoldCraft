@@ -259,10 +259,10 @@
       "spent": 3.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-wave2-review",
+      "status": "done",
+      "owner": null,
       "vruntime": 3.125,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/32"
     },
     {
       "id": "FC-0015",
@@ -282,13 +282,13 @@
       "title": "Replace egui and eframe completely with cssimpler desktop UI",
       "acceptance": "Desktop entry points use real cssimpler UI; direct wgpu rendering/compute; no egui or eframe packages in all-features dependency graph or regenerated lockfile; preserve CPU builds and real authoring/worker behavior. No legacy egui feature.",
       "points": 8.0,
-      "spent": 0,
+      "spent": 8.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-zero-egui",
+      "status": "done",
+      "owner": null,
       "vruntime": 2.9583333333333335,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/32"
     },
     {
       "id": "FC-0023",
