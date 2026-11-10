@@ -160,6 +160,7 @@ pub enum ObjectCategory {
 // ============================================================================
 
 pub struct CssRunnerState {
+    pub usd_scene: Option<cssimpler::renderer::gpu::usd::UsdScene>,
     pub project: FittingProject,
     pub scene: FittingScene,
     pub initial_scene: FittingScene,
@@ -200,6 +201,7 @@ impl CssRunnerState {
         let initial_scene = scene.clone();
 
         Self {
+            usd_scene: None,
             project,
             scene,
             initial_scene,
@@ -248,6 +250,20 @@ impl CssRunnerState {
         }
     }
 
+    pub fn sync_usd_points(&mut self) {
+        if let Some(scene) = &self.usd_scene {
+            for panel in &self.scene.garment.panels {
+                if let Err(error) = marvelous_cloth::usd_scene::update_viewport_points(
+                    scene,
+                    &marvelous_cloth::usd_scene::viewport_panel_path(&panel.id),
+                    &self.scene.state.x[panel.vertices.clone()],
+                ) {
+                    self.status_message = format!("USD update error: {error}");
+                }
+            }
+        }
+    }
+
     pub fn reset_simulation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.scene = self.initial_scene.clone();
@@ -257,6 +273,7 @@ impl CssRunnerState {
         self.worker_pending = false;
         self.playing = false;
         self.status_message = "Reset simulation state".to_string();
+        self.sync_usd_points();
     }
 
     pub fn save_project(&mut self) {
@@ -291,8 +308,12 @@ impl CssRunnerState {
 
 pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidation {
     // 1. Poll simulation worker result
-    if let Ok(mut guard) = state.worker_latest.lock()
-        && let Some(done) = guard.take()
+    let done = state
+        .worker_latest
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+    if let Some(done) = done
         && done.generation == state.generation
     {
         state.worker_pending = false;
@@ -309,6 +330,7 @@ pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidat
                     metrics.step_ms
                 );
                 state.last_metrics = Some(metrics);
+                state.sync_usd_points();
             }
             Err(e) => {
                 state.playing = false;
@@ -1012,7 +1034,7 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> Vec<Node> {
 
 #[allow(clippy::type_complexity)]
 pub fn create_runner_app<'a>(
-    state: CssRunnerState,
+    mut state: CssRunnerState,
     stylesheet: &'a Stylesheet,
 ) -> App<
     'a,
@@ -1030,6 +1052,10 @@ pub fn create_runner_app<'a>(
             .unwrap_or_default();
     let _ = std::fs::write(&preview_path, usda);
 
+    let usd_scene = cssimpler::renderer::gpu::usd::UsdScene::open(&preview_path)
+        .expect("load generated USD viewport scene");
+    state.usd_scene = Some(usd_scene.clone());
+
     let app = App::new(
         state,
         stylesheet,
@@ -1037,12 +1063,13 @@ pub fn create_runner_app<'a>(
         build_runner_ui as fn(&CssRunnerState) -> Node,
     )
     .with_event_handler(handle_runner_event)
-    .with_render_mode(RenderMode::OnInvalidation);
+    .with_render_mode(RenderMode::OnInvalidation)
+    .with_continuous_updates(true);
 
     #[cfg(feature = "desktop")]
     let app = app.with_usd_viewport(
         "runner-viewport-3d-scene",
-        preview_path,
+        usd_scene,
         cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
     );
 
@@ -1138,6 +1165,40 @@ mod tests {
             rgba.iter().any(|&b| b > 0),
             "rendered buffer should have painted pixels"
         );
+
+        // Deliver an accepted worker snapshot without running GPU work.
+        let read_points = |state: &CssRunnerState| {
+            let path =
+                marvelous_cloth::usd_scene::viewport_panel_path(&state.scene.garment.panels[0].id);
+            state
+                .usd_scene
+                .as_ref()
+                .unwrap()
+                .stage()
+                .attribute(&format!("{path}.points"))
+                .unwrap()
+                .get::<Vec<cssimpler::renderer::gpu::openusd::gf::Vec3f>>()
+                .unwrap()
+                .unwrap()
+        };
+        let initial_points = read_points(app.state());
+        let mut moved = app.state().scene.state.clone();
+        moved.x[0].y += 0.01;
+        *app.state().worker_latest.lock().unwrap() = Some(worker::Done {
+            generation: app.state().generation,
+            had_grab: false,
+            result: Ok((moved, VbdMetrics::default())),
+        });
+        update_runner(
+            app.state_mut(),
+            FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 2,
+            },
+        );
+        assert_ne!(read_points(app.state()), initial_points);
+        app.state_mut().reset_simulation();
+        assert_eq!(read_points(app.state()), initial_points);
 
         // Test Play / Step
         app.state_mut().playing = true;

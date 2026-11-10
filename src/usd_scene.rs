@@ -250,3 +250,61 @@ pub fn mesh_stage_usda(
     out.push_str("] (\n                interpolation = \"vertex\"\n            )\n            color3f[] primvars:displayColor = [(0.62, 0.68, 0.78)] (\n                interpolation = \"constant\"\n            )\n        }\n    }\n}\n");
     Ok(out)
 }
+
+/// Update transient display positions on the event thread, preserving USD identity.
+#[cfg(feature = "desktop")]
+pub fn update_viewport_points(
+    scene: &cssimpler::renderer::gpu::usd::UsdScene,
+    path: &str,
+    positions: &[glam::DVec3],
+) -> Result<(), String> {
+    use cssimpler::renderer::gpu::openusd::gf;
+    if positions
+        .iter()
+        .any(|p| p.to_array().into_iter().any(|v| !finite_float(v)))
+    {
+        return Err("USD display positions must be finite f32 values".into());
+    }
+    let points: Vec<_> = positions
+        .iter()
+        .map(|p| gf::vec3f(p.x as f32, p.y as f32, p.z as f32))
+        .collect();
+    scene
+        .stage()
+        .attribute(&format!("{path}.points"))
+        .map_err(|e| e.to_string())?
+        .set(points)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Transient USD mesh path derived from a semantic panel ID.
+#[cfg(feature = "desktop")]
+pub fn viewport_panel_path(id: &str) -> String {
+    format!("/World/Garment/{}", prim_name(id))
+}
+
+#[cfg(feature = "desktop")]
+pub fn update_viewport_topology(
+    scene: &cssimpler::renderer::gpu::usd::UsdScene,
+    mesh: &crate::model::Mesh,
+) -> Result<(), String> {
+    for (name, values) in [
+        ("faceVertexCounts", vec![3_i32; mesh.triangles.len()]),
+        (
+            "faceVertexIndices",
+            mesh.triangles
+                .iter()
+                .flat_map(|t| t.vertices.map(|i| i as i32))
+                .collect(),
+        ),
+    ] {
+        scene
+            .stage()
+            .attribute(&format!("/World/Garment/cloth_mesh.{name}"))
+            .map_err(|e| e.to_string())?
+            .set(values)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

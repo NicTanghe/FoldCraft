@@ -149,8 +149,9 @@ pub enum EditorTab {
 // State Struct
 // ============================================================================
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CssEditorState {
+    pub usd_scene: Option<cssimpler::renderer::gpu::usd::UsdScene>,
     pub active: Project,
     pub mesh: Arc<Mesh>,
     pub state: State,
@@ -201,6 +202,7 @@ impl CssEditorState {
         };
 
         Self {
+            usd_scene: None,
             active: project,
             mesh: Arc::new(mesh),
             state,
@@ -249,11 +251,24 @@ impl CssEditorState {
                     m.step_ms
                 );
                 self.metrics = Some(m);
+                self.sync_usd_points();
             }
             Err(e) => {
                 self.playing = false;
                 self.status_message = format!("Solver error: {e}");
             }
+        }
+    }
+
+    pub fn sync_usd_points(&mut self) {
+        if let Some(scene) = &self.usd_scene
+            && let Err(error) = marvelous_cloth::usd_scene::update_viewport_points(
+                scene,
+                "/World/Garment/cloth_mesh",
+                &self.state.x,
+            )
+        {
+            self.status_message = format!("USD update error: {error}");
         }
     }
 
@@ -265,6 +280,13 @@ impl CssEditorState {
             self.step_count = 0;
             self.step_ms = 0.0;
             self.status_message = "Reset simulation state".to_string();
+            if let Some(scene) = &self.usd_scene
+                && let Err(error) =
+                    marvelous_cloth::usd_scene::update_viewport_topology(scene, &self.mesh)
+            {
+                self.status_message = format!("USD topology error: {error}");
+            }
+            self.sync_usd_points();
         }
     }
 
@@ -1068,7 +1090,7 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> Vec<Node> {
 
 #[allow(clippy::type_complexity)]
 pub fn create_editor_app<'a>(
-    state: CssEditorState,
+    mut state: CssEditorState,
     stylesheet: &'a Stylesheet,
 ) -> App<
     'a,
@@ -1085,6 +1107,10 @@ pub fn create_editor_app<'a>(
         marvelous_cloth::usd_scene::mesh_stage_usda(&state.mesh, &state.state).unwrap_or_default();
     let _ = std::fs::write(&preview_path, usda);
 
+    let usd_scene = cssimpler::renderer::gpu::usd::UsdScene::open(&preview_path)
+        .expect("load generated USD viewport scene");
+    state.usd_scene = Some(usd_scene.clone());
+
     let app = App::new(
         state,
         stylesheet,
@@ -1092,12 +1118,13 @@ pub fn create_editor_app<'a>(
         build_editor_ui as fn(&CssEditorState) -> Node,
     )
     .with_event_handler(handle_editor_event)
-    .with_render_mode(RenderMode::OnInvalidation);
+    .with_render_mode(RenderMode::OnInvalidation)
+    .with_continuous_updates(true);
 
     #[cfg(feature = "desktop")]
     let app = app.with_usd_viewport(
         "viewport-3d-scene",
-        preview_path,
+        usd_scene,
         cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
     );
 
@@ -1169,16 +1196,39 @@ mod tests {
             "rendered buffer should contain painted UI pixels"
         );
 
+        let read_points = |state: &CssEditorState| {
+            state
+                .usd_scene
+                .as_ref()
+                .unwrap()
+                .stage()
+                .attribute("/World/Garment/cloth_mesh.points")
+                .unwrap()
+                .get::<Vec<cssimpler::renderer::gpu::openusd::gf::Vec3f>>()
+                .unwrap()
+                .unwrap()
+        };
+        let initial_points = read_points(app.state());
         // Test Step
         assert_eq!(app.state().step_count, 0);
         app.state_mut().step();
         assert_eq!(app.state().step_count, 1);
         assert!(app.state().metrics.is_some());
+        assert_ne!(
+            read_points(app.state()),
+            initial_points,
+            "accepted steps must update USD points"
+        );
 
         // Test Reset
         app.state_mut().reset();
         assert_eq!(app.state().step_count, 0);
         assert!(app.state().metrics.is_none());
+        assert_eq!(
+            read_points(app.state()),
+            initial_points,
+            "reset restores USD points"
+        );
 
         // Test Tab Switching
         assert_eq!(app.state().active_tab, EditorTab::Properties);

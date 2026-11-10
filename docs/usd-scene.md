@@ -186,8 +186,11 @@ support for every OpenUSD schema, Hydra renderer, asset resolver or DCC extensio
 Both cssimpler editors use the registered USD viewport as their sole 3D renderer.
 The previous CPU-projected SVG triangle overlay has been removed; the 2D pattern
 boards still use SVG. This removes duplicate mesh projection and DOM construction
-on UI rebuilds. The existing USD snapshot is still loaded at application creation;
-live simulation updates and worker scheduling are separate follow-up work.
+on UI rebuilds. The USD snapshot is loaded at application creation and retained as a shared stage.
+Accepted simulation results update its point attributes on the event thread, so
+the native renderer observes stage revisions without file export/reload. Reference
+editor reset/remeshing also updates display topology. Worker scheduling remains
+separate follow-up work.
 
 Native USD host elements have explicit flex sizing and minimum drawable dimensions;
 unlike an SVG, their mesh content does not supply an intrinsic DOM size.
