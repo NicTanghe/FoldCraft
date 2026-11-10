@@ -395,6 +395,22 @@
       "owner": null,
       "vruntime": 3.777777777777778,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/27"
+    },
+    {
+      "id": "FC-0031",
+      "title": "Wire CSSimpler USD 3D viewport into Studio V2 and FEM Workshop",
+      "acceptance": "Update cssimpler dependency to latest main (bba002c) with gpu-viewport feature; bind garment USD scenes to cssimpler native USD viewport via with_usd_viewport in css_editor and css_runner; pass CPU and desktop checks.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "high",
+      "depends_on": [
+        "FC-0030",
+        "FC-0022"
+      ],
+      "status": "done",
+      "owner": null,
+      "vruntime": 4.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/33"
     }
   ]
 }

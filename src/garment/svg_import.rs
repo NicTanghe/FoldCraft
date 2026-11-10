@@ -709,7 +709,7 @@ pub fn read_svg(source: &str, options: Options) -> Result<Drawing, String> {
                 if !stack
                     .last()
                     .is_some_and(|f| matches!(f.tag.as_str(), "title" | "desc"))
-                    && e.as_ref().iter().any(|b| !b.is_ascii_whitespace())
+                    && (&*e).iter().any(|b| !b.is_ascii_whitespace())
                 {
                     return Err("Unexpected SVG text".into());
                 }

@@ -178,3 +178,75 @@ pub fn garment_stage_usda(garment: &CompiledGarment, state: &State) -> Result<St
     out.push_str("    }\n}\n");
     Ok(out)
 }
+
+/// Publish a single-mesh model state as metre-scale, Y-up USDA polygon mesh.
+pub fn mesh_stage_usda(
+    mesh: &crate::model::Mesh,
+    state: &crate::model::State,
+) -> Result<String, String> {
+    if state.x.len() != mesh.uv.len() || !state.time.is_finite() {
+        return Err("USD snapshot requires matching positions and finite time".into());
+    }
+    if mesh.triangles.is_empty() {
+        return Err("USD snapshot requires at least one triangle".into());
+    }
+    if state
+        .x
+        .iter()
+        .any(|p| p.to_array().into_iter().any(|v| !finite_float(v)))
+        || mesh
+            .uv
+            .iter()
+            .any(|p| p.to_array().into_iter().any(|v| !finite_float(v)))
+    {
+        return Err("USD points and UVs must be finite and representable as f32".into());
+    }
+
+    let mut out = String::from(
+        "#usda 1.0\n(\n    defaultPrim = \"World\"\n    metersPerUnit = 1\n    upAxis = \"Y\"\n)\n\ndef Xform \"World\"\n{\n    def Scope \"Garment\"\n    {\n        custom int clothcraft:snapshotVersion = 1\n",
+    );
+    writeln!(
+        out,
+        "        custom double clothcraft:timeSeconds = {}",
+        state.time
+    )
+    .unwrap();
+    out.push_str("        def Mesh \"cloth_mesh\"\n        {\n            custom string clothcraft:panelId = \"cloth\"\n            uniform token subdivisionScheme = \"none\"\n            uniform token orientation = \"rightHanded\"\n            uniform bool doubleSided = true\n            point3f[] points = [");
+    for (j, p) in state.x.iter().enumerate() {
+        if j > 0 {
+            out.push_str(", ");
+        }
+        write!(out, "({}, {}, {})", p.x as f32, p.y as f32, p.z as f32).unwrap();
+    }
+    out.push_str("]\n            int[] faceVertexCounts = [");
+    for j in 0..mesh.triangles.len() {
+        if j > 0 {
+            out.push_str(", ");
+        }
+        out.push('3');
+    }
+    out.push_str("]\n            int[] faceVertexIndices = [");
+    for (j, tri) in mesh.triangles.iter().enumerate() {
+        if j > 0 {
+            out.push_str(", ");
+        }
+        let [a, b, c] = tri.vertices;
+        write!(out, "{a}, {b}, {c}").unwrap();
+    }
+    out.push_str("]\n            custom double2[] clothcraft:restUV = [");
+    for (j, uv) in mesh.uv.iter().enumerate() {
+        if j > 0 {
+            out.push_str(", ");
+        }
+        write!(out, "({}, {})", uv.x, uv.y).unwrap();
+    }
+    out.push_str("]\n            texCoord2f[] primvars:st = [");
+    for (j, uv) in mesh.uv.iter().enumerate() {
+        if j > 0 {
+            out.push_str(", ");
+        }
+        write!(out, "({}, {})", uv.x as f32, uv.y as f32).unwrap();
+    }
+    out.push_str("] (\n                interpolation = \"vertex\"\n            )\n            color3f[] primvars:displayColor = [(0.62, 0.68, 0.78)] (\n                interpolation = \"constant\"\n            )\n        }\n    }\n}\n");
+    Ok(out)
+}

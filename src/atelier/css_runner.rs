@@ -653,9 +653,10 @@ fn build_runner_3d_viewport(state: &CssRunnerState) -> Node {
         <div id="viewport-3d" class="viewport-container">
             <div class="viewport-header">
                 <span class="viewport-title">"3D GARMENT & AVATAR"</span>
-                <span class="viewport-sub">"Interactive VBD + OGC simulation"</span>
+                <span class="viewport-sub">"USD native 3D viewport (VBD + OGC)"</span>
             </div>
             <div class="canvas-area">
+                <div id="runner-viewport-3d-scene" class="viewport"></div>
                 <svg viewBox="0 0 640 480" class="svg-canvas">
                     {svg_nodes}
                 </svg>
@@ -1125,14 +1126,32 @@ pub fn create_runner_app<'a>(
     fn(&CssRunnerState) -> Node,
     Invalidation,
 > {
-    App::new(
+    let preview_path = state.files.output.join("runner_preview.usda");
+    if let Some(parent) = preview_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let usda =
+        marvelous_cloth::usd_scene::garment_stage_usda(&state.scene.garment, &state.scene.state)
+            .unwrap_or_default();
+    let _ = std::fs::write(&preview_path, usda);
+
+    let app = App::new(
         state,
         stylesheet,
         update_runner as fn(&mut CssRunnerState, FrameInfo) -> Invalidation,
         build_runner_ui as fn(&CssRunnerState) -> Node,
     )
     .with_event_handler(handle_runner_event)
-    .with_render_mode(RenderMode::OnInvalidation)
+    .with_render_mode(RenderMode::OnInvalidation);
+
+    #[cfg(feature = "desktop")]
+    let app = app.with_usd_viewport(
+        "runner-viewport-3d-scene",
+        preview_path,
+        cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
+    );
+
+    app
 }
 
 pub fn run(
