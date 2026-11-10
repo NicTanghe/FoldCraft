@@ -205,6 +205,15 @@ pub fn start(
     Ok((tx, latest))
 }
 
+pub fn start_cpu() -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
+    let (tx, latest, _thread) = start_inner(
+        None,
+        #[cfg(test)]
+        None,
+    )?;
+    Ok((tx, latest))
+}
+
 #[cfg(test)]
 struct TestHooks {
     entered: mpsc::Sender<u64>,

@@ -240,7 +240,7 @@ impl CssRunnerState {
             settings: self.settings.clone(),
             grab: None,
             gpu: false,
-            ctx: eframe::egui::Context::default(),
+            signal: worker::RepaintSignal::noop(),
             playing: self.playing,
             once,
         };
@@ -292,11 +292,12 @@ impl CssRunnerState {
 
 pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidation {
     // 1. Poll simulation worker result
-    if let Ok(mut guard) = state.worker_latest.lock() {
-        if let Some(done) = guard.take() {
-            if done.generation == state.generation {
-                state.worker_pending = false;
-                match done.result {
+    if let Ok(mut guard) = state.worker_latest.lock()
+        && let Some(done) = guard.take()
+        && done.generation == state.generation
+    {
+        state.worker_pending = false;
+        match done.result {
                     Ok((new_state, metrics)) => {
                         state.scene.state = new_state;
                         state.step_count += 1;
@@ -315,8 +316,6 @@ pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidat
                         state.status_message = format!("Worker error: {e}");
                     }
                 }
-            }
-        }
     }
 
     // 2. Process pending UI actions
@@ -429,11 +428,12 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                         return true;
                     }
                 }
-                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key {
-                    if name == "Escape" && state.command_palette_open {
-                        state.command_palette_open = false;
-                        return true;
-                    }
+                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
+                    && name == "Escape"
+                    && state.command_palette_open
+                {
+                    state.command_palette_open = false;
+                    return true;
                 }
             }
             false
@@ -447,7 +447,7 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
             false
         }
         EngineEvent::PointerMoved { position, .. } => {
-            let (px, py) = (position.x as f32, position.y as f32);
+            let (px, py) = (position.x, position.y);
             if state.pointer_down {
                 let dx = px - state.last_pointer_pos.0;
                 let dy = py - state.last_pointer_pos.1;
@@ -462,7 +462,7 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                 cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
                 cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
             };
-            state.camera.distance = (state.camera.distance - dy as f32).clamp(0.5, 15.0);
+            state.camera.distance = (state.camera.distance - dy).clamp(0.5, 15.0);
             false
         }
         _ => false,
@@ -1115,6 +1115,7 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> Vec<Node> {
 // App Constructor and Entry Point
 // ============================================================================
 
+#[allow(clippy::type_complexity)]
 pub fn create_runner_app<'a>(
     state: CssRunnerState,
     stylesheet: &'a Stylesheet,

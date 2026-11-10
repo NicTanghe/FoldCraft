@@ -3,7 +3,7 @@ use crate::render::{Camera, DrawModel, Viewport};
 use eframe::egui::{self, Color32, Stroke, Vec2};
 use marvelous_cloth::{
     fitting::{FittingProject, FittingScene},
-    garment::{export, presets::GarmentKind},
+    garment::presets::GarmentKind,
     picking,
     vbd::{Grab, VbdMetrics, VbdSettings},
 };
@@ -18,14 +18,12 @@ mod board;
 mod chrome;
 #[path = "atelier/command_palette.rs"]
 mod command_palette;
-#[path = "atelier/commands.rs"]
-mod commands;
+use crate::commands;
 #[path = "atelier/core_state.rs"]
 pub mod core_state;
 #[path = "atelier/css_runner.rs"]
 pub mod css_runner;
-#[path = "atelier/css_ui/mod.rs"]
-pub mod css_ui;
+pub use crate::css_ui;
 pub use core_state::*;
 #[path = "atelier/documents_ui.rs"]
 mod documents_ui;
@@ -78,26 +76,8 @@ mod worker;
 mod workspace;
 #[path = "atelier/workspace_profiles.rs"]
 pub mod workspace_profiles;
-use authoring_ui::{AuthoringUi, Tool};
+use authoring_ui::AuthoringUi;
 use worker::Work;
-
-/// Export is not atomic across artifacts: an error may leave earlier files.
-/// Keep the fallible operation separate from status text so dispatch can report
-/// the real outcome and CPU tests can exercise disk failures without a renderer.
-fn export_session(
-    project: &FittingProject,
-    scene: &FittingScene,
-    settings: &VbdSettings,
-    output: &std::path::Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    std::fs::create_dir_all(output)?;
-    export::write_artifacts(&project.template, &scene.garment, &scene.state, output)?;
-    let mut p = project.clone();
-    p.state = Some(scene.state.clone());
-    p.simulation = Some(settings.clone());
-    p.save(&output.join("fitting-project.json"))?;
-    Ok(())
-}
 
 fn queue_work(sender: &mpsc::Sender<Work>, work: Work) -> Result<(), String> {
     sender
@@ -366,24 +346,7 @@ fn palette_shortcut(
     }
 }
 
-/// Reject commands that reload the scene and discard an uncommitted trim draft.
-fn check_trim_draft_for_command(
-    id: commands::CommandId,
-    trim_pending: bool,
-) -> Result<(), &'static str> {
-    if trim_pending {
-        return match id {
-            commands::CommandId::LoadTshirt | commands::CommandId::LoadDress => {
-                Err("Apply or cancel the trim draft before loading an example")
-            }
-            commands::CommandId::ResetSimulation => {
-                Err("Apply or cancel the trim draft before resetting the simulation")
-            }
-            _ => Ok(()),
-        };
-    }
-    Ok(())
-}
+
 
 fn reset_arrangement_button(ui: &mut egui::Ui, trim_pending: bool) -> bool {
     let reason = check_trim_draft_for_command(commands::CommandId::ResetSimulation, trim_pending);

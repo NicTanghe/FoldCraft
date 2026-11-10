@@ -447,11 +447,12 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
                         return true;
                     }
                 }
-                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key {
-                    if name == "Escape" && state.command_palette_open {
-                        state.command_palette_open = false;
-                        return true;
-                    }
+                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
+                    && name == "Escape"
+                    && state.command_palette_open
+                {
+                    state.command_palette_open = false;
+                    return true;
                 }
             }
             false
@@ -465,7 +466,7 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
             false
         }
         EngineEvent::PointerMoved { position, .. } => {
-            let (px, py) = (position.x as f32, position.y as f32);
+            let (px, py) = (position.x, position.y);
             if state.pointer_down {
                 let dx = px - state.last_pointer_pos.0;
                 let dy = py - state.last_pointer_pos.1;
@@ -481,7 +482,7 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
                 cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
                 cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
             };
-            state.camera.distance = (state.camera.distance - dy as f32).clamp(0.5, 12.0);
+            state.camera.distance = (state.camera.distance - dy).clamp(0.5, 12.0);
             false
         }
         _ => false,
@@ -984,24 +985,25 @@ fn render_3d_scene_svg(state: &CssEditorState) -> Vec<Node> {
     let view_proj = state.camera.matrix(aspect);
 
     // Render sphere collider if scene is sphere and collider enabled
-    if state.collider && state.active.scene == Scene::Sphere {
-        if let Some(sphere) = &state.active.sphere {
-            let sc_center = glam::Vec3::new(
-                sphere.center.x as f32,
-                sphere.center.y as f32,
-                sphere.center.z as f32,
-            );
-            let clip = view_proj.project_point3(sc_center);
-            let cx = (clip.x * 0.5 + 0.5) * w;
-            let cy = (1.0 - (clip.y * 0.5 + 0.5)) * h;
-            // Screen projected radius approx
-            let r_proj = (sphere.radius as f32 / (state.camera.distance * 0.414)).max(0.05) * 220.0;
+    if state.collider
+        && state.active.scene == Scene::Sphere
+        && let Some(sphere) = &state.active.sphere
+    {
+        let sc_center = glam::Vec3::new(
+            sphere.center.x as f32,
+            sphere.center.y as f32,
+            sphere.center.z as f32,
+        );
+        let clip = view_proj.project_point3(sc_center);
+        let cx = (clip.x * 0.5 + 0.5) * w;
+        let cy = (1.0 - (clip.y * 0.5 + 0.5)) * h;
+        // Screen projected radius approx
+        let r_proj = (sphere.radius as f32 / (state.camera.distance * 0.414)).max(0.05) * 220.0;
 
-            nodes.push(ui! {
-                <circle cx={format!("{cx:.1}")} cy={format!("{cy:.1}")} r={format!("{r_proj:.1}")}
-                    fill="rgba(59, 130, 246, 0.22)" stroke="#3b82f6" stroke-width="1.5" />
-            });
-        }
+        nodes.push(ui! {
+            <circle cx={format!("{cx:.1}")} cy={format!("{cy:.1}")} r={format!("{r_proj:.1}")}
+                fill="rgba(59, 130, 246, 0.22)" stroke="#3b82f6" stroke-width="1.5" />
+        });
     }
 
     // Sort cloth triangles by projected depth
@@ -1189,6 +1191,7 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> Vec<Node> {
 // App Constructor and Native Window Runner
 // ============================================================================
 
+#[allow(clippy::type_complexity)]
 pub fn create_editor_app<'a>(
     state: CssEditorState,
     stylesheet: &'a Stylesheet,
