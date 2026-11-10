@@ -13,6 +13,8 @@ pub use marvelous_cloth::commands;
 pub use marvelous_cloth::css_ui;
 
 // GPU and diagnostic entry points remain available during native adapter migration.
+#[path = "atelier/perf.rs"]
+pub mod perf;
 #[allow(dead_code)]
 #[path = "atelier/worker.rs"]
 pub mod worker;
@@ -34,11 +36,34 @@ pub fn run(
     scene: FittingScene,
     files: DocumentFiles,
     smoke: bool,
-    _drag_test: bool,
-    _perf_test: bool,
-    _authoring_test: bool,
+    drag_test: bool,
+    perf_test: bool,
+    authoring_test: bool,
+    gpu_sim: bool,
 ) -> Result<(), String> {
-    css_runner::run(project, scene, files, smoke)
+    let output = files.output.clone();
+    css_runner::run(
+        project,
+        scene,
+        files,
+        smoke,
+        drag_test,
+        perf_test,
+        authoring_test,
+        gpu_sim,
+    )?;
+    if perf_test {
+        let perf_report = output.join("ui-perf.json");
+        let report: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&perf_report)
+                .map_err(|e| format!("Failed to read {}: {e}", perf_report.display()))?,
+        )
+        .map_err(|e| e.to_string())?;
+        if report["passed"] != true {
+            return Err(format!("UI realtime check failed: {report}"));
+        }
+    }
+    Ok(())
 }
 
 #[path = "atelier/usd_smoke.rs"]

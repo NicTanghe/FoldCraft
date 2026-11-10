@@ -209,6 +209,7 @@ fn run_ogc(
             args.ui_interaction_smoke,
             args.ui_perf_smoke,
             args.ui_authoring_smoke,
+            args.gpu_sim,
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]
@@ -364,6 +365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.ui_interaction_smoke,
             args.ui_perf_smoke,
             args.ui_authoring_smoke,
+            args.gpu_sim,
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]

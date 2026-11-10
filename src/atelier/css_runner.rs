@@ -189,6 +189,13 @@ pub struct CssRunnerState {
     pub status_message: String,
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
+    pub gpu_sim: bool,
+    pub drag_test: bool,
+    pub perf_test: bool,
+    pub authoring_test: bool,
+    pub perf: Option<super::perf::PerfRun>,
+    pub cadence: super::perf::Cadence,
+    pub should_exit: bool,
 }
 
 impl CssRunnerState {
@@ -232,19 +239,23 @@ impl CssRunnerState {
             status_message: "Ready".to_string(),
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
+            gpu_sim: false,
+            drag_test: false,
+            perf_test: false,
+            authoring_test: false,
+            perf: None,
+            cadence: Default::default(),
+            should_exit: false,
         }
     }
 
-    pub fn trigger_worker_step(&mut self, once: bool) {
-        if self.worker_pending {
-            return;
-        }
+    pub fn send_control_state(&mut self, once: bool) {
         let work = Work {
             generation: self.generation,
             scene: self.scene.clone(),
             settings: self.settings.clone(),
             grab: None,
-            gpu: false,
+            gpu: self.gpu_sim,
             signal: worker::RepaintSignal::noop(),
             playing: self.playing,
             once,
@@ -252,6 +263,10 @@ impl CssRunnerState {
         if self.worker_tx.send(work).is_ok() {
             self.worker_pending = true;
         }
+    }
+
+    pub fn trigger_worker_step(&mut self, once: bool) {
+        self.send_control_state(once);
     }
 
     pub fn sync_usd_points(&mut self) {
@@ -278,6 +293,7 @@ impl CssRunnerState {
         self.playing = false;
         self.status_message = "Reset simulation state".to_string();
         self.sync_usd_points();
+        self.send_control_state(false);
     }
 
     pub fn save_project(&mut self) {
@@ -310,19 +326,21 @@ impl CssRunnerState {
 // Update and Event Handling
 // ============================================================================
 
-pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidation {
+pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidation {
     // 1. Poll simulation worker result
     let done = state
         .worker_latest
         .lock()
         .ok()
         .and_then(|mut guard| guard.take());
+    let mut had_result = false;
     if let Some(done) = done
         && done.generation == state.generation
     {
         state.worker_pending = false;
         match done.result {
             Ok((new_state, metrics)) => {
+                had_result = true;
                 state.scene.state = new_state;
                 state.step_count += 1;
                 state.step_ms = metrics.step_ms;
@@ -339,7 +357,30 @@ pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidat
             Err(e) => {
                 state.playing = false;
                 state.status_message = format!("Worker error: {e}");
+                state.send_control_state(false);
             }
+        }
+    }
+
+    state.cadence.update(
+        std::time::Instant::now(),
+        state.scene.state.time,
+        state.generation,
+        state.playing,
+    );
+
+    if let Some(perf) = state.perf.as_mut() {
+        let dt = state.settings.dt;
+        if let Some(report) = perf.tick(state.scene.state.time, frame.frame_index, dt, true) {
+            let _ = fs::create_dir_all(&state.files.output);
+            let perf_path = state.files.output.join("ui-perf.json");
+            let _ = fs::write(
+                &perf_path,
+                serde_json::to_string_pretty(&report).unwrap_or_default(),
+            );
+            state.should_exit = true;
+        } else if perf.expired() {
+            state.should_exit = true;
         }
     }
 
@@ -348,12 +389,10 @@ pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidat
 
     if actions & ACT_RUN_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
-        if state.playing && !state.worker_pending {
-            state.trigger_worker_step(false);
-        }
+        state.send_control_state(false);
     }
     if actions & ACT_RUN_STEP != 0 {
-        state.trigger_worker_step(true);
+        state.send_control_state(true);
     }
     if actions & ACT_RUN_RESET != 0 {
         state.reset_simulation();
@@ -421,11 +460,13 @@ pub fn update_runner(state: &mut CssRunnerState, _frame: FrameInfo) -> Invalidat
         state.active_2d_tool = "Corner".to_string();
     }
 
-    // 3. Continue simulation loop if playing
-    if state.playing && !state.worker_pending {
-        state.trigger_worker_step(false);
-        Invalidation::Paint
-    } else if actions != 0 || state.last_metrics.is_some() {
+    if state.playing {
+        if had_result {
+            Invalidation::Paint
+        } else {
+            Invalidation::Clean
+        }
+    } else if actions != 0 || had_result {
         Invalidation::Structure
     } else {
         Invalidation::Clean
@@ -439,9 +480,7 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                 if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key {
                     if ch == " " {
                         state.playing = !state.playing;
-                        if state.playing && !state.worker_pending {
-                            state.trigger_worker_step(false);
-                        }
+                        state.send_control_state(false);
                         return true;
                     }
                     if ch == "k" && (k.modifiers.control || k.modifiers.super_key) {
@@ -1074,7 +1113,7 @@ pub fn create_runner_app<'a>(
     .with_event_handler(handle_runner_event)
     .with_render_mode(RenderMode::OnInvalidation)
     .with_continuous_updates(true)
-    .with_exit_when(|state| state.smoke_done.get());
+    .with_exit_when(|state| state.smoke_done.get() || state.should_exit);
 
     if smoke {
         app.with_gpu_viewport(
@@ -1105,22 +1144,60 @@ pub fn create_runner_app<'a>(
     }
 }
 
+fn init_gpu_device() -> Result<(wgpu::Device, wgpu::Queue), String> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        ..Default::default()
+    }))
+    .map_err(|e| format!("Failed to find hardware GPU adapter for --gpu-sim: {e}"))?;
+    let info = adapter.get_info();
+    if info.device_type == wgpu::DeviceType::Cpu {
+        return Err("Hardware GPU required for --gpu-sim".into());
+    }
+    eprintln!("Compute adapter: {} ({:?})", info.name, info.backend);
+    pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("CSSimpler VBD Worker"),
+        required_features: adapter.features()
+            & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::SUBGROUP),
+        ..Default::default()
+    }))
+    .map_err(|e| format!("Failed to create GPU device: {e}"))
+}
+
 pub fn run(
     project: FittingProject,
     scene: FittingScene,
     files: DocumentFiles,
     smoke: bool,
+    drag_test: bool,
+    perf_test: bool,
+    authoring_test: bool,
+    gpu_sim: bool,
 ) -> Result<(), String> {
     let stylesheet =
         Box::leak(Box::new(load_studio_stylesheet().map_err(|e| {
             format!("Failed to load Studio V2 stylesheet: {e}")
         })?));
 
-    // Start background simulation worker on CPU
-    let (tx, latest) = worker::start_cpu().map_err(|e| format!("Failed to start worker: {e}"))?;
+    let (tx, latest) = if gpu_sim {
+        let (device, queue) = init_gpu_device()?;
+        worker::start(device, queue).map_err(|e| format!("Failed to start GPU worker: {e}"))?
+    } else {
+        worker::start_cpu().map_err(|e| format!("Failed to start CPU worker: {e}"))?
+    };
 
     let mut state = CssRunnerState::new(project, scene, files, tx, latest);
     state.smoke = smoke;
+    state.drag_test = drag_test;
+    state.perf_test = perf_test;
+    state.authoring_test = authoring_test;
+    state.gpu_sim = gpu_sim;
+    if perf_test {
+        state.perf = Some(super::perf::PerfRun::new());
+        state.playing = true;
+        state.send_control_state(false);
+    }
     let smoke_done = state.smoke_done.clone();
     let app = create_runner_app(state, stylesheet);
     let config = WindowConfig::new("ClothCraft | Simulation Studio V2", 1600, 980);
