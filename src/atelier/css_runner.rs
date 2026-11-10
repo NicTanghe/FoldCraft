@@ -646,9 +646,7 @@ fn build_runner_stage(state: &CssRunnerState) -> Node {
     }
 }
 
-fn build_runner_3d_viewport(state: &CssRunnerState) -> Node {
-    let svg_nodes = render_runner_3d_svg(state);
-
+fn build_runner_3d_viewport(_state: &CssRunnerState) -> Node {
     ui! {
         <div id="viewport-3d" class="viewport-container">
             <div class="viewport-header">
@@ -657,9 +655,6 @@ fn build_runner_3d_viewport(state: &CssRunnerState) -> Node {
             </div>
             <div class="canvas-area">
                 <div id="runner-viewport-3d-scene" class="viewport"></div>
-                <svg viewBox="0 0 640 480" class="svg-canvas">
-                    {svg_nodes}
-                </svg>
             </div>
         </div>
     }
@@ -940,107 +935,7 @@ fn build_runner_command_palette(state: &CssRunnerState) -> Node {
 }
 
 // ============================================================================
-// 3D Perspective SVG Projection Engine (Garment + Avatar)
-// ============================================================================
-
-fn render_runner_3d_svg(state: &CssRunnerState) -> Vec<Node> {
-    let mut nodes = Vec::new();
-
-    // Canvas background
-    nodes.push(ui! {
-        <rect width="640" height="480" fill="#111318" />
-    });
-
-    let w = 640.0_f32;
-    let h = 480.0_f32;
-    let aspect = w / h;
-    let view_proj = state.camera.matrix(aspect);
-
-    let light_dir = glam::Vec3::new(0.35, 0.85, 0.4).normalize();
-
-    // 1. Render sampled Avatar Surface Mesh triangles (mannequin)
-    let avatar_tris = &state.scene.collider.surface.triangles;
-    let avatar_verts = &state.scene.collider.surface.vertices;
-
-    let stride = (avatar_tris.len() / 600).max(1);
-    for i in (0..avatar_tris.len()).step_by(stride) {
-        let tri = avatar_tris[i];
-        let p0 = avatar_verts[tri[0]];
-        let p1 = avatar_verts[tri[1]];
-        let p2 = avatar_verts[tri[2]];
-
-        let v0 = glam::Vec3::new(p0.x as f32, p0.y as f32, p0.z as f32);
-        let v1 = glam::Vec3::new(p1.x as f32, p1.y as f32, p1.z as f32);
-        let v2 = glam::Vec3::new(p2.x as f32, p2.y as f32, p2.z as f32);
-
-        let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
-        let diffuse = normal.dot(light_dir).abs().clamp(0.2, 0.85);
-
-        let c0 = view_proj.project_point3(v0);
-        let c1 = view_proj.project_point3(v1);
-        let c2 = view_proj.project_point3(v2);
-
-        let x0 = (c0.x * 0.5 + 0.5) * w;
-        let y0 = (1.0 - (c0.y * 0.5 + 0.5)) * h;
-        let x1 = (c1.x * 0.5 + 0.5) * w;
-        let y1 = (1.0 - (c1.y * 0.5 + 0.5)) * h;
-        let x2 = (c2.x * 0.5 + 0.5) * w;
-        let y2 = (1.0 - (c2.y * 0.5 + 0.5)) * h;
-
-        let points = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
-        let gray = (140.0 * diffuse) as u8;
-        let color = format!("rgb({gray},{gray},{gray})");
-
-        nodes.push(ui! {
-            <polygon points={points} fill={color} stroke="none" />
-        });
-    }
-
-    // 2. Render Garment Mesh triangles
-    let garment_tris = &state.scene.garment.mesh.triangles;
-    let positions = &state.scene.state.x;
-
-    let cloth_stride = (garment_tris.len() / 800).max(1);
-    for i in (0..garment_tris.len()).step_by(cloth_stride) {
-        let tri = &garment_tris[i];
-        let p0 = positions[tri.vertices[0]];
-        let p1 = positions[tri.vertices[1]];
-        let p2 = positions[tri.vertices[2]];
-
-        let v0 = glam::Vec3::new(p0.x as f32, p0.y as f32, p0.z as f32);
-        let v1 = glam::Vec3::new(p1.x as f32, p1.y as f32, p1.z as f32);
-        let v2 = glam::Vec3::new(p2.x as f32, p2.y as f32, p2.z as f32);
-
-        let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
-        let diffuse = normal.dot(light_dir).abs().clamp(0.2, 0.95);
-
-        let c0 = view_proj.project_point3(v0);
-        let c1 = view_proj.project_point3(v1);
-        let c2 = view_proj.project_point3(v2);
-
-        let x0 = (c0.x * 0.5 + 0.5) * w;
-        let y0 = (1.0 - (c0.y * 0.5 + 0.5)) * h;
-        let x1 = (c1.x * 0.5 + 0.5) * w;
-        let y1 = (1.0 - (c1.y * 0.5 + 0.5)) * h;
-        let x2 = (c2.x * 0.5 + 0.5) * w;
-        let y2 = (1.0 - (c2.y * 0.5 + 0.5)) * h;
-
-        let points = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
-        let r = (220.0 * diffuse) as u8;
-        let g = (235.0 * diffuse) as u8;
-        let b = (255.0 * diffuse) as u8;
-        let color = format!("rgb({r},{g},{b})");
-
-        nodes.push(ui! {
-            <polygon points={points} fill={color} stroke="#3b82f6" stroke-width="0.5" />
-        });
-    }
-
-    nodes
-}
-
-// ============================================================================
-// 2D Pattern Board SVG Viewport Engine
+// 2D Pattern Board SVG
 // ============================================================================
 
 fn render_runner_2d_svg(state: &CssRunnerState) -> Vec<Node> {

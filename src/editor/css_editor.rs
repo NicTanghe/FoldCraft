@@ -649,9 +649,7 @@ fn build_stage(state: &CssEditorState) -> Node {
     }
 }
 
-fn build_3d_viewport(state: &CssEditorState) -> Node {
-    let svg_nodes = render_3d_scene_svg(state);
-
+fn build_3d_viewport(_state: &CssEditorState) -> Node {
     ui! {
         <div id="viewport-3d" class="viewport-container">
             <div class="viewport-header">
@@ -660,9 +658,6 @@ fn build_3d_viewport(state: &CssEditorState) -> Node {
             </div>
             <div class="canvas-area">
                 <div id="viewport-3d-scene" class="viewport"></div>
-                <svg viewBox="0 0 600 450" class="svg-canvas">
-                    {svg_nodes}
-                </svg>
             </div>
         </div>
     }
@@ -969,128 +964,7 @@ fn build_command_palette_overlay(state: &CssEditorState) -> Node {
 }
 
 // ============================================================================
-// 3D Perspective SVG Projection Engine
-// ============================================================================
-
-fn render_3d_scene_svg(state: &CssEditorState) -> Vec<Node> {
-    let mut nodes = Vec::new();
-
-    // Dark canvas background
-    nodes.push(ui! {
-        <rect width="600" height="450" fill="#111318" />
-    });
-
-    let w = 600.0_f32;
-    let h = 450.0_f32;
-    let aspect = w / h;
-    let view_proj = state.camera.matrix(aspect);
-
-    // Render sphere collider if scene is sphere and collider enabled
-    if state.collider
-        && state.active.scene == Scene::Sphere
-        && let Some(sphere) = &state.active.sphere
-    {
-        let sc_center = glam::Vec3::new(
-            sphere.center.x as f32,
-            sphere.center.y as f32,
-            sphere.center.z as f32,
-        );
-        let clip = view_proj.project_point3(sc_center);
-        let cx = (clip.x * 0.5 + 0.5) * w;
-        let cy = (1.0 - (clip.y * 0.5 + 0.5)) * h;
-        // Screen projected radius approx
-        let r_proj = (sphere.radius as f32 / (state.camera.distance * 0.414)).max(0.05) * 220.0;
-
-        nodes.push(ui! {
-            <circle cx={format!("{cx:.1}")} cy={format!("{cy:.1}")} r={format!("{r_proj:.1}")}
-                fill="rgba(59, 130, 246, 0.22)" stroke="#3b82f6" stroke-width="1.5" />
-        });
-    }
-
-    // Sort cloth triangles by projected depth
-    let mut sorted_triangles: Vec<(usize, f32)> = state
-        .mesh
-        .triangles
-        .iter()
-        .enumerate()
-        .map(|(idx, t)| {
-            let p0 = state.state.x[t.vertices[0]];
-            let p1 = state.state.x[t.vertices[1]];
-            let p2 = state.state.x[t.vertices[2]];
-            let center = (p0 + p1 + p2) * (1.0 / 3.0);
-            let c_f32 = glam::Vec3::new(center.x as f32, center.y as f32, center.z as f32);
-            let clip = view_proj.project_point3(c_f32);
-            (idx, clip.z)
-        })
-        .collect();
-
-    // Sort back-to-front
-    sorted_triangles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let light_dir = glam::Vec3::new(0.35, 0.85, 0.4).normalize();
-
-    for (t_idx, _) in sorted_triangles {
-        let t = &state.mesh.triangles[t_idx];
-        let p0 = state.state.x[t.vertices[0]];
-        let p1 = state.state.x[t.vertices[1]];
-        let p2 = state.state.x[t.vertices[2]];
-
-        let v0 = glam::Vec3::new(p0.x as f32, p0.y as f32, p0.z as f32);
-        let v1 = glam::Vec3::new(p1.x as f32, p1.y as f32, p1.z as f32);
-        let v2 = glam::Vec3::new(p2.x as f32, p2.y as f32, p2.z as f32);
-
-        let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
-        let diffuse = normal.dot(light_dir).abs().clamp(0.2, 0.95);
-
-        let c0 = view_proj.project_point3(v0);
-        let c1 = view_proj.project_point3(v1);
-        let c2 = view_proj.project_point3(v2);
-
-        let x0 = (c0.x * 0.5 + 0.5) * w;
-        let y0 = (1.0 - (c0.y * 0.5 + 0.5)) * h;
-        let x1 = (c1.x * 0.5 + 0.5) * w;
-        let y1 = (1.0 - (c1.y * 0.5 + 0.5)) * h;
-        let x2 = (c2.x * 0.5 + 0.5) * w;
-        let y2 = (1.0 - (c2.y * 0.5 + 0.5)) * h;
-
-        let points_str = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
-
-        let fill_color = if state.shaded {
-            let r = (210.0 * diffuse) as u8;
-            let g = (225.0 * diffuse) as u8;
-            let b = (245.0 * diffuse) as u8;
-            format!("rgb({r},{g},{b})")
-        } else {
-            "none".to_string()
-        };
-
-        let stroke_color = if state.wire { "#334155" } else { "none" };
-
-        nodes.push(ui! {
-            <polygon points={points_str} fill={fill_color} stroke={stroke_color} stroke-width="0.5" />
-        });
-    }
-
-    // Render fixed pins in 3D
-    for (i, pin) in state.mesh.pins.iter().enumerate() {
-        if pin.is_some() {
-            let p = state.state.x[i];
-            let v = glam::Vec3::new(p.x as f32, p.y as f32, p.z as f32);
-            let c = view_proj.project_point3(v);
-            let px = (c.x * 0.5 + 0.5) * w;
-            let py = (1.0 - (c.y * 0.5 + 0.5)) * h;
-            nodes.push(ui! {
-                <circle cx={format!("{px:.1}")} cy={format!("{py:.1}")} r="4.5"
-                    fill="#ef4444" stroke="#ffffff" stroke-width="1.5" />
-            });
-        }
-    }
-
-    nodes
-}
-
-// ============================================================================
-// 2D Pattern SVG Viewport Engine
+// 2D Pattern Board SVG
 // ============================================================================
 
 fn render_2d_pattern_svg(state: &CssEditorState) -> Vec<Node> {

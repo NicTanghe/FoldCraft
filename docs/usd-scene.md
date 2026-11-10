@@ -180,3 +180,11 @@ and malformed syntax. Each invalid input must exit 1 without a Python traceback.
 
 These references define the bounded original implementation. They do not imply
 support for every OpenUSD schema, Hydra renderer, asset resolver or DCC extension.
+
+## Native viewport rendering
+
+Both cssimpler editors use the registered USD viewport as their sole 3D renderer.
+The previous CPU-projected SVG triangle overlay has been removed; the 2D pattern
+boards still use SVG. This removes duplicate mesh projection and DOM construction
+on UI rebuilds. The existing USD snapshot is still loaded at application creation;
+live simulation updates and worker scheduling are separate follow-up work.
