@@ -321,41 +321,41 @@
       "title": "Integrate cssimpler native 3D GPU viewport into Studio V2",
       "acceptance": "Upgrade cssimpler to 3D_implementation with gpu-viewport; render 3D garment directly on GPU; pass CPU and desktop checks",
       "points": 4.0,
-      "spent": 0,
+      "spent": 4.0,
       "priority": "urgent",
       "depends_on": [
         "FC-0024"
       ],
-      "status": "active",
-      "owner": "cssimpler-ui-agent",
+      "status": "done",
+      "owner": null,
       "vruntime": 3.027777777777778,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/31"
     },
     {
       "id": "FC-0026",
       "title": "Port CAD corner rounding toolbar and synchronized seam cutouts from upstream",
       "acceptance": "Integrate PR #240/#239/#232 logic and tests into src/garment and css_ui rails; pass CPU checks",
       "points": 3.0,
-      "spent": 0,
+      "spent": 3.0,
       "priority": "high",
       "depends_on": [],
-      "status": "active",
-      "owner": "cad-feature-agent",
+      "status": "done",
+      "owner": null,
       "vruntime": 3.027777777777778,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/29"
     },
     {
       "id": "FC-0027",
       "title": "Port CAD cut-and-sewn darts and seam allowance guides from upstream",
       "acceptance": "Integrate PR #1/#6/#7/#66 darts and seam allowance geometry and independent tests; pass CPU checks",
       "points": 3.0,
-      "spent": 0,
+      "spent": 3.0,
       "priority": "high",
       "depends_on": [],
-      "status": "active",
-      "owner": "cad-feature-agent",
+      "status": "done",
+      "owner": null,
       "vruntime": 3.027777777777778,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/30"
     },
     {
       "id": "FC-0028",
@@ -365,7 +365,7 @@
       "spent": 3.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.4027777777777777,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/28"
@@ -391,7 +391,7 @@
       "spent": 3.0,
       "priority": "high",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.777777777777778,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/27"
