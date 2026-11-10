@@ -37,9 +37,9 @@ const DEFAULT_ITERATIONS: usize = 16;
 /// for show only.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub(super) struct Preferences {
-    pub(super) workspace: super::layout::WorkspaceLayout,
-    pub(super) viewport: crate::render::appearance::Appearance,
+pub struct Preferences {
+    pub workspace: super::layout::WorkspaceLayout,
+    pub viewport: crate::render::appearance::Appearance,
     /// Workspace theme installed at startup and whenever the switch changes.
     pub(super) theme: ThemeChoice,
     /// Board magnet step in millimetres; the 2D board snaps to this grid.

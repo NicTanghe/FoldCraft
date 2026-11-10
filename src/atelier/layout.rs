@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum ViewMode {
+pub enum ViewMode {
     #[default]
     Split,
     Garment,
@@ -12,7 +12,7 @@ pub(super) enum ViewMode {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub(super) struct WorkspaceLayout {
+pub struct WorkspaceLayout {
     pub split: f32,
     pub inspector_width: f32,
     pub inspector_open: bool,

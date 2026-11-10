@@ -191,7 +191,7 @@ impl PresetView {
     }
 }
 /// A camera pose the view bar can come back to.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CameraPose {
     yaw: f32,
     pitch: f32,
@@ -208,6 +208,7 @@ pub struct CameraPose {
 /// boundary. Treat the history fields as internal state and use
 /// [`Camera::save_pose`], [`Camera::restore_pose`] and [`Camera::request_frame`]
 /// instead of writing them, and prefer [`Camera::new`] over a bare literal.
+#[derive(Clone, Debug)]
 pub struct Camera {
     pub yaw: f32,
     pub pitch: f32,
