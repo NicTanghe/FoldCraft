@@ -18,6 +18,8 @@ The [contributor kit](docs/contributor-kit.md) includes prompts for an AI coding
 
 ## Validate without a GPU
 
+On Windows, start with the [contributor setup guide](docs/windows-setup.md) and its read-only prerequisite checker.
+
 ```powershell
 .\scripts\check-cpu.ps1
 ```
