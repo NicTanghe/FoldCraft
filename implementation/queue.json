@@ -468,6 +468,19 @@
       "owner": null,
       "vruntime": 4.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0036",
+      "title": "Selectable native solvers and experimental barrier AL contact",
+      "acceptance": "Top bar switches actual solver with explicit state transfer; experimental last-column hybrid has numerical checks and measured optimization",
+      "points": 8.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-solver-menu",
+      "vruntime": 3.375,
+      "pr": null
     }
   ]
 }

@@ -191,6 +191,7 @@ pub fn start(
     queue: wgpu::Queue,
 ) -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
     let (tx, latest, _thread) = start_inner(
+        true,
         Some((device, queue)),
         #[cfg(test)]
         None,
@@ -200,6 +201,19 @@ pub fn start(
 
 pub fn start_cpu() -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
     let (tx, latest, _thread) = start_inner(
+        false,
+        None,
+        #[cfg(test)]
+        None,
+    )?;
+    Ok((tx, latest))
+}
+
+/// Native CPU launch with an explicit runtime GPU selection available.
+/// Unlike start_cpu, this may initialize an adapter after a GPU step request.
+pub fn start_switchable() -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
+    let (tx, latest, _thread) = start_inner(
+        true,
         None,
         #[cfg(test)]
         None,
@@ -215,6 +229,7 @@ struct TestHooks {
 }
 
 fn start_inner(
+    allow_gpu: bool,
     backend: Option<(wgpu::Device, wgpu::Queue)>,
     #[cfg(test)] hooks: Option<TestHooks>,
 ) -> Result<(mpsc::Sender<Work>, Latest, std::thread::JoinHandle<()>), std::io::Error> {
@@ -225,7 +240,7 @@ fn start_inner(
         .name("cloth-physics".into())
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let gpu = backend.map(|(device, queue)| GpuAvbd::new(device, queue));
+            let mut gpu = backend.map(|(device, queue)| GpuAvbd::new(device, queue));
             let mut cache: Option<(u64, VbdSolver)> = None;
             let mut active: Option<Work> = None;
             let mut deadline = Instant::now();
@@ -278,8 +293,12 @@ fn start_inner(
                 let previous = request.map(|_| w.scene.state.clone());
                 w.once = false;
                 let result: Result<(State, VbdMetrics), String> = (|| {
+                    if w.gpu && !allow_gpu {
+                        return Err("GPU simulation requested without a GPU backend".into());
+                    }
                     if w.gpu && gpu.is_none() {
-                        return Err("GPU simulation requested without a GPU backend".to_owned());
+                        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+                        gpu = Some(GpuAvbd::new(device, queue));
                     }
                     if cache.as_ref().is_none_or(|(g, _)| *g != w.generation) {
                         if let Some(gpu)=&gpu {gpu.reset();}
@@ -451,6 +470,7 @@ mod final_diagnostics_transport_tests {
         let (release, release_rx) = mpsc::channel();
         let (published_tx, published) = mpsc::channel();
         let (tx, latest, thread) = start_inner(
+            false,
             None,
             Some(TestHooks {
                 entered: entered_tx,
@@ -650,6 +670,7 @@ mod final_diagnostics_transport_tests {
         let (release, release_rx) = mpsc::channel();
         let (published_tx, published) = mpsc::channel();
         let (tx, latest, thread) = start_inner(
+            false,
             None,
             Some(TestHooks {
                 entered: entered_tx,
@@ -731,6 +752,7 @@ mod final_diagnostics_transport_tests {
         let (release, release_rx) = mpsc::channel();
         let (published_tx, published) = mpsc::channel();
         let (tx, latest, thread) = start_inner(
+            false,
             None,
             Some(TestHooks {
                 entered: entered_tx,

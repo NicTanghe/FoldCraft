@@ -8,6 +8,13 @@ Draw patterns, sew them together, place them around an avatar and simulate the r
 
 ![ClothCraft workspace](docs/screenshots/workspace.png)
 
+In either native window, click the solver badge in the top bar to choose the
+active solver. Switching pauses at the displayed cloth state; press Play or
+Step to continue. Fitting offers WGSL AVBD/IPC and CPU VBD/OGC; the Project demo
+offers WGSL AVBD/IPC and CPU reference Newton. These use different contact laws.
+The proposed third backend is described in the
+[AVBD + barrier AL design](docs/avbd-barrier-al-design.md); it is not implemented.
+
 ## Try it
 
 Install Rust stable and run from the repository root:

@@ -54,6 +54,19 @@ pub const ACT_DRAWER_TOGGLE: u64 = 1 << 21;
 pub const ACT_CAM_RESET: u64 = 1 << 22;
 pub const ACT_EDGE_SELECT_NEXT: u64 = 1 << 23;
 
+pub const ACT_SOLVER_MENU: u64 = 1 << 24;
+pub const ACT_SOLVER_GPU: u64 = 1 << 25;
+pub const ACT_SOLVER_CPU: u64 = 1 << 26;
+pub fn on_solver_menu() {
+    dispatch_action(ACT_SOLVER_MENU);
+}
+pub fn on_solver_gpu() {
+    dispatch_action(ACT_SOLVER_GPU);
+}
+pub fn on_solver_cpu() {
+    dispatch_action(ACT_SOLVER_CPU);
+}
+
 static PENDING_ACTIONS: AtomicU64 = AtomicU64::new(0);
 
 pub fn dispatch_action(act: u64) {
@@ -153,6 +166,7 @@ pub enum EditorTab {
 // ============================================================================
 
 pub struct RefWork {
+    pub gpu: bool,
     pub generation: u64,
     pub mesh: Arc<Mesh>,
     pub state: State,
@@ -234,25 +248,32 @@ fn start_editor_worker(
                     }
                     generation = Some(work.generation);
                 }
-                let outcome = if let Some(gpu) = &mut gpu {
-                    let project = Project {
-                        material: work.material.clone(),
-                        solver: work.solver.clone(),
-                        sphere: work.sphere.clone(),
-                        ..Default::default()
-                    };
-                    gpu.step(&project, &work.mesh, &mut work.state)
-                        .map(|m| EditorMetrics::Avbd(Box::new(m)))
-                } else {
-                    ReferenceSolver::step(
-                        &work.mesh,
-                        &mut work.state,
-                        &work.material,
-                        &work.solver,
-                        work.sphere.as_ref(),
-                    )
-                    .map(|m| EditorMetrics::Reference(Box::new(m)))
-                }
+                let outcome = (|| {
+                    if work.gpu && gpu.is_none() {
+                        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+                        gpu = Some(marvelous_cloth::gpu_avbd::ProjectAvbd::new(device, queue));
+                    }
+                    if work.gpu {
+                        let gpu = gpu.as_mut().ok_or("GPU backend unavailable")?;
+                        let project = Project {
+                            material: work.material.clone(),
+                            solver: work.solver.clone(),
+                            sphere: work.sphere.clone(),
+                            ..Default::default()
+                        };
+                        gpu.step(&project, &work.mesh, &mut work.state)
+                            .map(|m| EditorMetrics::Avbd(Box::new(m)))
+                    } else {
+                        ReferenceSolver::step(
+                            &work.mesh,
+                            &mut work.state,
+                            &work.material,
+                            &work.solver,
+                            work.sphere.as_ref(),
+                        )
+                        .map(|m| EditorMetrics::Reference(Box::new(m)))
+                    }
+                })()
                 .map(|m| (work.state.clone(), m));
                 if outcome.is_err() {
                     work.playing = false;
@@ -302,6 +323,7 @@ pub struct CssEditorState {
     pub state: State,
     pub metrics: Option<Metrics>,
     pub gpu_sim: bool,
+    pub solver_menu_open: bool,
     pub camera: Camera,
     pub playing: bool,
     pub wire: bool,
@@ -368,6 +390,7 @@ impl CssEditorState {
             state,
             metrics: None,
             gpu_sim,
+            solver_menu_open: false,
             camera: Camera::default(),
             playing: false,
             wire: true,
@@ -398,6 +421,7 @@ impl CssEditorState {
 
     pub fn send_control_state(&mut self, once: bool) {
         let work = RefWork {
+            gpu: self.gpu_sim,
             generation: self.generation,
             mesh: self.mesh.clone(),
             state: self.state.clone(),
@@ -408,6 +432,21 @@ impl CssEditorState {
             once,
         };
         let _ = self.worker_tx.send(work);
+    }
+
+    pub fn select_solver(&mut self, gpu: bool) {
+        self.solver_menu_open = false;
+        if self.gpu_sim == gpu {
+            return;
+        }
+        self.gpu_sim = gpu;
+        self.generation = self.generation.wrapping_add(1);
+        self.playing = false;
+        self.metrics = None;
+        self.step_ms = 0.0;
+        self.status_message =
+            "Solver changed; paused at displayed state. Press Play or Step.".into();
+        self.send_control_state(false);
     }
 
     pub fn trigger_step(&mut self) {
@@ -585,6 +624,15 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
 
     let actions = PENDING_ACTIONS.swap(0, Ordering::Relaxed);
 
+    if actions & ACT_SOLVER_MENU != 0 {
+        state.solver_menu_open = !state.solver_menu_open;
+    }
+    if actions & ACT_SOLVER_GPU != 0 {
+        state.select_solver(true);
+    }
+    if actions & ACT_SOLVER_CPU != 0 {
+        state.select_solver(false);
+    }
     if actions & ACT_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
         state.send_control_state(false);
@@ -697,9 +745,10 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
                 }
                 if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
                     && name == "Escape"
-                    && state.command_palette_open
+                    && (state.command_palette_open || state.solver_menu_open)
                 {
                     state.command_palette_open = false;
+                    state.solver_menu_open = false;
                     return true;
                 }
             }
@@ -793,9 +842,17 @@ fn build_top_bar(state: &CssEditorState) -> Node {
                 <button id="sim-reset-btn" class="transport-btn" onclick={on_reset}>
                     "Reset"
                 </button>
-                <span id="sim-backend-indicator" class="cpu">
-                    {if state.gpu_sim {"WGSL AVBD / IPC"} else {"CPU Reference"}}
-                </span>
+                <div class="solver-picker">
+                    <button id="sim-backend-indicator" class="backend-badge" onclick={on_solver_menu}>
+                        {if state.gpu_sim {"WGSL AVBD / IPC ▾"} else {"CPU Reference ▾"}}
+                    </button>
+                    {if state.solver_menu_open { ui! {
+                        <div id="solver-dropdown" class="solver-dropdown">
+                            <button id="solver-wgsl-ipc" class="menu-item" onclick={on_solver_gpu}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-cpu" class="menu-item" onclick={on_solver_cpu}>"CPU Reference Newton"</button>
+                        </div>
+                    }} else { ui! { <span /> } }}
+                </div>
             </div>
             <div class="top-bar-right">
                 <div class="layout-switcher">
@@ -1406,8 +1463,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires explicit coordination and a hardware GPU"]
-    fn wgsl_project_worker_advances_without_render_frames() {
-        let (device, queue) = marvelous_cloth::gpu_avbd::request_device().unwrap();
+    fn wgsl_project_worker_switches_backends_without_render_frames() {
         let mut project = Project {
             sphere: None,
             ..Default::default()
@@ -1415,31 +1471,34 @@ mod tests {
         project.pattern.nx = 2;
         project.pattern.ny = 2;
         let dt = project.solver.dt;
-        let mut state = CssEditorState::new_with_backend(
-            project,
-            PathBuf::from("target/test_gpu_editor"),
-            Some(marvelous_cloth::gpu_avbd::ProjectAvbd::new(device, queue)),
-        );
-        state.send_control_state(true);
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let done = loop {
-            if let Some(done) = state.worker_latest.lock().unwrap().take() {
-                break done;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "worker did not produce a step without rendering"
-            );
-            std::thread::sleep(Duration::from_millis(5));
-        };
-        assert_eq!(done.generation, state.generation);
-        let (accepted, metrics) = done.result.unwrap();
-        assert!(matches!(&metrics, EditorMetrics::Avbd(_)));
-        state.accept_step(accepted, metrics);
-        assert_eq!(state.state.time, dt);
-        assert_eq!(state.step_count, 1);
-        assert!(state.metrics.is_none());
-        assert!(state.status_message.contains("WGSL AVBD / IPC"));
+        let mut state = CssEditorState::new(project, PathBuf::from("target/test_gpu_editor"));
+        // Start CPU-only, initialize the adapter only on explicit GPU selection,
+        // then exercise both directions and reuse the GPU after CPU advancement.
+        for (index, gpu) in [false, true, false, true].into_iter().enumerate() {
+            let checkpoint = state.state.clone();
+            state.select_solver(gpu);
+            assert_eq!(state.state.x, checkpoint.x);
+            assert_eq!(state.state.v, checkpoint.v);
+            assert_eq!(state.state.time, checkpoint.time);
+            state.send_control_state(true);
+            let deadline = Instant::now() + Duration::from_secs(20);
+            let done = loop {
+                if let Some(done) = state.worker_latest.lock().unwrap().take() {
+                    break done;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "worker did not step without rendering"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            };
+            assert_eq!(done.generation, state.generation);
+            let (accepted, metrics) = done.result.unwrap();
+            assert_eq!(matches!(&metrics, EditorMetrics::Avbd(_)), gpu);
+            state.accept_step(accepted, metrics);
+            assert!((state.state.time - (index + 1) as f64 * dt).abs() < 1e-12);
+            assert_eq!(state.metrics.is_none(), gpu);
+        }
     }
 
     #[test]
@@ -1483,6 +1542,72 @@ mod tests {
         );
         assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
         assert!(app.find_element_bounds_by_id("#right-dock").is_some());
+
+        // The menu is rendered in the live app; changing backend transfers the
+        // displayed checkpoint without stepping or initializing a GPU.
+        let checkpoint = app.state().state.clone();
+        let generation = app.state().generation;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 10,
+        });
+        assert!(app.state().solver_menu_open);
+        let menu = app
+            .find_element_bounds_by_id("#solver-dropdown")
+            .expect("open solver menu");
+        assert!(menu.width > 100.0 && menu.height > 20.0);
+        assert!(app.find_element_bounds_by_id("#solver-wgsl-ipc").is_some());
+        let button = app
+            .find_element_bounds_by_id("#solver-wgsl-ipc")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 11,
+        });
+        assert!(app.state().gpu_sim);
+        assert!(!app.state().playing && !app.state().solver_menu_open);
+        assert_eq!(app.state().generation, generation + 1);
+        assert_eq!(app.state().state.x, checkpoint.x);
+        assert_eq!(app.state().state.v, checkpoint.v);
+        assert_eq!(app.state().state.time, checkpoint.time);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        let button = app.find_element_bounds_by_id("#solver-cpu").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        assert!(!app.state().gpu_sim);
+        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().state.x, checkpoint.x);
 
         // Test RGBA8 rendering headlessly
         let width = 640;

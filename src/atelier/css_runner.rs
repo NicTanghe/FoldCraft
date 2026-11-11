@@ -84,6 +84,19 @@ pub const ACT_RUN_PIN_MODE_TOGGLE: u64 = 1 << 39;
 pub const ACT_RUN_CORNER_MODE_TOGGLE: u64 = 1 << 40;
 pub const ACT_RUN_ACCORDION_TOGGLE: u64 = 1 << 41;
 
+pub const ACT_RUN_SOLVER_MENU: u64 = 1 << 42;
+pub const ACT_RUN_SOLVER_GPU: u64 = 1 << 43;
+pub const ACT_RUN_SOLVER_CPU: u64 = 1 << 44;
+pub fn on_runner_solver_menu() {
+    dispatch_runner_action(ACT_RUN_SOLVER_MENU);
+}
+pub fn on_runner_solver_gpu() {
+    dispatch_runner_action(ACT_RUN_SOLVER_GPU);
+}
+pub fn on_runner_solver_cpu() {
+    dispatch_runner_action(ACT_RUN_SOLVER_CPU);
+}
+
 static RUNNER_ACTIONS: AtomicU64 = AtomicU64::new(0);
 
 pub fn dispatch_runner_action(act: u64) {
@@ -267,6 +280,7 @@ pub struct CssRunnerState {
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
     pub gpu_sim: bool,
+    pub solver_menu_open: bool,
     pub drag_test: bool,
     pub perf_test: bool,
     pub authoring_test: bool,
@@ -320,6 +334,7 @@ impl CssRunnerState {
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
             gpu_sim: false,
+            solver_menu_open: false,
             drag_test: false,
             perf_test: false,
             authoring_test: false,
@@ -364,6 +379,24 @@ impl CssRunnerState {
                 }
             }
         }
+    }
+
+    /// Transfer the last displayed accepted x/v/time; discard in-flight results
+    /// by generation. Playback pauses; rest geometry and document history stay intact.
+    pub fn select_solver(&mut self, gpu: bool) {
+        self.solver_menu_open = false;
+        if self.gpu_sim == gpu {
+            return;
+        }
+        self.gpu_sim = gpu;
+        self.generation = self.generation.wrapping_add(1);
+        self.playing = false;
+        self.worker_pending = false;
+        self.last_metrics = None;
+        self.step_ms = 0.0;
+        self.status_message =
+            "Solver changed; paused at displayed state. Press Play or Step.".into();
+        self.send_control_state(false);
     }
 
     pub fn reset_simulation(&mut self) {
@@ -470,6 +503,15 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     // 2. Process pending UI actions
     let actions = RUNNER_ACTIONS.swap(0, Ordering::Relaxed);
 
+    if actions & ACT_RUN_SOLVER_MENU != 0 {
+        state.solver_menu_open = !state.solver_menu_open;
+    }
+    if actions & ACT_RUN_SOLVER_GPU != 0 {
+        state.select_solver(true);
+    }
+    if actions & ACT_RUN_SOLVER_CPU != 0 {
+        state.select_solver(false);
+    }
     if actions & ACT_RUN_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
         state.send_control_state(false);
@@ -621,9 +663,10 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                 }
                 if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
                     && name == "Escape"
-                    && state.command_palette_open
+                    && (state.command_palette_open || state.solver_menu_open)
                 {
                     state.command_palette_open = false;
+                    state.solver_menu_open = false;
                     return true;
                 }
             }
@@ -737,9 +780,15 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                     {icon_reset()}
                     <span class="btn-label">"Reset"</span>
                 </button>
-                <span id="sim-backend-indicator" class={backend_class}>
-                    {backend_label}
-                </span>
+                <div class="solver-picker">
+                    <button id="sim-backend-indicator" class={backend_class} onclick={on_runner_solver_menu} title="Choose active solver">{format!("{backend_label} ▾")}</button>
+                    {if state.solver_menu_open { ui! {
+                        <div id="solver-dropdown" class="solver-dropdown">
+                            <button id="solver-wgsl-ipc" class="menu-item" onclick={on_runner_solver_gpu}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-cpu" class="menu-item" onclick={on_runner_solver_cpu}>"CPU VBD / OGC"</button>
+                        </div>
+                    }} else { ui! { <span /> } }}
+                </div>
             </div>
             <div class="top-bar-right">
                 <div class="layout-switcher">
@@ -2030,7 +2079,7 @@ pub fn run(
         let (device, queue) = init_gpu_device()?;
         worker::start(device, queue).map_err(|e| format!("Failed to start GPU worker: {e}"))?
     } else {
-        worker::start_cpu().map_err(|e| format!("Failed to start CPU worker: {e}"))?
+        worker::start_switchable().map_err(|e| format!("Failed to start CPU worker: {e}"))?
     };
 
     let mut state = CssRunnerState::new(project, scene, files, tx, latest);
@@ -2118,6 +2167,72 @@ mod tests {
         );
         assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
         assert!(app.find_element_bounds_by_id("#right-dock").is_some());
+
+        // The menu is rendered in the live app; changing backend transfers the
+        // displayed checkpoint without stepping or initializing a GPU.
+        let checkpoint = app.state().scene.state.clone();
+        let generation = app.state().generation;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 10,
+        });
+        assert!(app.state().solver_menu_open);
+        let menu = app
+            .find_element_bounds_by_id("#solver-dropdown")
+            .expect("open solver menu");
+        assert!(menu.width > 100.0 && menu.height > 20.0);
+        assert!(app.find_element_bounds_by_id("#solver-wgsl-ipc").is_some());
+        let button = app
+            .find_element_bounds_by_id("#solver-wgsl-ipc")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 11,
+        });
+        assert!(app.state().gpu_sim);
+        assert!(!app.state().playing && !app.state().solver_menu_open);
+        assert_eq!(app.state().generation, generation + 1);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
+        assert_eq!(app.state().scene.state.v, checkpoint.v);
+        assert_eq!(app.state().scene.state.time, checkpoint.time);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        let button = app.find_element_bounds_by_id("#solver-cpu").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        assert!(!app.state().gpu_sim);
+        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
 
         // Headless RGBA8 rendering
         let width = 640;

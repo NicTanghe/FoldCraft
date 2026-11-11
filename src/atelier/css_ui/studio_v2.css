@@ -1265,3 +1265,19 @@ button {
   border-radius: 3px;
   color: var(--text-muted);
 }
+
+/* Solver selection is a runtime control; changing it pauses the worker. */
+.solver-picker { position: relative; }
+.solver-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 240px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    background-color: #20242c;
+    border: 1px solid #626978;
+    padding: 6px;
+}
+.solver-dropdown .menu-item { padding: 10px; text-align: left; }
