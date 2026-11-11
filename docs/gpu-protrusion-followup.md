@@ -1,4 +1,9 @@
-# Persistent default-T-shirt protrusion: unresolved
+# Default-T-shirt protrusion investigation history
+
+Update: the [coupled GPU correction](wgsl-coupled-correction.md) now matches the
+default-garment CPU control closely and removes the raised region in matched
+200-step renders. The planar force-law defect below remains open separately.
+Earlier failed attempts are retained as investigation history.
 
 11 November 2026. The owner retested and confirmed that the protrusion remains
 after the local-contact-bound correction. Do not mark the visual defect fixed.
@@ -71,3 +76,35 @@ corrections with EE mollification without area weighting can produce negative
 potentials. This rules out treating a simple subtraction of duplicate edge
 barriers as a validated drop-in repair. The convergent-formulation tutorial URL
 could not be fetched. No external implementation was copied or enabled.
+
+## Full matched GPU runs after the owner's continue request
+
+The default reset garment comparison has now run, serially on the GPU with no
+other cloth application running. The CPU solver implementation remains unchanged.
+All cases use the same 2454 vertices, 4570 triangles, material, rest geometry,
+dt=1/60 and default 16 sweeps unless explicitly noted.
+
+| Case | Simulated time | Maximum seam gap | Maximum extension |
+|---|---:|---:|---:|
+| CPU control, 200 steps | 3.333 s | 2.041 mm | 21.174% |
+| WGSL IPC, 200 steps | 3.333 s | 4.147 mm | 37.258% |
+| WGSL AL, 200 steps | 3.333 s | 4.038 mm | 36.747% |
+| CPU restarted from IPC, 30 more steps | 3.833 s | 3.491 mm | 34.378% |
+| IPC restarted from IPC, 160 sweeps × 10 more steps | 3.500 s | 3.319 mm | 31.213% |
+
+[Run data](protrusion-matched-runs.json) preserve different start states and
+budgets. These are quality diagnostics, not equal-budget speed comparisons.
+One-frame saved-state renders use examples/garment_snapshot.rs and reside under
+output/protrusion-repro. Both new backends visibly retain the same raised armpit/
+sleeve-root region. Maximum IPC/CPU corresponding-vertex discrepancy is 77.5 mm
+and RMS discrepancy 24.7 mm; the largest differences are at sewn underarm points.
+
+A second hypothesis is assembly-path distortion: the resident proposal envelope
+was fixed at r/4=0.75 mm even for vertices far from contact. This closes sewing
+much more slowly during the initial gravity-driven assembly. The current
+experiment increases only the numerical envelope to L=r, expands detection to
+r+2L, and includes the enlarged within-step displacement in the numerical
+clearance estimate. Local contact bounds and global continuous-path checks
+remain. Physical parameters, CPU code, mesh, dt and default sweep budget do not
+change. Do not call this hypothesis successful until both 200-step reruns and
+independent collision checks pass.

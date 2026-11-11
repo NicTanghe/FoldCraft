@@ -1,7 +1,7 @@
 // Independent finite AVBD / squared-distance IPC-style barrier pipeline.
 // All iteration decisions stay on the device. No global floating-point atomics.
-struct Term {ids:vec4u,info:vec4u,a:vec4f,b:vec4f,c:vec4f}
-struct Particle {initial:vec4f, velocity_mass:vec4f,inertia_target:vec4f,delta:vec4f,energy:vec4f}
+struct Term {ids:vec4u,info:vec4u,a:vec4f,b:vec4f,c:vec4f,gradients:array<vec4f,4>,curvature:array<vec4f,4>}
+struct Particle {initial:vec4f, velocity_mass:vec4f,inertia_target:vec4f,delta:vec4f,energy:vec4f,cg:array<vec4f,7>}
 struct Node {lo:vec4f,hi:vec4f,info:vec4u}
 struct Pair {ids:vec4u,kind:u32,slack:f32,dual:f32,rho:f32,next:vec4u}
 struct PairBuffer {count:atomic<u32>,pad0:u32,pad1:u32,pad2:u32,pairs:array<Pair>}
@@ -16,6 +16,7 @@ struct Config {
     gravity:vec4f, // w: numerical clearance
     sphere:vec4f, // centre and radius; zero radius disables
     method:vec4u, // x: independent barrier AL experiment
+    coupled:vec4u, // x: inexact coupled linear iterations
 }
 @group(0) @binding(0) var<storage,read_write> positions:array<vec4f>;
 @group(0) @binding(1) var<storage,read_write> particles:array<Particle>;
@@ -57,8 +58,8 @@ fn bounds(i:u32)->Box {
 }
 fn outside(a:Box,b:Box)->bool {
     let gap=max(max(a.lo-b.hi,b.lo-a.hi)-vec3f(config.gravity.w),vec3f(0));
-    // Every proposal is clamped to r/4. All unseen primitive pairs stay > r.
-    let radius=1.5*config.physical.z+4*config.gravity.w;
+    // Cover both primitives moving by the complete proposal envelope L.
+    let radius=config.physical.z+2*proposal_radius()+4*config.gravity.w;
     return dot(gap,gap)>radius*radius;
 }
 var<workgroup> lower:array<vec3f,64>;
@@ -137,3 +138,5 @@ fn begin_sweep() {
     atomicStore(&control.minimum,bitcast<u32>(1e30));atomicStore(&control.active_count,0u);
     atomicStore(&contacts.count,0u);atomicStore(&control.alpha,bitcast<u32>(1.0));atomicStore(&control.accepted,0u);
 }
+
+fn proposal_radius()->f32 {return bitcast<f32>(config.method.w)*config.physical.z;}

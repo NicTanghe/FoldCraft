@@ -6,6 +6,7 @@ fn resident_avbd_wgsl_validates_without_a_gpu() {
         include_str!("../src/gpu_avbd/contact.wgsl"),
         include_str!("../src/gpu_avbd/solve.wgsl"),
         include_str!("../src/gpu_avbd/al.wgsl"),
+        include_str!("../src/gpu_avbd/coupled.wgsl"),
     ]
     .join("\n");
     let module = naga::front::wgsl::parse_str(&source)

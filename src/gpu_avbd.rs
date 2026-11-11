@@ -59,6 +59,13 @@ const ENTRIES: &[&str] = &[
     "al_probe",
     "small_line_search",
     "limit_contact_motion",
+    "cache_material",
+    "cg_init",
+    "cg_matvec",
+    "cg_alpha",
+    "cg_update",
+    "cg_beta",
+    "cg_search",
 ];
 
 #[repr(C)]
@@ -69,6 +76,7 @@ struct Particle {
     target: [f32; 4],
     delta: [f32; 4],
     energy: [f32; 4],
+    cg: [[f32; 4]; 7],
 }
 unsafe impl bytemuck::Zeroable for Particle {}
 unsafe impl bytemuck::Pod for Particle {}
@@ -109,6 +117,9 @@ pub struct GpuAvbd {
     pub fuse_small_line_search: bool,
     /// Research ablation for the conservative per-vertex contact motion bounds.
     pub local_contact_bounds: bool,
+    /// Numerical proposal envelope in contact radii; detection covers r+2L.
+    pub motion_radius_scale: f32,
+    pub coupled_iterations: u32,
 }
 
 /// Create a compute device independently of rendering. Call only when the
@@ -172,6 +183,7 @@ impl GpuAvbd {
             include_str!("gpu_avbd/contact.wgsl"),
             include_str!("gpu_avbd/solve.wgsl"),
             include_str!("gpu_avbd/al.wgsl"),
+            include_str!("gpu_avbd/coupled.wgsl"),
         ]
         .join("\n");
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -203,6 +215,8 @@ impl GpuAvbd {
             skip_accepted_reductions: true,
             fuse_small_line_search: true,
             local_contact_bounds: true,
+            motion_radius_scale: 0.25,
+            coupled_iterations: 8,
         }
     }
     fn allocate(
@@ -218,8 +232,9 @@ impl GpuAvbd {
         let total = n + solver.world.fixed.len();
         let sizes = [
             total * 16,
-            n * 80,
-            (packed.terms.len() * 80).max(80),
+            n * std::mem::size_of::<Particle>(),
+            (packed.terms.len() * std::mem::size_of::<packing::Term>())
+                .max(std::mem::size_of::<packing::Term>()),
             packed.geometry.len() * 4,
             16 + if self.contact_method == ContactMethod::BarrierAl {
                 (2 * capacity + solver.garment.mesh.triangles.len()) * 48
@@ -233,7 +248,7 @@ impl GpuAvbd {
             },
             (packed.nodes.len() * 48).max(48),
             64,
-            144,
+            160,
         ];
         let limits = self.device.limits();
         if limits.max_storage_buffers_per_shader_stage < 8
@@ -338,6 +353,15 @@ impl GpuAvbd {
         grab: Option<&Grab>,
     ) -> Result<VbdMetrics, String> {
         settings.validate()?;
+        if self.coupled_iterations > 64 {
+            return Err("WGSL coupled budget exceeds 64; state unchanged".into());
+        }
+        if !self.motion_radius_scale.is_finite()
+            || !(0.0..=4.0).contains(&self.motion_radius_scale)
+            || self.motion_radius_scale == 0.
+        {
+            return Err("Invalid WGSL proposal envelope; state unchanged".into());
+        }
         if [
             settings.dt,
             settings.damping,
@@ -424,7 +448,7 @@ impl GpuAvbd {
             if !terms.is_empty() {
                 self.queue.write_buffer(
                     &r.buffers[2],
-                    (r.packed.material_terms * 80) as u64,
+                    (r.packed.material_terms * std::mem::size_of::<packing::Term>()) as u64,
                     bytemuck::cast_slice(&terms),
                 );
             }
@@ -442,7 +466,10 @@ impl GpuAvbd {
                     "WGSL AVBD coordinate range exceeds 1000 m; reinitialize near the cloth".into(),
                 );
             }
-            let scale = scale + 0.25 * settings.contact.radius * settings.iterations as f64;
+            let scale = scale
+                + self.motion_radius_scale as f64
+                    * settings.contact.radius
+                    * settings.iterations as f64;
             let world_scale = all.iter().map(|p| p.abs().max_element()).fold(1., f64::max);
             let clearance =
                 (64. * f32::EPSILON as f64 * scale + 64. * f64::EPSILON * world_scale).max(1e-7);
@@ -473,6 +500,7 @@ impl GpuAvbd {
                     .map(|i| {
                         let v = state.v[i].as_vec3();
                         Particle {
+                            cg: [[0.; 4]; 7],
                             initial: positions[i],
                             velocity_mass: [v.x, v.y, v.z, solver.garment.mesh.masses[i] as f32],
                             target: [0.; 4],
@@ -546,8 +574,9 @@ impl GpuAvbd {
                 u32::from(self.contact_method == ContactMethod::BarrierAl),
                 u32::from(!self.balance_augmentation),
                 u32::from(!self.skip_accepted_reductions),
-                0,
+                self.motion_radius_scale.to_bits(),
             ]);
+            config.extend([self.coupled_iterations, 0, 0, 0]);
             self.queue
                 .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
             r.expected = None;
@@ -584,6 +613,17 @@ impl GpuAvbd {
                         dispatch(5, n.div_ceil(64));
                         dispatch(6, r.capacity.div_ceil(64));
                     }
+                    if self.coupled_iterations > 0 {
+                        dispatch(24, r.packed.terms.len().div_ceil(64));
+                        dispatch(25, n.div_ceil(64));
+                        for _ in 0..self.coupled_iterations {
+                            dispatch(26, n.div_ceil(64));
+                            dispatch(27, 1);
+                            dispatch(28, n.div_ceil(64));
+                            dispatch(29, 1);
+                            dispatch(30, n.div_ceil(64));
+                        }
+                    }
                     dispatch(7, n.div_ceil(64));
                     if self.local_contact_bounds {
                         dispatch(23, n.div_ceil(64));
@@ -616,6 +656,9 @@ impl GpuAvbd {
                     dispatch(13, 1);
                 }
                 if self.contact_method == ContactMethod::BarrierAl {
+                    if self.coupled_iterations > 0 {
+                        dispatch(24, r.packed.terms.len().div_ceil(64));
+                    }
                     dispatch(20, n.div_ceil(64));
                 }
                 dispatch(14, n.div_ceil(64));
@@ -667,7 +710,7 @@ impl GpuAvbd {
                     continue;
                 }
                 return Err(format!(
-                    "WGSL AVBD rejected step (flags {error:#x}: overflow=1, degenerate=2, clearance=4, incidence=8, solve=16, slack bracket=32, slack residual=64, slack finite=128; diagnostics {al:?}); state unchanged"
+                    "WGSL AVBD rejected step (flags {error:#x}: overflow=1, degenerate=2, clearance=4, incidence=8, solve=16, slack bracket=32, slack residual=64, slack finite=128, preconditioner=256, cg alpha=512, cg update=1024; diagnostics {al:?}); state unchanged"
                 ));
             }
             let values: &[[f32; 4]] = bytemuck::cast_slice(&data[..n * 16]);

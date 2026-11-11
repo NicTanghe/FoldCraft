@@ -8,11 +8,18 @@ fn assemble_vertex(v:u32,alpha:f32,original:bool)->System {
     var system=System(0.5*inertia*dot(q,q),inertia*q,I*inertia);
     let row=material_row(v);
     for(var i=row.x;i<row.y;i++) {
-        let term=terms[geometry[i]];let c=factor(term,v,alpha);let k=term.c.x*term.c.w;
+        let term=terms[geometry[i]];let k=term.c.x*term.c.w;
+        var c:Jet;var curvature:vec3f;
+        if config.coupled.x>0u && alpha==0 {
+            var local=0u;for(var j=0u;j<term.info.z;j++){if term.ids[j]==v {local=j;}}
+            c=Jet(term.gradients[local].w,term.gradients[local].xyz,mat3x3f());
+            curvature=term.curvature[local].xyz;
+        } else {
+            c=factor(term,v,alpha);
+            curvature=abs(k*c.v)*vec3f(length(c.h[0]),length(c.h[1]),length(c.h[2]));
+        }
         system.e+=0.5*k*c.v*c.v/f32(term.info.z);
         system.g+=k*c.v*c.g;
-        // AVBD §3.5: positive diagonal curvature from row norms of C's Hessian.
-        let curvature=abs(k*c.v)*vec3f(length(c.h[0]),length(c.h[1]),length(c.h[2]));
         system.h+=k*outer(c.g,c.g)+mat3x3f(I[0]*curvature.x,I[1]*curvature.y,I[2]*curvature.z);
     }
     var slot=atomicLoad(&heads[v]);var visits=0u;
@@ -51,6 +58,7 @@ fn propose(@builtin(global_invocation_id) id:vec3u) {
     let system=assemble_vertex(v,0,false);particles[v].energy=vec4f(system.e,system.e,0,0);
     var direction=vec3f(0);
     if positions[v].w<0.5 {
+        if config.coupled.x>0u {direction=particles[v].delta.xyz;} else {
         let h=system.h;let g=system.g;
         let a=cross(h[1],h[2]);let b=cross(h[2],h[0]);let c=cross(h[0],h[1]);let det=dot(h[0],a);
         if !(det>0 && det<1e30) {atomicOr(&control.error,16u);}
@@ -58,8 +66,11 @@ fn propose(@builtin(global_invocation_id) id:vec3u) {
             direction=-vec3f(dot(a,g),dot(b,g),dot(c,g))/det;
             let norm=length(direction);
             if !(norm>=0 && norm<1e20) {atomicOr(&control.error,16u);direction=vec3f(0);}
-            direction*=min(1.0,0.25*config.physical.z/max(norm,1e-30));
         }
+        }
+        let norm=length(direction);
+        if !(norm>=0 && norm<1e20) {atomicOr(&control.error,16u);direction=vec3f(0);}
+        direction*=min(1.0,proposal_radius()/max(norm,1e-30));
     }
     particles[v].delta=vec4f(direction,0);particles[v].energy.z=dot(system.g,direction);
 

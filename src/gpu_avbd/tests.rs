@@ -30,6 +30,7 @@ fn gpu_factor_gradients_match_f64_at_identical_rounded_geometry() {
         .collect();
     let particles = vec![
         Particle {
+            cg: [[0.; 4]; 7],
             initial: [0.; 4],
             velocity_mass: [0.; 4],
             target: [0.; 4],
@@ -55,7 +56,7 @@ fn gpu_factor_gradients_match_f64_at_identical_rounded_geometry() {
         .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
     let read = gpu.device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: (n * 80) as u64,
+        size: (n * std::mem::size_of::<Particle>()) as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -68,7 +69,13 @@ fn gpu_factor_gradients_match_f64_at_identical_rounded_geometry() {
         pass.set_pipeline(&gpu.pipelines[15]);
         pass.dispatch_workgroups(n.div_ceil(64) as u32, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&r.buffers[1], 0, &read, 0, (n * 80) as u64);
+    encoder.copy_buffer_to_buffer(
+        &r.buffers[1],
+        0,
+        &read,
+        0,
+        (n * std::mem::size_of::<Particle>()) as u64,
+    );
     let submission = gpu.queue.submit([encoder.finish()]);
     let (tx, rx) = std::sync::mpsc::channel();
     read.map_async(wgpu::MapMode::Read, .., move |result| {
@@ -238,6 +245,7 @@ fn barrier_al_scalar_gpu_matches_f64() {
             0,
         ]);
         particles.push(Particle {
+            cg: [[0.; 4]; 7],
             initial: [d, 0., 0., 0.],
             velocity_mass: [0.; 4],
             target: [0.; 4],
@@ -260,7 +268,7 @@ fn barrier_al_scalar_gpu_matches_f64() {
         .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
     let read = gpu.device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: (n * 80 + 64) as u64,
+        size: (n * std::mem::size_of::<Particle>() + 64) as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -271,8 +279,20 @@ fn barrier_al_scalar_gpu_matches_f64() {
         pass.set_pipeline(&gpu.pipelines[21]);
         pass.dispatch_workgroups(n.div_ceil(64) as u32, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&r.buffers[1], 0, &read, 0, (n * 80) as u64);
-    encoder.copy_buffer_to_buffer(&r.buffers[7], 0, &read, (n * 80) as u64, 64);
+    encoder.copy_buffer_to_buffer(
+        &r.buffers[1],
+        0,
+        &read,
+        0,
+        (n * std::mem::size_of::<Particle>()) as u64,
+    );
+    encoder.copy_buffer_to_buffer(
+        &r.buffers[7],
+        0,
+        &read,
+        (n * std::mem::size_of::<Particle>()) as u64,
+        64,
+    );
     let submission = gpu.queue.submit([encoder.finish()]);
     let (tx, rx) = std::sync::mpsc::channel();
     read.map_async(wgpu::MapMode::Read, .., move |r| {
@@ -286,9 +306,11 @@ fn barrier_al_scalar_gpu_matches_f64() {
         .unwrap();
     rx.recv().unwrap().unwrap();
     let data = read.get_mapped_range(..).unwrap();
-    let errors: u32 = bytemuck::pod_read_unaligned(&data[n * 80..n * 80 + 4]);
+    let errors: u32 = bytemuck::pod_read_unaligned(
+        &data[n * std::mem::size_of::<Particle>()..n * std::mem::size_of::<Particle>() + 4],
+    );
     assert_eq!(errors, 0);
-    let result: &[Particle] = bytemuck::cast_slice(&data[..n * 80]);
+    let result: &[Particle] = bytemuck::cast_slice(&data[..n * std::mem::size_of::<Particle>()]);
     for (p, (value, c)) in result.iter().zip(expected) {
         for (actual, reference) in p.delta[..3].iter().zip(value) {
             assert!(
@@ -432,4 +454,216 @@ fn barrier_al_matches_full_keys_and_retains_unresolved_pairs() {
     let control = read_test_buffer(&gpu, &r.buffers[7], 64);
     assert_eq!(control[0], 0);
     assert!(control[7] > 0);
+}
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn coupled_material_matvec_matches_independent_f64_factor_assembly() {
+    let (device, queue) = request_device().unwrap();
+    let gpu = GpuAvbd::new(device, queue);
+    let mut g = GarmentTemplate::two_panel_demo().compile().unwrap();
+    g.mesh.pins.fill(None);
+    let garment = Arc::new(g);
+    let mut state = garment.initial_state.clone();
+    for (i, x) in state.x.iter_mut().enumerate() {
+        x.z += 0.003 * (i as f64).sin();
+    }
+    let solver = VbdSolver::new(garment.clone(), None, &state).unwrap();
+    let r = gpu.allocate(&solver, &state, None, 1024).unwrap();
+    let n = state.x.len();
+    let positions: Vec<_> = state
+        .x
+        .iter()
+        .map(|x| (*x - r.origin).as_vec3().extend(0.).to_array())
+        .collect();
+    let direction: Vec<_> = (0..n)
+        .map(|i| {
+            glam::Vec3::new(
+                (i as f32).sin(),
+                (i as f32 * 0.7).cos(),
+                (i as f32 * 1.1).sin(),
+            )
+        })
+        .collect();
+    let particles: Vec<_> = direction
+        .iter()
+        .map(|p| {
+            let mut cg = [[0.; 4]; 7];
+            cg[2] = p.extend(0.).to_array();
+            Particle {
+                initial: [0.; 4],
+                velocity_mass: [0.; 4],
+                target: [0., 0., 0., 1.5],
+                delta: [0.; 4],
+                energy: [0.; 4],
+                cg,
+            }
+        })
+        .collect();
+    gpu.queue
+        .write_buffer(&r.buffers[0], 0, bytemuck::cast_slice(&positions));
+    gpu.queue
+        .write_buffer(&r.buffers[1], 0, bytemuck::cast_slice(&particles));
+    let mut config = vec![0u32; 40];
+    config[0] = n as u32;
+    config[1] = n as u32;
+    config[4] = r.packed.terms.len() as u32;
+    config[6] = 1024;
+    config[8..12].copy_from_slice(&r.packed.roots);
+    config[12..16].copy_from_slice(&r.packed.offsets);
+    config[22] = 0.003f32.to_bits();
+    config[23] = 100000f32.to_bits();
+    config[27] = 1e-8f32.to_bits();
+    config[36] = 8;
+    gpu.queue
+        .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_bind_group(0, &r.bind, &[]);
+        for (entry, count) in [
+            (5, n.div_ceil(64)),
+            (24, r.packed.terms.len().div_ceil(64)),
+            (26, n.div_ceil(64)),
+        ] {
+            pass.set_pipeline(&gpu.pipelines[entry]);
+            pass.dispatch_workgroups(count as u32, 1, 1);
+        }
+    }
+    gpu.queue.submit([encoder.finish()]);
+    let result = read_test_buffer(
+        &gpu,
+        &r.buffers[1],
+        (n * std::mem::size_of::<Particle>()) as u64,
+    );
+    let actual: &[Particle] = bytemuck::cast_slice(&result);
+    let x: Vec<_> = positions
+        .iter()
+        .map(|p| DVec3::new(p[0] as f64, p[1] as f64, p[2] as f64) + r.origin)
+        .collect();
+    let mut expected: Vec<_> = direction.iter().map(|p| 1.5 * p.as_dvec3()).collect();
+    for term in constraints::compile(&garment) {
+        let mut gradients = Vec::new();
+        let mut curvatures = Vec::new();
+        for &v in &term.ids {
+            let points: [[Jet<3>; 3]; 4] = std::array::from_fn(|j| {
+                let id = term.ids[j.min(term.ids.len() - 1)];
+                std::array::from_fn(|axis| {
+                    if id == v {
+                        Jet::variable(x[id][axis], axis)
+                    } else {
+                        Jet::c(x[id][axis])
+                    }
+                })
+            });
+            let c = term.value(&garment, &points);
+            gradients.push(DVec3::from_array(c.g));
+            curvatures.push(DVec3::ZERO);
+        }
+        let dotp: f64 = gradients
+            .iter()
+            .zip(&term.ids)
+            .map(|(g, &v)| g.dot(direction[v].as_dvec3()))
+            .sum();
+        for (j, &v) in term.ids.iter().enumerate() {
+            expected[v] +=
+                0.1 * term.k * gradients[j] * dotp + curvatures[j] * direction[v].as_dvec3();
+        }
+    }
+    let mut quadratic = 0.;
+    for (v, (p, hp)) in actual.iter().zip(expected).enumerate() {
+        let value = DVec3::new(p.cg[3][0] as f64, p.cg[3][1] as f64, p.cg[3][2] as f64);
+        assert!(
+            value.distance(hp) < 0.002 * hp.length().max(1.),
+            "H p mismatch at {v}: {value:?} vs {hp:?}"
+        );
+        quadratic += value.dot(direction[v].as_dvec3());
+    }
+    assert!(quadratic > 0., "coupled curvature must be positive");
+    // A stressed patch's rigid translation has zero material curvature.
+    // The coupled operator must retain only inertia in this direction.
+    let translation = glam::Vec3::new(0.3, -0.2, 0.5);
+    let mut rigid = particles.clone();
+    for p in &mut rigid {
+        p.cg[2] = translation.extend(0.).to_array();
+    }
+    gpu.queue
+        .write_buffer(&r.buffers[1], 0, bytemuck::cast_slice(&rigid));
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_bind_group(0, &r.bind, &[]);
+        pass.set_pipeline(&gpu.pipelines[26]);
+        pass.dispatch_workgroups(n.div_ceil(64) as u32, 1, 1);
+    }
+    gpu.queue.submit([encoder.finish()]);
+    let result = read_test_buffer(
+        &gpu,
+        &r.buffers[1],
+        (n * std::mem::size_of::<Particle>()) as u64,
+    );
+    let values: &[Particle] = bytemuck::cast_slice(&result);
+    for p in values {
+        let hp = glam::Vec3::new(p.cg[3][0], p.cg[3][1], p.cg[3][2]);
+        assert!(
+            hp.distance(1.5 * translation) < 0.003,
+            "material curvature resisted rigid translation: {hp:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn coupled_correction_reduces_stressed_patch_objective() {
+    let (device, queue) = request_device().unwrap();
+    let mut template = GarmentTemplate::two_panel_demo();
+    template.panels.truncate(1);
+    template.seams.clear();
+    template.panels[0].pattern.nx = 4;
+    template.panels[0].pattern.ny = 4;
+    let garment = Arc::new(template.compile().unwrap());
+    let mut initial = garment.initial_state.clone();
+    for (i, x) in initial.x.iter_mut().enumerate() {
+        if garment.mesh.pins[i].is_none() {
+            x.x += 1e-4 * (i as f64 * 1.7).sin();
+        }
+    }
+    let settings = VbdSettings {
+        gravity: DVec3::ZERO,
+        iterations: 4,
+        dt: 1. / 60.,
+        ..Default::default()
+    };
+    let factors = constraints::compile(&garment);
+    let mut energies = Vec::new();
+    for iterations in [0, 8] {
+        let mut gpu = GpuAvbd::new(device.clone(), queue.clone());
+        gpu.coupled_iterations = iterations;
+        let mut state = initial.clone();
+        let mut solver = VbdSolver::new(garment.clone(), None, &state).unwrap();
+        gpu.step(&mut solver, &mut state, &settings, None).unwrap();
+        let material: f64 = factors
+            .iter()
+            .map(|c| 0.5 * c.k * c.at(&garment, &state.x).powi(2))
+            .sum();
+        let inertia: f64 = state
+            .x
+            .iter()
+            .zip(&initial.x)
+            .zip(&garment.mesh.masses)
+            .map(|((a, b), m)| {
+                0.5 * m * (1. + settings.dt * settings.damping) / settings.dt.powi(2)
+                    * a.distance_squared(*b)
+            })
+            .sum();
+        energies.push(material + inertia);
+    }
+    eprintln!(
+        "patch implicit objective: Jacobi={} coupled={}",
+        energies[0], energies[1]
+    );
+    assert!(
+        energies[1] < 0.8 * energies[0],
+        "coupled solve did not improve physical objective"
+    );
 }

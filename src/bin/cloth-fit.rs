@@ -74,6 +74,12 @@ struct Args {
     /// Experimental GPU distance-slack barrier augmented Lagrangian contact.
     #[arg(long, conflicts_with_all = ["cpu", "reference", "hybrid_vbd"])]
     barrier_al: bool,
+    /// Headless research control: zero retains the historical Jacobi search.
+    #[arg(long, conflicts_with_all = ["cpu","reference","hybrid_vbd","view","ui_smoke","ui_interaction_smoke","ui_perf_smoke","ui_authoring_smoke"])]
+    coupled_iterations: Option<u32>,
+    /// Headless research control: numerical proposal envelope in contact radii.
+    #[arg(long, conflicts_with_all = ["cpu","reference","hybrid_vbd","view","ui_smoke","ui_interaction_smoke","ui_perf_smoke","ui_authoring_smoke"])]
+    proposal_radii: Option<f32>,
     /// Compare GPU energies/forces against f64 AD before each step (slow).
     #[arg(long, requires = "hybrid_vbd")]
     check_gpu_gradients: bool,
@@ -111,6 +117,12 @@ fn run_ogc(
     let avbd = if !args.cpu && !args.hybrid_vbd && args.steps > 0 {
         let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
         let mut solver = marvelous_cloth::gpu_avbd::GpuAvbd::new(device, queue);
+        if let Some(n) = args.coupled_iterations {
+            solver.coupled_iterations = n;
+        }
+        if let Some(r) = args.proposal_radii {
+            solver.motion_radius_scale = r;
+        }
         if args.barrier_al {
             solver.contact_method = marvelous_cloth::gpu_avbd::ContactMethod::BarrierAl;
         }
@@ -147,7 +159,12 @@ fn run_ogc(
         None
     };
     #[cfg(not(feature = "desktop"))]
-    if args.gpu_sim || args.hybrid_vbd || args.barrier_al {
+    if args.gpu_sim
+        || args.hybrid_vbd
+        || args.barrier_al
+        || args.coupled_iterations.is_some()
+        || args.proposal_radii.is_some()
+    {
         return Err("Rebuild with desktop for --gpu-sim".into());
     }
     fs::write(
@@ -205,7 +222,11 @@ fn run_ogc(
     )?;
     project.state = Some(scene.state.clone());
     project.save(&args.output.join("fitting-project.json"))?;
-    let report = serde_json::json!({"backend":backend,"steps":args.steps,"settings":settings,"cpu_contact_filter":args.cpu_contact_filter,"check_gpu_contacts":args.check_gpu_contacts,"check_gpu_gradients":args.check_gpu_gradients,
+    let report = serde_json::json!({"backend":backend,
+        "wgsl_search":if backend.starts_with("wgsl") {Some(if args.coupled_iterations.unwrap_or(8)==0 {"jacobi-avbd-v1"} else {"coupled-gauss-newton-pcg-v1"})} else {None},
+        "wgsl_coupled_iterations":if backend.starts_with("wgsl") {Some(args.coupled_iterations.unwrap_or(8))} else {None},
+        "wgsl_proposal_radii":if backend.starts_with("wgsl") {Some(args.proposal_radii.unwrap_or(0.25))} else {None},
+        "steps":args.steps,"settings":settings,"cpu_contact_filter":args.cpu_contact_filter,"check_gpu_contacts":args.check_gpu_contacts,"check_gpu_gradients":args.check_gpu_gradients,
         "vertices":scene.state.x.len(),"triangles":scene.garment.mesh.triangles.len(),"wall_ms":wall_ms,
         "mean_step_ms":if rows.is_empty(){0.}else{wall_ms/rows.len() as f64},"last":rows.last(),
         "seams":scene.garment.seams.iter().map(|s|serde_json::json!({"id":s.id,"max_gap_m":s.max_gap(&scene.state.x)})).collect::<Vec<_>>(),

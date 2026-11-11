@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.125,
+  "clock": 3.4,
   "tickets": [
     {
       "id": "FC-0001",
@@ -557,14 +557,27 @@
     },
     {
       "id": "FC-0043",
-      "title": "Resolve persistent GPU garment protrusion and spurious primitive contact forces",
-      "acceptance": "Flat frictionless slide has no mesh-induced tangential force; multi-surface contact preserved; matched default T-shirt no persistent protrusion; saved accepted-state replay",
+      "title": "Resolve default-T-shirt protrusion with coupled WGSL convergence",
+      "acceptance": "Unchanged CPU reference; matched 200-step default garment runs remove raised underarm shape, with seam/extension/displacement gates and independent separation audits; preserve force-law defect as a separate open ticket",
       "points": 8.0,
-      "spent": 0,
+      "spent": 8.0,
       "priority": "urgent",
       "depends_on": [],
       "status": "active",
       "owner": "codex-protrusion",
+      "vruntime": 4.0,
+      "pr": null
+    },
+    {
+      "id": "FC-0044",
+      "title": "Remove spurious tangential forces from the resident primitive contact potential",
+      "acceptance": "Flat frictionless slide is invariant across triangulation; multi-wall and self-contact preserved; consistent energy/gradient, nonnegative potentials and independent separation; GPU implementation only",
+      "points": 8.0,
+      "spent": 0,
+      "priority": "high",
+      "depends_on": [],
+      "status": "ready",
+      "owner": null,
       "vruntime": 3.0,
       "pr": null
     }
