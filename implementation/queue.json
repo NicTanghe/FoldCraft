@@ -550,9 +550,22 @@
       "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-contact-fix",
+      "status": "review",
+      "owner": null,
       "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0043",
+      "title": "Resolve persistent GPU garment protrusion and spurious primitive contact forces",
+      "acceptance": "Flat frictionless slide has no mesh-induced tangential force; multi-surface contact preserved; matched default T-shirt no persistent protrusion; saved accepted-state replay",
+      "points": 8.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-protrusion",
+      "vruntime": 3.0,
       "pr": null
     }
   ]

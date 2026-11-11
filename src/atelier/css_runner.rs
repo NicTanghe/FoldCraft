@@ -428,8 +428,14 @@ impl CssRunnerState {
     pub fn save_project(&mut self) {
         let _ = fs::create_dir_all(&self.files.output);
         let path = self.files.output.join("fitting-project.json");
-        match self.project.save(&path) {
-            Ok(_) => self.status_message = format!("Saved {}", path.display()),
+        let mut snapshot = self.project.clone();
+        snapshot.state = Some(self.scene.state.clone());
+        snapshot.simulation = Some(self.settings.clone());
+        match snapshot.save(&path) {
+            Ok(_) => {
+                self.project = snapshot;
+                self.status_message = format!("Saved {}", path.display());
+            }
             Err(e) => self.status_message = format!("Save error: {e}"),
         }
     }
@@ -2490,6 +2496,16 @@ mod tests {
             },
         );
         assert_ne!(read_points(app.state()), initial_points);
+        // Save the visible accepted checkpoint, not the launch-time project cache.
+        app.state_mut().save_project();
+        let saved =
+            FittingProject::load(&app.state().files.output.join("fitting-project.json")).unwrap();
+        let checkpoint = saved.state.unwrap();
+        assert_eq!(checkpoint.x, app.state().scene.state.x);
+        assert_eq!(checkpoint.v, app.state().scene.state.v);
+        assert_eq!(checkpoint.time, app.state().scene.state.time);
+        assert_eq!(saved.simulation.unwrap().dt, app.state().settings.dt);
+
         app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
         app.frame(FrameInfo {
             delta: Duration::from_millis(16),
