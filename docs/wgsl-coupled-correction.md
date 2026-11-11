@@ -157,3 +157,10 @@ The default keeps the validated separate passes. Raw results are in
 coupled-vector-fusion-study.json; the rejected experiment is preserved in
 cg-vector-fusion-rejected.patch (apply with git apply --unidiff-zero against
 fcf14a6 for research only). No speedup is claimed for this garment-quality fix.
+
+Latest main 02cee23 (independent accordions/scrollbars) was merged after the
+physics validation. Its accordion action bits overlapped the solver controls;
+solver actions were moved to independent bits and a regression was added.
+The latest UI behavior is retained. Post-merge native/shader/accordion checks
+passed (139 tests), along with CPU-only all-target compilation and Clippy.
+GPU solver sources are unchanged from the fully validated correction.
