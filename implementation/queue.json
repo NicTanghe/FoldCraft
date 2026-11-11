@@ -464,10 +464,10 @@
       "spent": 10.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-wgsl-avbd",
+      "status": "review",
+      "owner": null,
       "vruntime": 4.25,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
     }
   ]
 }

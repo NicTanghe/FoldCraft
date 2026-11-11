@@ -1,5 +1,7 @@
 # Bring a better cloth solver
 
+**Branch update (FC-0035):** the owner selected the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md) as the desktop-enabled default on `gpu_type_1`. The benchmark contract below still applies: the recorded small GPU tests do not qualify dense garments, sustained pull/release or a speedup. Historical CPU and hybrid controls remain available.
+
 ClothCraft should outlive any one physics algorithm. Keep the garment model, editing tools, interoperability and evaluation useful while experimenting with different solvers. Humans and AI agents are invited to build contenders: faster convergence, better contact, friction, material accuracy, or a better balance of all four.
 
 ## Existing boundary — and what is still missing
