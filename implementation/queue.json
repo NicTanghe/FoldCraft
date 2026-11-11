@@ -473,8 +473,8 @@
     },
     {
       "id": "FC-0036",
-      "title": "2D pattern board functional interactive overhaul: edge points, Bézier handles, selection highlights, and isotropic aspect-ratio preservation",
-      "acceptance": "Render smooth cubic Bézier boundary paths with tangent stalks and interactive handles; draw CAD vertex knobs for all contour points; render piece and edge selection highlights; enforce isotropic 1:1 metric aspect ratio via SVG preserveAspectRatio and symmetric viewbox expansion to eliminate stretching; pass CPU tests and desktop compilation.",
+      "title": "2D pattern board functional interactive overhaul: edge points, B\u00e9zier handles, selection highlights, and isotropic aspect-ratio preservation",
+      "acceptance": "Render smooth cubic B\u00e9zier boundary paths with tangent stalks and interactive handles; draw CAD vertex knobs for all contour points; render piece and edge selection highlights; enforce isotropic 1:1 metric aspect ratio via SVG preserveAspectRatio and symmetric viewbox expansion to eliminate stretching; pass CPU tests and desktop compilation.",
       "points": 3.0,
       "spent": 0.0,
       "priority": "urgent",
@@ -530,6 +530,21 @@
       "owner": null,
       "vruntime": 3.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/42"
+    },
+    {
+      "id": "FC-0040",
+      "title": "Day/night theme pill switch, command palette vector icons, and interactive 2D piece selection",
+      "acceptance": "Custom day/night switch styled with dark/light mode tokens; command palette rendered with vector SVG icons; interactive 2D pattern piece cards in drawer and browser tree; all CPU tests pass.",
+      "points": 2.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0039"
+      ],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/43"
     }
   ]
 }
