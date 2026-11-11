@@ -809,35 +809,35 @@ fn build_runner_3d_rail(state: &CssRunnerState) -> Node {
 
     ui! {
         <aside id="rail-3d" class="tool-rail tool-rail-3d">
-            <button class={gizmo_class} onclick={on_runner_tool_gizmo} title="Select & Arrange (Gizmo)">
+            <button class={gizmo_class} onclick={on_runner_tool_gizmo} title="Select & Arrange [Gizmo] (1)">
                 {icon_gizmo()}
                 <span class="tool-label">"Gizmo"</span>
             </button>
-            <button class={grab_class} onclick={on_runner_tool_grab} title="Grab Cloth (Pull & Drag in Simulation)">
+            <button class={grab_class} onclick={on_runner_tool_grab} title="Grab Cloth (Pull & Drag in Simulation) (W)">
                 {icon_grab()}
                 <span class="tool-label">"Grab"</span>
             </button>
-            <button class={sew3d_class} onclick={on_runner_tool_sew3d} title="3D Sew (Connect boundaries)">
+            <button class={sew3d_class} onclick={on_runner_tool_sew3d} title="3D Segment Sewing (N)">
                 {icon_sew_3d()}
                 <span class="tool-label">"3D Sew"</span>
             </button>
-            <button class={pin_class} onclick={on_runner_tool_pin} title="Pin Cloth (Click vertices to anchor)">
+            <button class={pin_class} onclick={on_runner_tool_pin} title="Pin Cloth [Click vertices] (P)">
                 {icon_pin()}
                 <span class="tool-label">"Pin"</span>
             </button>
-            <button class={msr_class} onclick={on_runner_tool_measure3d} title="3D Distance Measurement">
+            <button class={msr_class} onclick={on_runner_tool_measure3d} title="3D Tape Measure (T)">
                 {icon_measure_3d()}
                 <span class="tool-label">"Measure"</span>
             </button>
-            <button id="avatar-diagnostics-btn" class={avatar_class} onclick={on_runner_tool_avatar_diag} title="Avatar Collision Diagnostics">
-                {icon_avatar_diag()}
+            <button id="avatar-diagnostics-btn" class={avatar_class} onclick={on_runner_tool_avatar_diag} title="Avatar & Dress Form Diagnostics (Shift+A)">
+                {icon_dress_form()}
                 <span class="tool-label">"Avatar"</span>
             </button>
-            <button class="tool-btn" onclick={on_runner_cam_reset} title="Reset Camera View (Framing)">
+            <button class="tool-btn" onclick={on_runner_cam_reset} title="Reset Camera View [Framing] (0)">
                 {icon_cam_reset()}
                 <span class="tool-label">"Reset"</span>
             </button>
-            <button class="tool-btn" onclick={on_runner_drawer_toggle} title="Toggle Asset & Piece Drawer">
+            <button class="tool-btn" onclick={on_runner_drawer_toggle} title="Toggle Asset & Piece Drawer (Tab)">
                 {icon_sidebar_toggle()}
                 <span class="tool-label">"Drawer"</span>
             </button>
@@ -903,43 +903,43 @@ fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
 
     ui! {
         <aside id="rail-2d" class="tool-rail tool-rail-2d">
-            <button class={edit_class} onclick={on_runner_2d_edit} title="Select & Edit Vertices">
+            <button class={edit_class} onclick={on_runner_2d_edit} title="Edit Point / Transform (Z / A)">
                 {icon_edit_2d()}
                 <span class="tool-label">"Edit"</span>
             </button>
-            <button class={rect_class} onclick={on_runner_2d_rect} title="Create Rectangle Pattern">
+            <button class={rect_class} onclick={on_runner_2d_rect} title="Draw Rectangle Pattern (S)">
                 {icon_rect_2d()}
                 <span class="tool-label">"Rect"</span>
             </button>
-            <button class={pen_class} onclick={on_runner_2d_pen} title="Draw Polyline Edge">
-                {icon_pen_2d()}
+            <button class={pen_class} onclick={on_runner_2d_pen} title="Draw Polygon Pattern (H)">
+                {icon_polygon_2d()}
                 <span class="tool-label">"Pen"</span>
             </button>
-            <button class={free_class} onclick={on_runner_2d_freehand} title="Freehand Curve">
+            <button class={free_class} onclick={on_runner_2d_freehand} title="Freehand Pattern Curve (F)">
                 {icon_freehand_2d()}
                 <span class="tool-label">"Free"</span>
             </button>
-            <button class={sew_class} onclick={on_runner_2d_sew} title="2D Seam Correspondence">
+            <button class={sew_class} onclick={on_runner_2d_sew} title="Sew Seams (B)">
                 {icon_sew_2d()}
                 <span class="tool-label">"Sew"</span>
             </button>
-            <button class={split_class} onclick={on_runner_2d_split} title="Split Boundary Point">
+            <button class={split_class} onclick={on_runner_2d_split} title="Split / Add Point (X)">
                 {icon_split_2d()}
                 <span class="tool-label">"Split"</span>
             </button>
-            <button class={line_class} onclick={on_runner_2d_internal} title="Internal Line / Dart">
+            <button class={line_class} onclick={on_runner_2d_internal} title="Internal Polygon / Line (G)">
                 {icon_internal_2d()}
                 <span class="tool-label">"Line"</span>
             </button>
-            <button class={tape_class} onclick={on_runner_2d_measure} title="Tape Measure">
+            <button class={tape_class} onclick={on_runner_2d_measure} title="2D Tape Measure (M)">
                 {icon_measure_2d()}
                 <span class="tool-label">"Tape"</span>
             </button>
-            <button class={trim_class} onclick={on_runner_2d_trim} title="Construction Trim">
+            <button class={trim_class} onclick={on_runner_2d_trim} title="Trim (T)">
                 {icon_trim_2d()}
                 <span class="tool-label">"Trim"</span>
             </button>
-            <button class={corner_class} onclick={on_runner_2d_corner} title="Corner Rounding & Shaping Tool">
+            <button class={corner_class} onclick={on_runner_2d_corner} title="Corner Rounding & Chamfer (C)">
                 {icon_corner_2d()}
                 <span class="tool-label">"Corner"</span>
             </button>
