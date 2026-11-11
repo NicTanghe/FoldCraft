@@ -122,6 +122,59 @@ pub fn icon_moon() -> Node {
     }
 }
 
+pub fn icon_save() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+        </svg>
+    }
+}
+
+pub fn icon_export() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+    }
+}
+
+pub fn icon_day_night_switch(is_dark: bool) -> Node {
+    if is_dark {
+        ui! {
+            <div class="day-night-switch dark">
+                <div class="switch-stars">
+                    <span class="star s1"></span>
+                    <span class="star s2"></span>
+                    <span class="star s3"></span>
+                </div>
+                <div class="switch-thumb">
+                    <svg viewBox="0 0 24 24" class="switch-icon moon-icon" fill="#cbd5e1">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                </div>
+            </div>
+        }
+    } else {
+        ui! {
+            <div class="day-night-switch light">
+                <div class="switch-rays">
+                    <span class="ray r1"></span>
+                    <span class="ray r2"></span>
+                </div>
+                <div class="switch-thumb">
+                    <svg viewBox="0 0 24 24" class="switch-icon sun-icon" fill="#f59e0b" stroke="#f59e0b" stroke-width="2">
+                        <circle cx="12" cy="12" r="5" />
+                    </svg>
+                </div>
+            </div>
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 3D Tool Rail Icons (18x18 viewport, 24x24 viewBox)
 // ---------------------------------------------------------------------------

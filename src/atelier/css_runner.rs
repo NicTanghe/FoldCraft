@@ -82,13 +82,17 @@ pub const ACT_RUN_TOOL_TRIM2D: u64 = 1 << 37;
 pub const ACT_RUN_TOOL_CORNER2D: u64 = 1 << 38;
 pub const ACT_RUN_PIN_MODE_TOGGLE: u64 = 1 << 39;
 pub const ACT_RUN_CORNER_MODE_TOGGLE: u64 = 1 << 40;
-pub const ACT_RUN_ACCORDION_TOGGLE: u64 = 1 << 41;
 pub const ACT_RUN_ACC_0: u64 = 1 << 41;
 pub const ACT_RUN_ACC_1: u64 = 1 << 42;
 pub const ACT_RUN_ACC_2: u64 = 1 << 43;
 pub const ACT_RUN_ACC_3: u64 = 1 << 44;
 pub const ACT_RUN_ACC_4: u64 = 1 << 45;
 pub const ACT_RUN_ACC_5: u64 = 1 << 46;
+pub const ACT_RUN_ACCORDION_TOGGLE: u64 = 1 << 47;
+pub const ACT_RUN_PIECE_0: u64 = 1 << 48;
+pub const ACT_RUN_PIECE_1: u64 = 1 << 49;
+pub const ACT_RUN_PIECE_2: u64 = 1 << 50;
+pub const ACT_RUN_PIECE_3: u64 = 1 << 51;
 
 static RUNNER_ACTIONS: AtomicU64 = AtomicU64::new(0);
 
@@ -240,6 +244,18 @@ pub fn on_runner_accordion_4() {
 }
 pub fn on_runner_accordion_5() {
     dispatch_runner_action(ACT_RUN_ACC_5);
+}
+pub fn on_runner_piece_0() {
+    dispatch_runner_action(ACT_RUN_PIECE_0);
+}
+pub fn on_runner_piece_1() {
+    dispatch_runner_action(ACT_RUN_PIECE_1);
+}
+pub fn on_runner_piece_2() {
+    dispatch_runner_action(ACT_RUN_PIECE_2);
+}
+pub fn on_runner_piece_3() {
+    dispatch_runner_action(ACT_RUN_PIECE_3);
 }
 
 // ============================================================================
@@ -637,6 +653,18 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
         state.open_accordion_idx = (state.open_accordion_idx + 1) % 6;
         state.accordion_open[state.open_accordion_idx] = !state.accordion_open[state.open_accordion_idx];
     }
+    if actions & ACT_RUN_PIECE_0 != 0 && !state.project.template.panels.is_empty() {
+        state.selected_piece_index = 0;
+    }
+    if actions & ACT_RUN_PIECE_1 != 0 && state.project.template.panels.len() > 1 {
+        state.selected_piece_index = 1;
+    }
+    if actions & ACT_RUN_PIECE_2 != 0 && state.project.template.panels.len() > 2 {
+        state.selected_piece_index = 2;
+    }
+    if actions & ACT_RUN_PIECE_3 != 0 && state.project.template.panels.len() > 3 {
+        state.selected_piece_index = 3;
+    }
 
     if state.playing {
         if had_result {
@@ -816,10 +844,7 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                     <span class="btn-label">"Commands"</span>
                 </button>
                 <button id="theme-toggle" onclick={on_runner_theme_toggle} title={theme_label}>
-                    {match state.theme {
-                        Theme::Dark => icon_sun(),
-                        Theme::Light => icon_moon(),
-                    }}
+                    {icon_day_night_switch(matches!(state.theme, Theme::Dark))}
                 </button>
             </div>
         </header>
@@ -1016,17 +1041,53 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
         let label = p.name.clone();
         let id_str = p.id.clone();
         let meta_str = format!("Fabric: {} · Grain: {:.0}°", p.fabric, p.grain_degrees);
-        piece_cards.push(ui! {
-            <div class={card_class}>
-                <div class="piece-header">
-                    <span class="piece-name">{label}</span>
-                    <span class="piece-id">{id_str}</span>
+        let card_node = match idx {
+            0 => ui! {
+                <div class={card_class} onclick={on_runner_piece_0}>
+                    <div class="piece-header">
+                        <span class="piece-name">{label}</span>
+                        <span class="piece-id">{id_str}</span>
+                    </div>
+                    <div class="piece-meta">
+                        <span>{meta_str}</span>
+                    </div>
                 </div>
-                <div class="piece-meta">
-                    <span>{meta_str}</span>
+            },
+            1 => ui! {
+                <div class={card_class} onclick={on_runner_piece_1}>
+                    <div class="piece-header">
+                        <span class="piece-name">{label}</span>
+                        <span class="piece-id">{id_str}</span>
+                    </div>
+                    <div class="piece-meta">
+                        <span>{meta_str}</span>
+                    </div>
                 </div>
-            </div>
-        });
+            },
+            2 => ui! {
+                <div class={card_class} onclick={on_runner_piece_2}>
+                    <div class="piece-header">
+                        <span class="piece-name">{label}</span>
+                        <span class="piece-id">{id_str}</span>
+                    </div>
+                    <div class="piece-meta">
+                        <span>{meta_str}</span>
+                    </div>
+                </div>
+            },
+            _ => ui! {
+                <div class={card_class} onclick={on_runner_piece_3}>
+                    <div class="piece-header">
+                        <span class="piece-name">{label}</span>
+                        <span class="piece-id">{id_str}</span>
+                    </div>
+                    <div class="piece-meta">
+                        <span>{meta_str}</span>
+                    </div>
+                </div>
+            },
+        };
+        piece_cards.push(card_node);
     }
 
     ui! {
@@ -1240,12 +1301,34 @@ fn build_cat_pattern_2d(state: &CssRunnerState) -> Node {
             "tree-item"
         };
         let label = format!("{}: {}", p.id, p.name);
-        piece_rows.push(ui! {
-            <div class={item_class}>
-                <span>{label}</span>
-                <span>{format!("{:.0}°", p.grain_degrees)}</span>
-            </div>
-        });
+        let grain_str = format!("{:.0}°", p.grain_degrees);
+        let row_node = match idx {
+            0 => ui! {
+                <div class={item_class} onclick={on_runner_piece_0} style="cursor:pointer">
+                    <span>{label}</span>
+                    <span>{grain_str}</span>
+                </div>
+            },
+            1 => ui! {
+                <div class={item_class} onclick={on_runner_piece_1} style="cursor:pointer">
+                    <span>{label}</span>
+                    <span>{grain_str}</span>
+                </div>
+            },
+            2 => ui! {
+                <div class={item_class} onclick={on_runner_piece_2} style="cursor:pointer">
+                    <span>{label}</span>
+                    <span>{grain_str}</span>
+                </div>
+            },
+            _ => ui! {
+                <div class={item_class} onclick={on_runner_piece_3} style="cursor:pointer">
+                    <span>{label}</span>
+                    <span>{grain_str}</span>
+                </div>
+            },
+        };
+        piece_rows.push(row_node);
     }
 
     ui! {
@@ -1737,51 +1820,87 @@ fn build_runner_command_palette(state: &CssRunnerState) -> Node {
                 </div>
                 <div class="palette-items">
                     <button class="palette-item" onclick={on_runner_play_pause}>
-                        <span>"▶ Toggle Simulation"</span>
+                        <div class="item-left">
+                            {if state.playing { icon_pause() } else { icon_play() }}
+                            <span>"Toggle Simulation"</span>
+                        </div>
                         <span class="command-shortcut">"Space"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_step}>
-                        <span>"⏭ Step Simulation"</span>
+                        <div class="item-left">
+                            {icon_step()}
+                            <span>"Step Simulation"</span>
+                        </div>
                         <span class="command-shortcut">"S"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_reset}>
-                        <span>"↺ Reset Simulation"</span>
+                        <div class="item-left">
+                            {icon_reset()}
+                            <span>"Reset Simulation"</span>
+                        </div>
                         <span class="command-shortcut">"R"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_save}>
-                        <span>"💾 Save Fitting Project"</span>
+                        <div class="item-left">
+                            {icon_save()}
+                            <span>"Save Fitting Project"</span>
+                        </div>
                         <span class="command-shortcut">"Ctrl+S"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_export}>
-                        <span>"📦 Export Artifacts (OBJ & True-Scale SVG)"</span>
+                        <div class="item-left">
+                            {icon_export()}
+                            <span>"Export Artifacts (OBJ & True-Scale SVG)"</span>
+                        </div>
                         <span class="command-shortcut">"Ctrl+E"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_clean_view}>
-                        <span>"👁 Toggle Clean View"</span>
+                        <div class="item-left">
+                            {icon_clean_view()}
+                            <span>"Toggle Clean View"</span>
+                        </div>
                         <span class="command-shortcut">"F11"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_theme_toggle}>
-                        <span>"🎨 Toggle Dark / Light Theme"</span>
+                        <div class="item-left">
+                            {if matches!(state.theme, Theme::Dark) { icon_sun() } else { icon_moon() }}
+                            <span>"Toggle Dark / Light Theme"</span>
+                        </div>
                         <span class="command-shortcut">"T"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_view_split}>
-                        <span>"◫ Split 2D / 3D Layout"</span>
+                        <div class="item-left">
+                            {icon_view_split()}
+                            <span>"Split 2D / 3D Layout"</span>
+                        </div>
                         <span class="command-shortcut">"1"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_view_3d}>
-                        <span>"◻ 3D Only Viewport"</span>
+                        <div class="item-left">
+                            {icon_view_3d()}
+                            <span>"3D Only Viewport"</span>
+                        </div>
                         <span class="command-shortcut">"2"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_view_2d}>
-                        <span>"◰ 2D Only Pattern Board"</span>
+                        <div class="item-left">
+                            {icon_view_2d()}
+                            <span>"2D Only Pattern Board"</span>
+                        </div>
                         <span class="command-shortcut">"3"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_cam_reset}>
-                        <span>"⌖ Reset 3D Camera"</span>
+                        <div class="item-left">
+                            {icon_cam_reset()}
+                            <span>"Reset 3D Camera"</span>
+                        </div>
                         <span class="command-shortcut">"Home"</span>
                     </button>
                     <button class="palette-item" onclick={on_runner_drawer_toggle}>
-                        <span>"☰ Toggle Left Asset Drawer"</span>
+                        <div class="item-left">
+                            {icon_sidebar_toggle()}
+                            <span>"Toggle Left Asset Drawer"</span>
+                        </div>
                         <span class="command-shortcut">"Ctrl+B"</span>
                     </button>
                 </div>
