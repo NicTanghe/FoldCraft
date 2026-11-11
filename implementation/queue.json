@@ -511,7 +511,7 @@
       "depends_on": [
         "FC-0037"
       ],
-      "status": "queued",
+      "status": "ready",
       "owner": null,
       "vruntime": 3.25,
       "pr": null
