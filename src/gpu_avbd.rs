@@ -317,8 +317,8 @@ impl GpuAvbd {
                 "WGSL AVBD does not support OGC research contact laws or a changed world".into(),
             );
         }
-        if let Some(grab) = grab {
-            if grab.vertices.iter().any(|v| *v >= n)
+        if let Some(grab) = grab
+            && (grab.vertices.iter().any(|v| *v >= n)
                 || !grab.target.is_finite()
                 || !grab.stiffness.is_finite()
                 || grab.stiffness < 0.
@@ -327,13 +327,15 @@ impl GpuAvbd {
                 || grab.vertices[0] == grab.vertices[1]
                 || grab.vertices[0] == grab.vertices[2]
                 || grab.vertices[1] == grab.vertices[2]
-                || !grab.valid_patch(n)
-            {
-                return Err("Invalid WGSL AVBD grab; state unchanged".into());
-            }
+                || !grab.valid_patch(n))
+        {
+            return Err("Invalid WGSL AVBD grab; state unchanged".into());
         }
         if let Some(sphere) = &self.sphere {
             sphere.validate()?;
+            if !(sphere.stiffness as f32).is_finite() {
+                return Err("Sphere stiffness exceeds f32 range".into());
+            }
         }
         for (i, pin) in solver.garment.mesh.pins.iter().enumerate() {
             if pin.is_some_and(|p| p.distance(state.x[i]) > 1e-10) {
@@ -461,8 +463,10 @@ impl GpuAvbd {
             config.extend([
                 r.packed.face_rows,
                 solver.garment.mesh.triangles.len() as u32,
-                0,
-                0,
+                self.sphere
+                    .as_ref()
+                    .map_or(0, |s| (s.stiffness as f32).to_bits()),
+                r.packed.face_areas,
             ]);
             config.extend(
                 [

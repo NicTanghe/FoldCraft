@@ -17,7 +17,7 @@ mod editor;
 #[derive(Parser)]
 #[command(
     version,
-    about = "MARVELOUS CLOTH — CPU FEM reference and native pattern editor"
+    about = "MARVELOUS CLOTH — cloth simulation and native pattern editor"
 )]
 struct Args {
     /// Run without a window. Uses WGSL AVBD / IPC unless --cpu is selected.

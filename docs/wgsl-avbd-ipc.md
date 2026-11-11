@@ -14,7 +14,7 @@ The update schedule is simultaneous Jacobi. Integer atomic insertion builds per-
 
 The implicit Euler target includes full gravity and mass-proportional damping. The current accepted positions start the solve; this backend does not reuse VBD's acceleration predictor. Velocity integration, contact decisions and all iteration passes run in WGSL. Resident state survives accepted steps. Only settings and changed attachment terms upload in steady operation. Mesh/material/world replacement, changed attachment incidence, explicit reset or an external checkpoint rebuild/reinitialize the relevant resources. Worker generations explicitly reset residency. Static avatar node bounds stay resident; dynamic BVH bounds refit on every sweep.
 
-One positions snapshot and a small status block are read back per complete step for existing CPU UI/export consumers. This is **GPU-resident iteration**, not zero transfer and not direct solver-buffer rendering. Scene compilation and initial intersection validation remain CPU work. There are no per-iteration CPU distances, movement balls, force assembly, multiplier reads or acceptance decisions.
+In steady operation, one positions snapshot and a small status block are read back per complete step for existing CPU UI/export consumers. Overflow retries add a status/snapshot readback for each rejected attempt. This is **GPU-resident iteration**, not zero transfer and not direct solver-buffer rendering. Scene compilation and initial intersection validation remain CPU work. There are no per-iteration CPU distances, movement balls, force assembly, multiplier reads or acceptance decisions.
 
 ## Contact and continuous path bound
 
@@ -38,7 +38,7 @@ alpha <= 0.8 (d - clearance) / (max_motion_A + max_motion_B).
 
 Thus the entire simultaneous linear update retains positive clearance; checking only its end would not suffice. Unseen pairs remain outside barrier support throughout that update. Distances and bounds recompute each sweep. This conservative Lipschitz bound is not additive CCD or IPC's original CCD implementation. It may impede tangential motion and close folds. No repair of initial intersections is provided.
 
-The Project v1 sphere is analytic: nearest triangle/sphere separation contributes to the same objective and path bound, including triangle interiors. Its radius includes half the material thickness. Fitting avatars use their actual triangle topology. The floor remains visual unless supplied as collision geometry.
+The Project v1 sphere is analytic: nearest triangle/sphere separation contributes to the same objective and path bound, including triangle interiors. Its radius includes half the material thickness; the saved sphere pressure coefficient (N/m³) is integrated over each rest triangle area to obtain its barrier stiffness (N/m). Fitting avatars use their actual triangle topology. The floor remains visual unless supplied as collision geometry.
 
 All geometry is f32 in a translated frame. Clearance is `64 * f32::EPSILON` times a local coordinate envelope including the maximum within-step motion (at least 0.1 micrometre). Unresolved clearances, degenerate primitives, nonfinite local solves or invalid controls reject the complete step. This is floating-point protection, not certified exact predicates. State `x/v/time` remains unchanged on rejection. Contact-buffer overflow triggers allocation growth and a complete retry from the last accepted state; device limits produce an error, never accepted truncation or a silent switch of solvers.
 
@@ -62,8 +62,20 @@ RAYON_NUM_THREADS=2 cargo test --locked -j 2 --lib gpu_avbd::tests -- --ignored 
 RAYON_NUM_THREADS=2 cargo test --locked -j 2 --test gpu_avbd -- --ignored --test-threads=1
 ```
 
-`step_ms`/`solve_ms` include the complete host-side step, uploads, dispatch, synchronization, retries and snapshot processing. GPU timestamp subdivision and final residual are unavailable (`null`); no rendering time or FPS is inferred. Contact counts and minimum distance describe the final sweep's detection before its update, not an independent final surface audit. The worker's optional OGC force audit explicitly refuses the different IPC objective rather than presenting another force law's residual.
+`step_ms`/`solve_ms` include the complete host-side step, uploads, dispatch, synchronization, retries and snapshot processing. Separate detection timing, GPU timestamp subdivision and final residual are unavailable (`null`); no rendering time or FPS is inferred. Legacy OGC `contact_profile` and f64 precision counters are not populated by this backend; their zero defaults are not measurements of those phases. Contact counts and minimum distance describe the final sweep's detection before its update, not an independent final surface audit. The worker's optional OGC force audit explicitly refuses the different IPC objective rather than presenting another force law's residual.
 
 The scalar CPU oracle checks barrier derivatives, C2 activation and simultaneous-motion bounds. Naga validates all WGSL entry points without a GPU. Hardware tests compare material/sewing gradients at identical rounded geometry against f64 AD, check free fall, fixed pins, transactional errors, resource replacement, sphere impact, forward/reciprocal VF, cloth self-contact and translated contact scenes. These are small regression cases; dense garments, sustained pull/release, parallel-edge sliding and matched full-step benchmark distributions still require qualification.
 
 Sources actually consulted for this contribution: the [AVBD authors' project overview](https://graphics.cs.utah.edu/research/projects/avbd/), [IPC authors' project overview](https://ipc-sim.github.io/), and the repository's previously read paper derivations and factorization in `docs/solver-lab.md` and `docs/solver-consistency.md`. Full-resolution PDF fetching through the web reader failed due to size. No external solver implementation was copied.
+
+## Observed local results (11 November 2026)
+
+On `gpu_type_1`, after merging `origin/main` at `4d91750` (merge commit `2d33e6f`):
+
+- CPU suite: 629 passed, no failures, one pre-existing ignored case. CPU Clippy passed with warnings denied.
+- Desktop build and native/library CPU tests passed. Hardware tests stay ignored by default.
+- Four numerical/lifecycle GPU checks passed: f64 material/sewing force agreement (maximum absolute error `6.445713e-7 N` on 60 vertices), contact overflow/retry and grab residency, free fall/pins/sphere/error rollback, forward/reciprocal VF/self-contact/translation.
+- The native Project worker advanced one WGSL step without receiving any render frames.
+- Default CLI smoke runs accepted two steps in each frontend: fitting (466 vertices / 794 triangles, 60 mm target, four iterations), Project v1 (2×2 cells), and the 60-vertex template demo. All reported `wgsl-finite-avbd-ipc`. The fitting case reached only 0.0333 simulated seconds and retained a 0.518 m seam gap: this is startup wiring validation, **not** an assembled garment or convergence result.
+
+These checks establish the stated small-case properties. They do not establish a dense-garment speedup, settling quality, realtime cadence or full published-method equivalence. See the commands above and [compact validation record](wgsl-avbd-ipc-validation.json).

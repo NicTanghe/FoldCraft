@@ -68,8 +68,8 @@ struct Args {
     /// Compatibility flag: select the default resident WGSL AVBD / IPC solver.
     #[arg(long, conflicts_with = "reference")]
     gpu_sim: bool,
-    /// Historical hybrid VBD / OGC benchmark control.
-    #[arg(long, conflicts_with = "reference")]
+    /// Historical hybrid VBD / OGC headless benchmark control.
+    #[arg(long, conflicts_with_all = ["reference", "view", "ui_smoke", "ui_interaction_smoke", "ui_perf_smoke", "ui_authoring_smoke"])]
     hybrid_vbd: bool,
     /// Compare GPU energies/forces against f64 AD before each step (slow).
     #[arg(long, requires = "hybrid_vbd")]
@@ -121,7 +121,7 @@ fn run_ogc(
         }))?;
         let info = adapter.get_info();
         if info.device_type == wgpu::DeviceType::Cpu {
-            return Err("Hardware GPU required for --gpu-sim".into());
+            return Err("Hardware GPU required for --hybrid-vbd".into());
         }
         eprintln!("Compute adapter: {} ({:?})", info.name, info.backend);
         let (device, queue) =
@@ -151,6 +151,13 @@ fn run_ogc(
         64 * 1024,
         fs::File::create(args.output.join("metrics.jsonl"))?,
     );
+    let backend = if args.hybrid_vbd {
+        "hybrid-cpu-ogc-gpu-vbd"
+    } else if cfg!(feature = "desktop") && !args.cpu {
+        "wgsl-finite-avbd-ipc"
+    } else {
+        "cpu-f64-vbd-ogc"
+    };
     let start = Instant::now();
     let mut rows = Vec::new();
     for i in 0..args.steps {
@@ -168,7 +175,7 @@ fn run_ogc(
         writeln!(log)?;
         if i % 30 == 0 || i + 1 == args.steps {
             eprintln!(
-                "OGC {}/{} time={:.3}s gap={:.2}mm wall={:.2}ms contacts={}",
+                "{backend} {}/{} time={:.3}s gap={:.2}mm wall={:.2}ms contacts={}",
                 i + 1,
                 args.steps,
                 m.time_s,
@@ -189,13 +196,6 @@ fn run_ogc(
     )?;
     project.state = Some(scene.state.clone());
     project.save(&args.output.join("fitting-project.json"))?;
-    let backend = if args.hybrid_vbd {
-        "hybrid-cpu-ogc-gpu-vbd"
-    } else if cfg!(feature = "desktop") && !args.cpu {
-        "wgsl-finite-avbd-ipc"
-    } else {
-        "cpu-f64-vbd-ogc"
-    };
     let report = serde_json::json!({"backend":backend,"steps":args.steps,"settings":settings,"cpu_contact_filter":args.cpu_contact_filter,"check_gpu_contacts":args.check_gpu_contacts,"check_gpu_gradients":args.check_gpu_gradients,
         "vertices":scene.state.x.len(),"triangles":scene.garment.mesh.triangles.len(),"wall_ms":wall_ms,
         "mean_step_ms":if rows.is_empty(){0.}else{wall_ms/rows.len() as f64},"last":rows.last(),
@@ -227,11 +227,13 @@ fn run_ogc(
                 source: args.project.clone(),
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
-            args.ui_smoke,
-            args.ui_interaction_smoke,
-            args.ui_perf_smoke,
-            args.ui_authoring_smoke,
-            !args.cpu,
+            fitting_editor::RunOptions {
+                smoke: args.ui_smoke,
+                drag_test: args.ui_interaction_smoke,
+                perf_test: args.ui_perf_smoke,
+                authoring_test: args.ui_authoring_smoke,
+                gpu_sim: !args.cpu && !args.reference,
+            },
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]
@@ -383,11 +385,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 source: args.project,
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
-            args.ui_smoke,
-            args.ui_interaction_smoke,
-            args.ui_perf_smoke,
-            args.ui_authoring_smoke,
-            !args.cpu,
+            fitting_editor::RunOptions {
+                smoke: args.ui_smoke,
+                drag_test: args.ui_interaction_smoke,
+                perf_test: args.ui_perf_smoke,
+                authoring_test: args.ui_authoring_smoke,
+                gpu_sim: !args.cpu && !args.reference,
+            },
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]

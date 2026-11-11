@@ -2012,12 +2012,15 @@ pub fn run(
     project: FittingProject,
     scene: FittingScene,
     files: DocumentFiles,
-    smoke: bool,
-    drag_test: bool,
-    perf_test: bool,
-    authoring_test: bool,
-    gpu_sim: bool,
+    options: super::RunOptions,
 ) -> Result<(), String> {
+    let super::RunOptions {
+        smoke,
+        drag_test,
+        perf_test,
+        authoring_test,
+        gpu_sim,
+    } = options;
     let stylesheet =
         Box::leak(Box::new(load_studio_stylesheet().map_err(|e| {
             format!("Failed to load Studio V2 stylesheet: {e}")

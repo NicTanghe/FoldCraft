@@ -1,5 +1,7 @@
 # Repository handoff
 
+**11 November — FC-0035, issue 242 branch implementation.** `gpu_type_1` now defaults desktop-enabled fitting, template simulation and Project v1 modes to the independent resident WGSL finite AVBD / IPC-style pipeline. Read [the method, limits and reproduction](wgsl-avbd-ipc.md). CPU-only builds and explicit CPU/Newton controls remain available; `--hybrid-vbd` retains the old headless hybrid control. `--gpu-sim` selects the new default. This is a finite-material Jacobi variant, not the full published AVBD/IPC implementations, and there is no dense-scene speed claim. The owner requested this branch default and authorized small GPU checks. Main was merged at `2d33e6f`, retaining its Studio UI, independent workers, control signalling and idle invalidation; the solver's queue ID moved from the colliding FC-0033 to FC-0035. CPU suite 629 passed; desktop/native checks and five opt-in GPU checks passed, including f64 force agreement and worker advancement without rendering. Short startup CLI runs pass in all three frontends. Dense folds, sustained pull/release and performance qualification remain open.
+
 ## Software factory — 8 November 2026
 
 The [factory workflow](software-factory.md) supersedes the direct-feature-merge policy below. Local agent messages live in gitignored `comms/`; `implementation/queue.json` and `scripts/factory.py` provide weighted point scheduling. Features use PRs merged through `gh`, with standing authorization for Codex reviews and sensible fixes. This does not restore the upstream coordinator.

@@ -12,8 +12,10 @@ use std::sync::Arc;
 fn resident_free_fall_pins_sphere_and_transactional_failure() {
     let (device, queue) = request_device().expect("hardware compute adapter");
     let mut solver = ProjectAvbd::new(device, queue);
-    let mut p = Project::default();
-    p.sphere = None;
+    let mut p = Project {
+        sphere: None,
+        ..Default::default()
+    };
     p.pattern.nx = 2;
     p.pattern.ny = 2;
     let (mesh, mut state) = p.build().unwrap();
@@ -42,6 +44,15 @@ fn resident_free_fall_pins_sphere_and_transactional_failure() {
     assert_eq!(state.x, accepted.x);
     assert_eq!(state.v, accepted.v);
     assert_eq!(state.time, accepted.time);
+    solver.step(&p, &mesh, &mut state).unwrap();
+    let accepted = state.clone();
+    state.x[1] = state.x[0];
+    let corrupt = state.clone();
+    assert!(solver.step(&p, &mesh, &mut state).is_err());
+    assert_eq!(state.x, corrupt.x);
+    assert_eq!(state.v, corrupt.v);
+    assert_eq!(state.time, corrupt.time);
+    state = accepted;
     solver.step(&p, &mesh, &mut state).unwrap();
     // Replacing the rest mesh must rebuild every dependent resource.
     p.scene = Scene::Hanging;
@@ -72,6 +83,14 @@ fn resident_free_fall_pins_sphere_and_transactional_failure() {
             assert!(x.length() > 0.3505);
         }
     }
+    let accepted = impact.clone();
+    p.sphere.as_mut().unwrap().radius = 2.;
+    assert!(solver.step(&p, &mesh, &mut impact).is_err());
+    assert_eq!(impact.x, accepted.x);
+    assert_eq!(impact.v, accepted.v);
+    assert_eq!(impact.time, accepted.time);
+    p.sphere.as_mut().unwrap().radius = 0.35;
+    solver.step(&p, &mesh, &mut impact).unwrap();
 }
 
 mod common;

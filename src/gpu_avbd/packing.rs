@@ -32,6 +32,7 @@ pub(super) struct Packed {
     pub roots: [u32; 4],
     pub offsets: [u32; 4],
     pub face_rows: u32,
+    pub face_areas: u32,
     pub material_terms: usize,
 }
 impl Packed {
@@ -206,6 +207,8 @@ impl Packed {
         }
         geometry.push(offset as u32);
         geometry.extend(rows.into_iter().flatten());
+        let face_areas = geometry.len() as u32;
+        geometry.extend(g.mesh.triangles.iter().map(|t| (t.area as f32).to_bits()));
         Ok(Self {
             terms,
             geometry,
@@ -213,6 +216,7 @@ impl Packed {
             roots,
             offsets: [0, order_offset, exclusion_offset, row_offset],
             face_rows,
+            face_areas,
             material_terms,
         })
     }

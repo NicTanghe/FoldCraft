@@ -31,29 +31,25 @@ pub fn current_worker_result(done: Option<worker::Done>, generation: u64) -> Opt
     done.filter(|d| d.generation == generation)
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct RunOptions {
+    pub smoke: bool,
+    pub drag_test: bool,
+    pub perf_test: bool,
+    pub authoring_test: bool,
+    pub gpu_sim: bool,
+}
+
 #[allow(dead_code)]
 pub fn run(
     project: FittingProject,
     scene: FittingScene,
     files: DocumentFiles,
-    smoke: bool,
-    drag_test: bool,
-    perf_test: bool,
-    authoring_test: bool,
-    gpu_sim: bool,
+    options: RunOptions,
 ) -> Result<(), String> {
     let output = files.output.clone();
-    css_runner::run(
-        project,
-        scene,
-        files,
-        smoke,
-        drag_test,
-        perf_test,
-        authoring_test,
-        gpu_sim,
-    )?;
-    if perf_test {
+    css_runner::run(project, scene, files, options)?;
+    if options.perf_test {
         let perf_report = output.join("ui-perf.json");
         let report: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(&perf_report)

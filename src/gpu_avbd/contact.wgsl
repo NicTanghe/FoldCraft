@@ -46,14 +46,15 @@ fn closest(pair:Pair,alpha:f32)->Closest {
     if pair.kind==0u {return triangle_closest(at(x.x,alpha),at(x.y,alpha),at(x.z,alpha),at(x.w,alpha));}
     return edge_closest(at(x.x,alpha),at(x.y,alpha),at(x.z,alpha),at(x.w,alpha));
 }
-fn barrier(d:f32)->vec3f {
-    let r=config.physical.z;let k=config.physical.w;
+fn scalar_barrier(d:f32,k:f32)->vec3f {
+    let r=config.physical.z;
     if d>=r {return vec3f(0);}
     if !(d>config.gravity.w) {atomicOr(&control.error,4u);return vec3f(1e30,0,0);}
     let s=d*d/(r*r);let u=s-1;let l=log(s);let a=k*r*r/8;
     let first=-(2*u*l+u*u/s);let second=-(2*l+4*u/s-u*u/(s*s));
     return vec3f(-a*u*u*l,a*first*2*d/(r*r),a*(second*4*d*d/(r*r*r*r)+first*2/(r*r)));
 }
+fn barrier(d:f32)->vec3f {return scalar_barrier(d,config.physical.w);}
 fn pair_motion(pair:Pair)->f32 {
     var a=0.0;var b=0.0;
     for(var j=0u;j<4u;j++) {

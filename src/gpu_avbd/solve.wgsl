@@ -31,7 +31,9 @@ fn assemble_vertex(v:u32,alpha:f32)->System {
         for(var i=start;i<end;i++) {
             let face=primitive(config.counts.y+geometry[i]);
             let closest=triangle_closest(config.sphere.xyz,at(face.x,alpha),at(face.y,alpha),at(face.z,alpha));
-            let distance=length(closest.q);let b=barrier(distance-config.sphere.w);
+            let distance=length(closest.q);
+            let stiffness=bitcast<f32>(config.extra.z)*bitcast<f32>(geometry[config.extra.w+geometry[i]]);
+            let b=scalar_barrier(distance-config.sphere.w,stiffness);
             var local=0u;for(var j=0u;j<3u;j++){if face[j]==v {local=j;}}
             let gradient=closest.w[local+1u]*closest.q/max(distance,1e-30);
             system.e+=b.x/3;system.g+=b.y*gradient;system.h+=max(b.z,0)*outer(gradient,gradient);

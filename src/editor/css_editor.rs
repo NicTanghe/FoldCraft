@@ -1,7 +1,8 @@
-//! Native CSSimpler Studio V2 window runner for the CPU FEM Reference Editor.
+//! Native CSSimpler Project v1 workshop with an independent physics worker.
 //!
 //! Replaces plain `cargo run` (`editor::run`) with a native `cssimpler::app::App`
-//! Studio V2 window backed by `Project` v1, `ReferenceSolver::step`, and `mesh_preparation`.
+//! Studio V2 window backed by Project v1, WGSL AVBD / IPC (default), the explicit
+//! CPU Newton control, and mesh preparation.
 
 #![allow(dead_code)]
 
@@ -163,8 +164,8 @@ pub struct RefWork {
 }
 
 pub enum EditorMetrics {
-    Reference(Metrics),
-    Avbd(marvelous_cloth::vbd::VbdMetrics),
+    Reference(Box<Metrics>),
+    Avbd(Box<marvelous_cloth::vbd::VbdMetrics>),
 }
 
 pub struct RefDone {
@@ -241,7 +242,7 @@ fn start_editor_worker(
                         ..Default::default()
                     };
                     gpu.step(&project, &work.mesh, &mut work.state)
-                        .map(EditorMetrics::Avbd)
+                        .map(|m| EditorMetrics::Avbd(Box::new(m)))
                 } else {
                     ReferenceSolver::step(
                         &work.mesh,
@@ -250,7 +251,7 @@ fn start_editor_worker(
                         &work.solver,
                         work.sphere.as_ref(),
                     )
-                    .map(EditorMetrics::Reference)
+                    .map(|m| EditorMetrics::Reference(Box::new(m)))
                 }
                 .map(|m| (work.state.clone(), m));
                 if outcome.is_err() {
@@ -417,13 +418,12 @@ impl CssEditorState {
         self.trigger_step();
         let deadline = Instant::now() + std::time::Duration::from_millis(1000);
         while Instant::now() < deadline {
-            if let Some(done) = self.worker_latest.lock().ok().and_then(|mut g| g.take()) {
-                if done.generation == self.generation {
-                    if let Ok((new_state, m)) = done.result {
-                        self.accept_step(new_state, m);
-                        break;
-                    }
-                }
+            if let Some(done) = self.worker_latest.lock().ok().and_then(|mut g| g.take())
+                && done.generation == self.generation
+                && let Ok((new_state, m)) = done.result
+            {
+                self.accept_step(new_state, m);
+                break;
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -442,7 +442,7 @@ impl CssEditorState {
                     m.residual_rms_n,
                     m.step_ms
                 );
-                self.metrics = Some(m);
+                self.metrics = Some(*m);
             }
             EditorMetrics::Avbd(m) => {
                 self.step_ms = m.step_ms;
@@ -1403,6 +1403,44 @@ pub fn run_with_cpu(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    #[ignore = "requires explicit coordination and a hardware GPU"]
+    fn wgsl_project_worker_advances_without_render_frames() {
+        let (device, queue) = marvelous_cloth::gpu_avbd::request_device().unwrap();
+        let mut project = Project {
+            sphere: None,
+            ..Default::default()
+        };
+        project.pattern.nx = 2;
+        project.pattern.ny = 2;
+        let dt = project.solver.dt;
+        let mut state = CssEditorState::new_with_backend(
+            project,
+            PathBuf::from("target/test_gpu_editor"),
+            Some(marvelous_cloth::gpu_avbd::ProjectAvbd::new(device, queue)),
+        );
+        state.send_control_state(true);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let done = loop {
+            if let Some(done) = state.worker_latest.lock().unwrap().take() {
+                break done;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "worker did not produce a step without rendering"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(done.generation, state.generation);
+        let (accepted, metrics) = done.result.unwrap();
+        assert!(matches!(&metrics, EditorMetrics::Avbd(_)));
+        state.accept_step(accepted, metrics);
+        assert_eq!(state.state.time, dt);
+        assert_eq!(state.step_count, 1);
+        assert!(state.metrics.is_none());
+        assert!(state.status_message.contains("WGSL AVBD / IPC"));
+    }
 
     #[test]
     fn test_css_editor_headless_frame_and_rendering() {

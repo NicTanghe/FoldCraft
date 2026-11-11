@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.102777777777778,
+  "clock": 3.625,
   "tickets": [
     {
       "id": "FC-0001",
@@ -461,12 +461,12 @@
       "title": "Issue 242: GPU-resident WGSL finite AVBD and IPC contact pipeline",
       "acceptance": "Resident WGSL prediction, finite-material AVBD, finite VF/EE IPC barrier, conservative continuous step bounds, transactional errors; default in fitting and native modes; CPU-only tests and opt-in GPU checks; document limits",
       "points": 8.0,
-      "spent": 8.0,
+      "spent": 10.0,
       "priority": "urgent",
       "depends_on": [],
       "status": "active",
       "owner": "codex-wgsl-avbd",
-      "vruntime": 4.0,
+      "vruntime": 4.25,
       "pr": null
     }
   ]

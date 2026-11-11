@@ -11,10 +11,7 @@ use std::{
 };
 
 #[derive(Parser)]
-#[command(
-    about = "Validate, compile and assemble garment templates entirely on CPU",
-    version
-)]
+#[command(about = "Validate, compile and simulate garment templates", version)]
 struct Args {
     #[command(subcommand)]
     command: Command,

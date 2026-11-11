@@ -49,6 +49,9 @@ fn adjacent(a:vec4u,b:vec4u)->bool {
 struct Box {lo:vec3f,hi:vec3f}
 fn bounds(i:u32)->Box {
     let p=primitive(i);let a=positions[p.x].xyz;let b=positions[p.y].xyz;let c=positions[p.z].xyz;
+    if p.w==3u {
+        let n=cross(b-a,c-a);if !(dot(n,n)>1e-24) {atomicOr(&control.error,2u);}
+    }
     return Box(min(a,min(b,c)),max(a,max(b,c)));
 }
 fn outside(a:Box,b:Box)->bool {
