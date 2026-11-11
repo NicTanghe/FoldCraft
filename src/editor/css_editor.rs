@@ -764,7 +764,7 @@ fn build_top_bar(state: &CssEditorState) -> Node {
                     <span class="btn-label">"Palette"</span>
                 </button>
                 <button id="theme-toggle" class="btn-secondary" onclick={on_theme_toggle} title="Toggle Dark/Light Theme">
-                    {if state.theme == Theme::Dark { icon_sun() } else { icon_moon() }}
+                    {icon_day_night_switch(state.theme == Theme::Dark)}
                 </button>
             </div>
         </header>
@@ -1191,16 +1191,72 @@ fn build_command_palette_overlay(state: &CssEditorState) -> Node {
                     <button class="palette-close-btn" onclick={on_palette_toggle}>"✕"</button>
                 </div>
                 <div class="palette-items">
-                    <button class="palette-item" onclick={on_play_pause}>"▶ Toggle Simulation (Space)"</button>
-                    <button class="palette-item" onclick={on_step}>"⏭ Step Simulation"</button>
-                    <button class="palette-item" onclick={on_reset}>"↺ Reset Simulation"</button>
-                    <button class="palette-item" onclick={on_save}>"💾 Save Project (Ctrl+S)"</button>
-                    <button class="palette-item" onclick={on_export_obj}>"📦 Export OBJ"</button>
-                    <button class="palette-item" onclick={on_scene_sphere}>"🌐 Scene: Sphere Benchmark"</button>
-                    <button class="palette-item" onclick={on_scene_hang}>"📌 Scene: Hanging Pins"</button>
-                    <button class="palette-item" onclick={on_remesh_reset}>"⚡ Remesh and Reset"</button>
-                    <button class="palette-item" onclick={on_uniform_reset}>"▦ Use Uniform Grid and Reset"</button>
-                    <button class="palette-item" onclick={on_theme_toggle}>"🎨 Toggle Dark/Light Theme"</button>
+                    <button class="palette-item" onclick={on_play_pause}>
+                        <div class="item-left">
+                            {if state.playing { icon_pause() } else { icon_play() }}
+                            <span>"Toggle Simulation"</span>
+                        </div>
+                        <span class="command-shortcut">"Space"</span>
+                    </button>
+                    <button class="palette-item" onclick={on_step}>
+                        <div class="item-left">
+                            {icon_step()}
+                            <span>"Step Simulation"</span>
+                        </div>
+                        <span class="command-shortcut">"S"</span>
+                    </button>
+                    <button class="palette-item" onclick={on_reset}>
+                        <div class="item-left">
+                            {icon_reset()}
+                            <span>"Reset Simulation"</span>
+                        </div>
+                        <span class="command-shortcut">"R"</span>
+                    </button>
+                    <button class="palette-item" onclick={on_save}>
+                        <div class="item-left">
+                            {icon_save()}
+                            <span>"Save Project"</span>
+                        </div>
+                        <span class="command-shortcut">"Ctrl+S"</span>
+                    </button>
+                    <button class="palette-item" onclick={on_export_obj}>
+                        <div class="item-left">
+                            {icon_export()}
+                            <span>"Export OBJ"</span>
+                        </div>
+                        <span class="command-shortcut">"Ctrl+E"</span>
+                    </button>
+                    <button class="palette-item" onclick={on_scene_sphere}>
+                        <div class="item-left">
+                            {icon_circle_2d()}
+                            <span>"Scene: Sphere Benchmark"</span>
+                        </div>
+                    </button>
+                    <button class="palette-item" onclick={on_scene_hang}>
+                        <div class="item-left">
+                            {icon_pin()}
+                            <span>"Scene: Hanging Pins"</span>
+                        </div>
+                    </button>
+                    <button class="palette-item" onclick={on_remesh_reset}>
+                        <div class="item-left">
+                            {icon_polygon_2d()}
+                            <span>"Remesh and Reset"</span>
+                        </div>
+                    </button>
+                    <button class="palette-item" onclick={on_uniform_reset}>
+                        <div class="item-left">
+                            {icon_view_split()}
+                            <span>"Use Uniform Grid and Reset"</span>
+                        </div>
+                    </button>
+                    <button class="palette-item" onclick={on_theme_toggle}>
+                        <div class="item-left">
+                            {if state.theme == Theme::Dark { icon_sun() } else { icon_moon() }}
+                            <span>"Toggle Dark/Light Theme"</span>
+                        </div>
+                        <span class="command-shortcut">"T"</span>
+                    </button>
                 </div>
             </div>
         </div>

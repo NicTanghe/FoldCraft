@@ -56,4 +56,35 @@ fn studio_v2_css_defines_thin_scrollbars_and_collapsed_accordions() {
     // Must provide container padding for right gutter breathing room
     assert!(css.contains(".accordions-container"), "studio_v2.css must define .accordions-container");
     assert!(css.contains(".drawer-content"), "studio_v2.css must define .drawer-content");
+
+    // Must define day-night pill switch styles
+    assert!(css.contains(".day-night-switch"), "studio_v2.css must define .day-night-switch");
+    assert!(css.contains(".day-night-switch.dark"), "studio_v2.css must define dark switch state");
+    assert!(css.contains(".day-night-switch.light"), "studio_v2.css must define light switch state");
+    assert!(css.contains(".switch-thumb"), "studio_v2.css must define .switch-thumb");
+
+    // Must define command palette item icon styling
+    assert!(css.contains(".palette-item .item-left"), "studio_v2.css must define .palette-item .item-left");
+    assert!(css.contains(".palette-item .icon"), "studio_v2.css must define .palette-item .icon");
+}
+
+#[test]
+fn piece_selection_actions_are_isolated_bits() {
+    use marvelous_cloth::atelier::css_runner::{
+        ACT_RUN_PIECE_0, ACT_RUN_PIECE_1, ACT_RUN_PIECE_2, ACT_RUN_PIECE_3,
+        on_runner_piece_0, on_runner_piece_1, on_runner_piece_2, on_runner_piece_3,
+    };
+
+    assert_ne!(ACT_RUN_PIECE_0, ACT_RUN_PIECE_1);
+    assert_ne!(ACT_RUN_PIECE_1, ACT_RUN_PIECE_2);
+    assert_ne!(ACT_RUN_PIECE_2, ACT_RUN_PIECE_3);
+
+    for act in [ACT_RUN_PIECE_0, ACT_RUN_PIECE_1, ACT_RUN_PIECE_2, ACT_RUN_PIECE_3] {
+        assert_eq!(act.count_ones(), 1, "piece action {act} must be a single bit");
+    }
+
+    on_runner_piece_0();
+    on_runner_piece_1();
+    on_runner_piece_2();
+    on_runner_piece_3();
 }
