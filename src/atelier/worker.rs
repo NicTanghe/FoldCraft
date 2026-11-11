@@ -57,6 +57,9 @@ impl std::fmt::Debug for RepaintSignal {
     }
 }
 
+#[cfg(test)]
+pub static WORKER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 pub struct Work {
     pub generation: u64,
     pub scene: FittingScene,
@@ -410,10 +413,8 @@ fn start_inner(
 #[cfg(test)]
 mod final_diagnostics_transport_tests {
     use super::*;
-    use std::sync::Mutex;
 
     // These tests exercise the one physical worker's global mailbox.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn reset() {
         if let Ok(mut request) = FINAL_DIAGNOSTICS_REQUEST.lock() {
@@ -451,7 +452,9 @@ mod final_diagnostics_transport_tests {
     #[test]
     fn cpu_worker_keeps_generation_state_and_rejects_missing_gpu() {
         use marvelous_cloth::{fitting::FittingProject, garment::presets::GarmentKind};
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
         let dir = tempfile::tempdir().unwrap();
         let avatar = dir.path().join("avatar.obj");
@@ -645,7 +648,9 @@ mod final_diagnostics_transport_tests {
     #[test]
     fn latest_mailbox_replaces_old_generation_after_inflight_step() {
         use marvelous_cloth::{fitting::FittingProject, garment::presets::GarmentKind};
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
         let dir = tempfile::tempdir().unwrap();
         let avatar = dir.path().join("avatar.obj");
@@ -745,7 +750,9 @@ mod final_diagnostics_transport_tests {
     #[test]
     fn real_worker_diagnostics_survive_steps_and_replace_errors() {
         use marvelous_cloth::{fitting::FittingProject, garment::presets::GarmentKind};
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
         let dir = tempfile::tempdir().unwrap();
         let avatar = dir.path().join("avatar.obj");
@@ -825,7 +832,9 @@ mod final_diagnostics_transport_tests {
 
     #[test]
     fn newer_request_has_a_new_identity_and_supersedes_a_queued_request() {
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
 
         let first = request_final_diagnostics(11);

@@ -2293,6 +2293,9 @@ mod tests {
 
     #[test]
     fn test_css_runner_headless_frame_and_rendering() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
         let dir = tempfile::tempdir().expect("tempdir");
         let avatar = dir.path().join("avatar.obj");

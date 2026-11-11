@@ -128,3 +128,10 @@ Desktop all-target Clippy passed with warnings denied; the existing manifest
 warning about optional rfd remains. CPU-only and desktop builds succeeded.
 Local review covered buffer layouts, identity matching, contact coverage,
 transactional retry and stale worker results. No external Codex review was run.
+
+After merging main ebc501d, the native/library tests plus the new CAD rail/board
+integration tests passed: 140 total. The merge fixes keep the sidebar text clear
+of the native viewport at 800×600, share a test-only diagnostic-mailbox lock,
+and fix an upstream test lint. Clippy passed after these code fixes.
+Queue collisions were resolved as FC-0040 (IPC) and FC-0041 (selector/AL), retaining
+upstream tickets and owners.
