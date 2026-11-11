@@ -905,6 +905,8 @@ button {
   min-height: 0;
   position: relative;
   overflow: hidden;
+  align-items: center;
+  justify-content: center;
 }
 
 .viewport {
@@ -918,7 +920,26 @@ button {
 .svg-canvas, .pattern-preview-svg {
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1 / 1;
   display: block;
+}
+
+.cad-vertex {
+  cursor: pointer;
+}
+
+.cad-vertex:hover {
+  fill: #f59e0b;
+}
+
+.bezier-handle {
+  cursor: pointer;
+}
+
+.pattern-piece {
+  cursor: pointer;
 }
 
 /* ============================================================================
