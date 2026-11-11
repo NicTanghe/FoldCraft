@@ -304,113 +304,214 @@ button {
 
 .day-night-switch {
   position: relative;
-  width: 48px;
-  height: 24px;
-  border-radius: 12px;
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  transition: all 0.25s ease;
+  width: 52px;
+  height: 26px;
+  border-radius: 26px;
+  display: block;
+  transition: background-color 250ms ease;
   overflow: hidden;
   box-sizing: border-box;
-}
-
-.day-night-switch.dark {
-  background-color: #1e2433;
-  border: 1px solid #334155;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
 }
 
 .day-night-switch.light {
-  background-color: #e2e8f0;
-  border: 1px solid #cbd5e1;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.45);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
 }
 
+.day-night-switch.dark {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* Handler / Knob (Sun / Moon) */
+.day-night-switch .toggle__handler,
 .day-night-switch .switch-thumb {
-  width: 18px;
-  height: 18px;
+  display: block;
+  position: relative;
+  z-index: 1;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: all 400ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
-.day-night-switch.dark .switch-thumb {
-  background-color: #0f172a;
-  transform: translateX(24px);
-}
-
+/* Light Mode: Warm golden glowing sun */
+.day-night-switch.light .toggle__handler,
 .day-night-switch.light .switch-thumb {
-  background-color: #ffffff;
-  transform: translateX(2px);
+  background-color: #ffcf96;
+  transform: translate3d(0, 0, 0) rotate(-45deg);
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.35);
 }
 
-.day-night-switch .switch-icon {
-  width: 12px;
-  height: 12px;
+/* Dark Mode: Lunar pale moon with craters */
+.day-night-switch.dark .toggle__handler,
+.day-night-switch.dark .switch-thumb {
+  background-color: #ffe5b5;
+  transform: translate3d(26px, 0, 0) rotate(0deg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
-.day-night-switch .switch-stars {
+/* Lunar craters */
+.day-night-switch .crater {
   position: absolute;
-  left: 6px;
-  top: 5px;
-  display: flex;
-  flex-direction: row;
-  gap: 3px;
+  background-color: #e8cda5;
+  opacity: 0;
+  transition: opacity 200ms ease-in-out;
+  border-radius: 100%;
 }
 
-.day-night-switch .star {
-  display: inline-block;
-  background-color: #94a3b8;
-  border-radius: 50%;
+.day-night-switch.dark .crater {
+  opacity: 1;
 }
 
-.day-night-switch .star.s1 {
-  width: 2px;
-  height: 2px;
-  opacity: 0.8;
-}
-
-.day-night-switch .star.s2 {
+.day-night-switch .crater--1 {
+  top: 8px;
+  left: 4px;
   width: 3px;
   height: 3px;
-  opacity: 0.95;
 }
 
-.day-night-switch .star.s3 {
-  width: 2px;
-  height: 2px;
-  opacity: 0.7;
+.day-night-switch .crater--2 {
+  top: 13px;
+  left: 10px;
+  width: 4px;
+  height: 4px;
 }
 
-.day-night-switch .switch-rays {
+.day-night-switch .crater--3 {
+  top: 4px;
+  left: 11px;
+  width: 5px;
+  height: 5px;
+}
+
+/* Stars & Clouds */
+.day-night-switch .star {
   position: absolute;
-  right: 7px;
-  top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  background-color: #ffffff;
+  transition: all 300ms ease;
+  border-radius: 50%;
 }
 
-.day-night-switch .ray {
-  display: inline-block;
-  background-color: #f59e0b;
+/* Day Mode: cloud streaks */
+.day-night-switch.light .star--1 {
+  top: 5px;
+  left: 20px;
+  z-index: 0;
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  opacity: 0.95;
+  transform: translate3d(0, 0, 0);
+}
+
+.day-night-switch.light .star--2 {
+  top: 11px;
+  left: 16px;
+  z-index: 0;
+  width: 20px;
+  height: 2px;
   border-radius: 2px;
   opacity: 0.85;
+  transform: translate3d(0, 0, 0);
 }
 
-.day-night-switch .ray.r1 {
-  width: 8px;
+.day-night-switch.light .star--3 {
+  top: 17px;
+  left: 22px;
+  z-index: 0;
+  width: 14px;
   height: 2px;
+  border-radius: 2px;
+  opacity: 0.9;
+  transform: translate3d(0, 0, 0);
 }
 
-.day-night-switch .ray.r2 {
-  width: 5px;
-  height: 2px;
+.day-night-switch.light .star--4,
+.day-night-switch.light .star--5,
+.day-night-switch.light .star--6 {
+  opacity: 0;
+  transform: translate3d(3px, 0, 0);
+  transition: all 300ms 0s ease;
 }
+
+/* Dark Mode: contracted pinpoint stars and twinkling stars */
+.day-night-switch.dark .star--1 {
+  top: 5px;
+  left: 14px;
+  z-index: 0;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  opacity: 0.9;
+  transform: translate3d(-6px, 0, 0);
+}
+
+.day-night-switch.dark .star--2 {
+  top: 11px;
+  left: 12px;
+  z-index: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  opacity: 1;
+  transform: translate3d(-3px, 0, 0);
+}
+
+.day-night-switch.dark .star--3 {
+  top: 17px;
+  left: 16px;
+  z-index: 0;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  opacity: 0.85;
+  transform: translate3d(-8px, 0, 0);
+}
+
+.day-night-switch.dark .star--4 {
+  top: 7px;
+  left: 5px;
+  z-index: 0;
+  width: 1.5px;
+  height: 1.5px;
+  border-radius: 50%;
+  opacity: 0.85;
+  transform: translate3d(0, 0, 0);
+  transition: all 300ms 150ms ease;
+}
+
+.day-night-switch.dark .star--5 {
+  top: 14px;
+  left: 8px;
+  z-index: 0;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition: all 300ms 250ms ease;
+}
+
+.day-night-switch.dark .star--6 {
+  top: 19px;
+  left: 12px;
+  z-index: 0;
+  width: 1.5px;
+  height: 1.5px;
+  border-radius: 50%;
+  opacity: 0.8;
+  transform: translate3d(0, 0, 0);
+  transition: all 300ms 350ms ease;
+}
+
+
 
 #command-palette-trigger {
   display: flex;

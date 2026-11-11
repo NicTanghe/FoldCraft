@@ -143,35 +143,26 @@ pub fn icon_export() -> Node {
 }
 
 pub fn icon_day_night_switch(is_dark: bool) -> Node {
-    if is_dark {
-        ui! {
-            <div class="day-night-switch dark">
-                <div class="switch-stars">
-                    <span class="star s1"></span>
-                    <span class="star s2"></span>
-                    <span class="star s3"></span>
-                </div>
-                <div class="switch-thumb">
-                    <svg viewBox="0 0 24 24" class="switch-icon moon-icon" fill="#cbd5e1">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                    </svg>
-                </div>
-            </div>
-        }
+    let mode_class = if is_dark {
+        "day-night-switch dark"
     } else {
-        ui! {
-            <div class="day-night-switch light">
-                <div class="switch-rays">
-                    <span class="ray r1"></span>
-                    <span class="ray r2"></span>
-                </div>
-                <div class="switch-thumb">
-                    <svg viewBox="0 0 24 24" class="switch-icon sun-icon" fill="#f59e0b" stroke="#f59e0b" stroke-width="2">
-                        <circle cx="12" cy="12" r="5" />
-                    </svg>
-                </div>
+        "day-night-switch light"
+    };
+
+    ui! {
+        <div class={mode_class}>
+            <div class="toggle__handler switch-thumb">
+                <div class="crater crater--1"></div>
+                <div class="crater crater--2"></div>
+                <div class="crater crater--3"></div>
             </div>
-        }
+            <div class="star star--1"></div>
+            <div class="star star--2"></div>
+            <div class="star star--3"></div>
+            <div class="star star--4"></div>
+            <div class="star star--5"></div>
+            <div class="star star--6"></div>
+        </div>
     }
 }
 
