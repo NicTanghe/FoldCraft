@@ -1,0 +1,2 @@
+# Review the editable Typst source; keep compiled report diffs binary.
+*.pdf binary

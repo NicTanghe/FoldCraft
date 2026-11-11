@@ -1,0 +1,103 @@
+{
+  "backend": "cpu-f64-vbd-ogc",
+  "vertices": 2454,
+  "triangles": 4570,
+  "steps": 200,
+  "wall_ms": 50029.541583,
+  "last": {
+    "broad_phase_rebuilds": 0,
+    "contact_profile": {
+      "aabb_rejections": 1717810,
+      "candidate_blocks": 55362,
+      "candidate_pairs": 1827293,
+      "candidates_ms": 0.0026249999999999997,
+      "canonical_ms": 0.19216599999999998,
+      "filter_decode_ms": 0.0,
+      "filter_dispatch_ms": 0.0,
+      "filter_ms": 4.1e-05,
+      "filter_pairs": 1827293,
+      "filter_prepare_ms": 0.0,
+      "geometry_ms": 4.950792,
+      "gpu_filtered": false,
+      "incidence_ms": 0.048167,
+      "narrow_ms": 5.191167,
+      "refit_ms": 0.109625,
+      "spatial_queries": 0,
+      "spatial_retries": 0
+    },
+    "contact_terms": 7213,
+    "contacts": 262,
+    "detection_ms": 5.314666,
+    "detection_updates": 1,
+    "directional_vertices": 0,
+    "dt_s": 0.016666666666666666,
+    "extension_max_percent": 21.174087966863375,
+    "extension_p95_percent": 4.5448881795135065,
+    "gpu_compute_ms": null,
+    "gpu_profile": null,
+    "gpu_subgroups": false,
+    "iterations": 16,
+    "max_seam_gap_m": 0.002040958721850941,
+    "minimum_distance_m": 0.0029923734040271824,
+    "motion": {
+      "highpass_max_m": 0.00041141709815021655,
+      "highpass_rms_m": 0.00016107795764177152,
+      "hotspots": [
+        {
+          "highpass_rms_m": 0.00016796796495068372,
+          "material_point_m": [
+            0.49220174021205615,
+            0.10765937915247488
+          ],
+          "panel": "front",
+          "reversal_fraction": 0.06219018157355755
+        },
+        {
+          "highpass_rms_m": 0.00016196810772945642,
+          "material_point_m": [
+            0.5215202079849997,
+            0.4799718794078418
+          ],
+          "panel": "back",
+          "reversal_fraction": 0.04635931535917772
+        },
+        {
+          "highpass_rms_m": 0.00015887888446123547,
+          "material_point_m": [
+            0.5067975777951913,
+            0.48142824691303265
+          ],
+          "panel": "back",
+          "reversal_fraction": 0.041288450302502805
+        },
+        {
+          "highpass_rms_m": 0.00011356543174146891,
+          "material_point_m": [
+            0.5797234970009261,
+            0.43534703508230854
+          ],
+          "panel": "back",
+          "reversal_fraction": 0.04156704269139763
+        }
+      ],
+      "observed_seconds": 3.3333333333333264,
+      "oscillating_vertices": 4,
+      "speed_rms_m_s": 0.04240806223730282
+    },
+    "precision_ms": 0.0,
+    "precision_vertices": 0,
+    "residual_rms_n": 0.009583953347541332,
+    "seam_blocks": {
+      "accepted": 0,
+      "attempts": 0,
+      "blocks": 0,
+      "bound_limited": 0,
+      "elapsed_ms": 0.0,
+      "objective_decrease_j": 0.0
+    },
+    "solve_ms": 230.5575,
+    "step_ms": 235.872166,
+    "time_s": 3.3333333333333264,
+    "truncated_vertices": 18
+  }
+}

@@ -1,5 +1,5 @@
 //! Opt-in CPU research solvers. Never selected by the editor. See docs/solver-lab.md.
-mod constraints;
+use crate::energy_factors as constraints;
 pub mod contact_newton;
 pub mod contact_qp;
 pub mod contact_residual;
@@ -7,7 +7,7 @@ pub mod coupled_patch;
 pub mod deforming_contact;
 pub mod dense_contact;
 pub mod discrete_contact;
-mod dual;
+pub(crate) mod dual;
 mod primal;
 use crate::{
     avatar::SurfaceMesh,

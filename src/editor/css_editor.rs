@@ -1,7 +1,8 @@
-//! Native CSSimpler Studio V2 window runner for the CPU FEM Reference Editor.
+//! Native CSSimpler Project v1 workshop with an independent physics worker.
 //!
 //! Replaces plain `cargo run` (`editor::run`) with a native `cssimpler::app::App`
-//! Studio V2 window backed by `Project` v1, `ReferenceSolver::step`, and `mesh_preparation`.
+//! Studio V2 window backed by Project v1, WGSL AVBD / IPC (default), the explicit
+//! CPU Newton control, and mesh preparation.
 
 #![allow(dead_code)]
 
@@ -18,6 +19,7 @@ use cssimpler::style::Stylesheet;
 use cssimpler::ui;
 
 use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, icons::*, load_studio_stylesheet};
+use marvelous_cloth::gpu_avbd::ContactMethod;
 use marvelous_cloth::mesh_resolution::preparation::PhysicsSizing;
 use marvelous_cloth::model::{Mesh, Scene, State};
 use marvelous_cloth::project::{self, Project};
@@ -52,6 +54,24 @@ pub const ACT_PALETTE_TOGGLE: u64 = 1 << 20;
 pub const ACT_DRAWER_TOGGLE: u64 = 1 << 21;
 pub const ACT_CAM_RESET: u64 = 1 << 22;
 pub const ACT_EDGE_SELECT_NEXT: u64 = 1 << 23;
+
+pub const ACT_SOLVER_MENU: u64 = 1 << 24;
+pub const ACT_SOLVER_GPU: u64 = 1 << 25;
+pub const ACT_SOLVER_CPU: u64 = 1 << 26;
+pub fn on_solver_menu() {
+    dispatch_action(ACT_SOLVER_MENU);
+}
+pub fn on_solver_gpu() {
+    dispatch_action(ACT_SOLVER_GPU);
+}
+pub fn on_solver_cpu() {
+    dispatch_action(ACT_SOLVER_CPU);
+}
+
+pub const ACT_SOLVER_AL: u64 = 1 << 27;
+pub fn on_solver_al() {
+    dispatch_action(ACT_SOLVER_AL);
+}
 
 static PENDING_ACTIONS: AtomicU64 = AtomicU64::new(0);
 
@@ -152,6 +172,8 @@ pub enum EditorTab {
 // ============================================================================
 
 pub struct RefWork {
+    pub gpu: bool,
+    pub contact_method: ContactMethod,
     pub generation: u64,
     pub mesh: Arc<Mesh>,
     pub state: State,
@@ -162,14 +184,25 @@ pub struct RefWork {
     pub once: bool,
 }
 
+pub enum EditorMetrics {
+    Reference(Box<Metrics>),
+    Avbd(Box<marvelous_cloth::vbd::VbdMetrics>),
+}
+
 pub struct RefDone {
     pub generation: u64,
-    pub result: Result<(State, Metrics), String>,
+    pub result: Result<(State, EditorMetrics), String>,
 }
 
 pub type RefLatest = Arc<Mutex<Option<RefDone>>>;
 
 pub fn start_reference_worker() -> Result<(mpsc::Sender<RefWork>, RefLatest), std::io::Error> {
+    start_editor_worker(None)
+}
+
+fn start_editor_worker(
+    mut gpu: Option<marvelous_cloth::gpu_avbd::ProjectAvbd>,
+) -> Result<(mpsc::Sender<RefWork>, RefLatest), std::io::Error> {
     let (tx, rx) = mpsc::channel::<RefWork>();
     let latest: RefLatest = Arc::new(Mutex::new(None));
     let output = latest.clone();
@@ -179,6 +212,7 @@ pub fn start_reference_worker() -> Result<(mpsc::Sender<RefWork>, RefLatest), st
         .spawn(move || {
             let mut active: Option<RefWork> = None;
             let mut deadline = Instant::now();
+            let mut generation = None;
             loop {
                 let wait = active.as_ref().and_then(|w| {
                     if w.once {
@@ -190,8 +224,15 @@ pub fn start_reference_worker() -> Result<(mpsc::Sender<RefWork>, RefLatest), st
                     }
                 });
                 let incoming = match wait {
-                    Some(dur) => rx.recv_timeout(dur).ok(),
-                    None => rx.recv().ok(),
+                    Some(dur) => match rx.recv_timeout(dur) {
+                        Ok(work) => Some(work),
+                        Err(mpsc::RecvTimeoutError::Timeout) => None,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    },
+                    None => match rx.recv() {
+                        Ok(work) => Some(work),
+                        Err(_) => break,
+                    },
                 };
                 if let Some(work) = incoming {
                     accept_ref(&mut active, work, &mut deadline);
@@ -208,14 +249,43 @@ pub fn start_reference_worker() -> Result<(mpsc::Sender<RefWork>, RefLatest), st
                 let was_once = work.once;
                 work.once = false;
 
-                let outcome = ReferenceSolver::step(
-                    &work.mesh,
-                    &mut work.state,
-                    &work.material,
-                    &work.solver,
-                    work.sphere.as_ref(),
-                )
+                if generation != Some(work.generation) {
+                    if let Some(gpu) = &mut gpu {
+                        gpu.reset();
+                    }
+                    generation = Some(work.generation);
+                }
+                let outcome = (|| {
+                    if work.gpu && gpu.is_none() {
+                        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+                        gpu = Some(marvelous_cloth::gpu_avbd::ProjectAvbd::new(device, queue));
+                    }
+                    if work.gpu {
+                        let gpu = gpu.as_mut().ok_or("GPU backend unavailable")?;
+                        gpu.set_contact_method(work.contact_method);
+                        let project = Project {
+                            material: work.material.clone(),
+                            solver: work.solver.clone(),
+                            sphere: work.sphere.clone(),
+                            ..Default::default()
+                        };
+                        gpu.step(&project, &work.mesh, &mut work.state)
+                            .map(|m| EditorMetrics::Avbd(Box::new(m)))
+                    } else {
+                        ReferenceSolver::step(
+                            &work.mesh,
+                            &mut work.state,
+                            &work.material,
+                            &work.solver,
+                            work.sphere.as_ref(),
+                        )
+                        .map(|m| EditorMetrics::Reference(Box::new(m)))
+                    }
+                })()
                 .map(|m| (work.state.clone(), m));
+                if outcome.is_err() {
+                    work.playing = false;
+                }
 
                 let generation = work.generation;
                 if let Ok(mut slot) = output.lock() {
@@ -226,7 +296,8 @@ pub fn start_reference_worker() -> Result<(mpsc::Sender<RefWork>, RefLatest), st
                 }
                 if !was_once {
                     let dt = work.solver.dt.max(0.001);
-                    deadline = Instant::now() + std::time::Duration::from_secs_f64(dt);
+                    let dt = std::time::Duration::from_secs_f64(dt);
+                    deadline = (deadline + dt).max(Instant::now() - dt * 4);
                 }
             }
         })?;
@@ -259,6 +330,9 @@ pub struct CssEditorState {
     pub mesh: Arc<Mesh>,
     pub state: State,
     pub metrics: Option<Metrics>,
+    pub gpu_sim: bool,
+    pub contact_method: ContactMethod,
+    pub solver_menu_open: bool,
     pub camera: Camera,
     pub playing: bool,
     pub wire: bool,
@@ -290,6 +364,15 @@ pub struct CssEditorState {
 
 impl CssEditorState {
     pub fn new(project: Project, output_dir: PathBuf) -> Self {
+        Self::new_with_backend(project, output_dir, None)
+    }
+
+    fn new_with_backend(
+        project: Project,
+        output_dir: PathBuf,
+        gpu: Option<marvelous_cloth::gpu_avbd::ProjectAvbd>,
+    ) -> Self {
+        let gpu_sim = gpu.is_some();
         let (mesh, state) = project.build().expect("build initial mesh from project");
         let (warp, weft, ratio, trans) = if let Some(plan) = &project.physics_sizing {
             (
@@ -307,7 +390,7 @@ impl CssEditorState {
             )
         };
 
-        let (worker_tx, worker_latest) = start_reference_worker().expect("start reference worker");
+        let (worker_tx, worker_latest) = start_editor_worker(gpu).expect("start physics worker");
 
         Self {
             usd_scene: None,
@@ -315,6 +398,9 @@ impl CssEditorState {
             mesh: Arc::new(mesh),
             state,
             metrics: None,
+            gpu_sim,
+            contact_method: ContactMethod::Ipc,
+            solver_menu_open: false,
             camera: Camera::default(),
             playing: false,
             wire: true,
@@ -345,6 +431,8 @@ impl CssEditorState {
 
     pub fn send_control_state(&mut self, once: bool) {
         let work = RefWork {
+            gpu: self.gpu_sim,
+            contact_method: self.contact_method,
             generation: self.generation,
             mesh: self.mesh.clone(),
             state: self.state.clone(),
@@ -357,6 +445,25 @@ impl CssEditorState {
         let _ = self.worker_tx.send(work);
     }
 
+    pub fn select_solver(&mut self, gpu: bool) {
+        self.select_solver_method(gpu, ContactMethod::Ipc);
+    }
+    pub fn select_solver_method(&mut self, gpu: bool, method: ContactMethod) {
+        self.solver_menu_open = false;
+        if self.gpu_sim == gpu && self.contact_method == method {
+            return;
+        }
+        self.gpu_sim = gpu;
+        self.contact_method = method;
+        self.generation = self.generation.wrapping_add(1);
+        self.playing = false;
+        self.metrics = None;
+        self.step_ms = 0.0;
+        self.status_message =
+            "Solver changed; paused at displayed state. Press Play or Step.".into();
+        self.send_control_state(false);
+    }
+
     pub fn trigger_step(&mut self) {
         self.send_control_state(true);
     }
@@ -365,27 +472,49 @@ impl CssEditorState {
         self.trigger_step();
         let deadline = Instant::now() + std::time::Duration::from_millis(1000);
         while Instant::now() < deadline {
-            if let Some(done) = self.worker_latest.lock().ok().and_then(|mut g| g.take()) {
-                if done.generation == self.generation {
-                    if let Ok((new_state, m)) = done.result {
-                        self.state = new_state;
-                        self.step_count += 1;
-                        self.step_ms = m.step_ms;
-                        self.status_message = format!(
-                            "Step {}: max pen {:.3} mm, residual {:.1e}, {:.1} ms",
-                            self.step_count,
-                            m.max_vertex_penetration_m * 1000.0,
-                            m.residual_rms_n,
-                            m.step_ms
-                        );
-                        self.metrics = Some(m);
-                        self.sync_usd_points();
-                        break;
-                    }
-                }
+            if let Some(done) = self.worker_latest.lock().ok().and_then(|mut g| g.take())
+                && done.generation == self.generation
+                && let Ok((new_state, m)) = done.result
+            {
+                self.accept_step(new_state, m);
+                break;
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+    }
+
+    fn accept_step(&mut self, new_state: State, metrics: EditorMetrics) {
+        self.state = new_state;
+        self.step_count += 1;
+        match metrics {
+            EditorMetrics::Reference(m) => {
+                self.step_ms = m.step_ms;
+                self.status_message = format!(
+                    "Step {}: max pen {:.3} mm, residual {:.1e}, {:.1} ms",
+                    self.step_count,
+                    m.max_vertex_penetration_m * 1000.,
+                    m.residual_rms_n,
+                    m.step_ms
+                );
+                self.metrics = Some(*m);
+            }
+            EditorMetrics::Avbd(m) => {
+                self.step_ms = m.step_ms;
+                self.metrics = None;
+                self.status_message = if let Some(al) = &m.barrier_al {
+                    format!(
+                        "Barrier AL step {}: {:.1} ms; gap residual {:.2e} m, force max {:.2e} N; fixed budget",
+                        self.step_count, m.step_ms, al.primal_m, al.original_force_max_n
+                    )
+                } else {
+                    format!(
+                        "WGSL AVBD / IPC step {}: {:.1} ms; fixed budget, residual unavailable",
+                        self.step_count, m.step_ms
+                    )
+                };
+            }
+        }
+        self.sync_usd_points();
     }
 
     pub fn sync_usd_points(&mut self) {
@@ -505,18 +634,7 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
         match done.result {
             Ok((new_state, m)) => {
                 had_result = true;
-                state.state = new_state;
-                state.step_count += 1;
-                state.step_ms = m.step_ms;
-                state.status_message = format!(
-                    "Step {}: max pen {:.3} mm, residual {:.1e}, {:.1} ms",
-                    state.step_count,
-                    m.max_vertex_penetration_m * 1000.0,
-                    m.residual_rms_n,
-                    m.step_ms
-                );
-                state.metrics = Some(m);
-                state.sync_usd_points();
+                state.accept_step(new_state, m);
             }
             Err(e) => {
                 state.playing = false;
@@ -528,6 +646,18 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
 
     let actions = PENDING_ACTIONS.swap(0, Ordering::Relaxed);
 
+    if actions & ACT_SOLVER_MENU != 0 {
+        state.solver_menu_open = !state.solver_menu_open;
+    }
+    if actions & ACT_SOLVER_GPU != 0 {
+        state.select_solver(true);
+    }
+    if actions & ACT_SOLVER_AL != 0 {
+        state.select_solver_method(true, ContactMethod::BarrierAl);
+    }
+    if actions & ACT_SOLVER_CPU != 0 {
+        state.select_solver(false);
+    }
     if actions & ACT_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
         state.send_control_state(false);
@@ -640,9 +770,10 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
                 }
                 if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
                     && name == "Escape"
-                    && state.command_palette_open
+                    && (state.command_palette_open || state.solver_menu_open)
                 {
                     state.command_palette_open = false;
+                    state.solver_menu_open = false;
                     return true;
                 }
             }
@@ -740,9 +871,18 @@ fn build_top_bar(state: &CssEditorState) -> Node {
                     {icon_reset()}
                     <span class="btn-label">"Reset"</span>
                 </button>
-                <span id="sim-backend-indicator" class="cpu">
-                    "CPU Reference"
-                </span>
+                <div class="solver-picker">
+                    <button id="sim-backend-indicator" class="backend-badge" onclick={on_solver_menu}>
+                        {if state.gpu_sim {format!("{} ▾", state.contact_method.label())} else {"CPU Reference ▾".into()}}
+                    </button>
+                    {if state.solver_menu_open { ui! {
+                        <div id="solver-dropdown" class="solver-dropdown">
+                            <button id="solver-wgsl-ipc" class="menu-item" onclick={on_solver_gpu}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-barrier-al" class="menu-item" onclick={on_solver_al}>"WGSL AVBD / barrier AL (experimental)"</button>
+                            <button id="solver-cpu" class="menu-item" onclick={on_solver_cpu}>"CPU Reference Newton"</button>
+                        </div>
+                    }} else { ui! { <span /> } }}
+                </div>
             </div>
             <div class="top-bar-right">
                 <div class="layout-switcher">
@@ -1154,10 +1294,17 @@ fn build_status_bar(state: &CssEditorState) -> Node {
         .map_or(0.0, |m| m.max_vertex_penetration_m * 1000.0);
     let residual = state.metrics.as_ref().map_or(0.0, |m| m.residual_rms_n);
 
-    let step_info = format!(
-        "Step: {} | dt: {:.1} ms | Residual: {:.1e} | Max Pen: {:.3} mm",
-        state.step_count, state.step_ms, residual, max_pen_mm
-    );
+    let step_info = if state.gpu_sim {
+        format!(
+            "Step: {} | computation: {:.1} ms | Residual: unavailable | Penetration audit: unavailable",
+            state.step_count, state.step_ms
+        )
+    } else {
+        format!(
+            "Step: {} | dt: {:.1} ms | Residual: {:.1e} | Max Pen: {:.3} mm",
+            state.step_count, state.step_ms, residual, max_pen_mm
+        )
+    };
     let mesh_info = format!(
         "Verts: {} | Tris: {}",
         state.mesh.uv.len(),
@@ -1429,8 +1576,22 @@ pub fn create_editor_app<'a>(
 }
 
 pub fn run(project: Project, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_cpu(project, output, false)
+}
+
+pub fn run_with_cpu(
+    project: Project,
+    output: PathBuf,
+    cpu: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let stylesheet = Box::leak(Box::new(load_studio_stylesheet()?));
-    let state = CssEditorState::new(project, output);
+    let gpu = if cpu {
+        None
+    } else {
+        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+        Some(marvelous_cloth::gpu_avbd::ProjectAvbd::new(device, queue))
+    };
+    let state = CssEditorState::new_with_backend(project, output, gpu);
     let app = create_editor_app(state, stylesheet);
     let config = WindowConfig::new("MARVELOUS CLOTH | FEM Workshop", 1600, 980);
     app.run(config)?;
@@ -1445,6 +1606,59 @@ pub fn run(project: Project, output: PathBuf) -> Result<(), Box<dyn std::error::
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    #[ignore = "requires explicit coordination and a hardware GPU"]
+    fn wgsl_project_worker_switches_backends_without_render_frames() {
+        let mut project = Project {
+            sphere: None,
+            ..Default::default()
+        };
+        project.pattern.nx = 2;
+        project.pattern.ny = 2;
+        let dt = project.solver.dt;
+        let mut state = CssEditorState::new(project, PathBuf::from("target/test_gpu_editor"));
+        // Start CPU-only, initialize the adapter only on explicit GPU selection,
+        // then exercise both directions and reuse the GPU after CPU advancement.
+        for (index, (gpu, method)) in [
+            (false, ContactMethod::Ipc),
+            (true, ContactMethod::Ipc),
+            (true, ContactMethod::BarrierAl),
+            (false, ContactMethod::Ipc),
+            (true, ContactMethod::BarrierAl),
+            (true, ContactMethod::Ipc),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let checkpoint = state.state.clone();
+            state.select_solver_method(gpu, method);
+            assert_eq!(state.state.x, checkpoint.x);
+            assert_eq!(state.state.v, checkpoint.v);
+            assert_eq!(state.state.time, checkpoint.time);
+            state.send_control_state(true);
+            let deadline = Instant::now() + Duration::from_secs(20);
+            let done = loop {
+                if let Some(done) = state.worker_latest.lock().unwrap().take() {
+                    break done;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "worker did not step without rendering"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            };
+            assert_eq!(done.generation, state.generation);
+            let (accepted, metrics) = done.result.unwrap();
+            assert_eq!(matches!(&metrics, EditorMetrics::Avbd(_)), gpu);
+            if let EditorMetrics::Avbd(m) = &metrics {
+                assert_eq!(m.barrier_al.is_some(), method == ContactMethod::BarrierAl);
+            }
+            state.accept_step(accepted, metrics);
+            assert!((state.state.time - (index + 1) as f64 * dt).abs() < 1e-12);
+            assert_eq!(state.metrics.is_none(), gpu);
+        }
+    }
 
     #[test]
     fn test_css_editor_headless_frame_and_rendering() {
@@ -1487,6 +1701,97 @@ mod tests {
         );
         assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
         assert!(app.find_element_bounds_by_id("#right-dock").is_some());
+
+        // The menu is rendered in the live app; changing backend transfers the
+        // displayed checkpoint without stepping or initializing a GPU.
+        let checkpoint = app.state().state.clone();
+        let generation = app.state().generation;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 10,
+        });
+        assert!(app.state().solver_menu_open);
+        let menu = app
+            .find_element_bounds_by_id("#solver-dropdown")
+            .expect("open solver menu");
+        assert!(menu.width > 100.0 && menu.height > 20.0);
+        assert!(app.find_element_bounds_by_id("#solver-wgsl-ipc").is_some());
+        let button = app
+            .find_element_bounds_by_id("#solver-wgsl-ipc")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 11,
+        });
+        assert!(app.state().gpu_sim);
+        assert!(!app.state().playing && !app.state().solver_menu_open);
+        assert_eq!(app.state().generation, generation + 1);
+        assert_eq!(app.state().state.x, checkpoint.x);
+        assert_eq!(app.state().state.v, checkpoint.v);
+        assert_eq!(app.state().state.time, checkpoint.time);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        let button = app.find_element_bounds_by_id("#solver-barrier-al").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 13,
+        });
+        assert_eq!(app.state().contact_method, ContactMethod::BarrierAl);
+        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().state.x, checkpoint.x);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        let button = app.find_element_bounds_by_id("#solver-cpu").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        assert!(!app.state().gpu_sim);
+        assert_eq!(app.state().generation, generation + 3);
+        assert_eq!(app.state().state.x, checkpoint.x);
 
         // Test RGBA8 rendering headlessly
         let width = 640;

@@ -31,6 +31,7 @@ use marvelous_cloth::css_ui::icons::*;
 use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, load_studio_stylesheet};
 use marvelous_cloth::fitting::{FittingProject, FittingScene};
 use marvelous_cloth::garment::export;
+use marvelous_cloth::gpu_avbd::ContactMethod;
 use marvelous_cloth::render::Camera;
 use marvelous_cloth::vbd::{VbdMetrics, VbdSettings};
 
@@ -93,6 +94,24 @@ pub const ACT_RUN_PIECE_0: u64 = 1 << 48;
 pub const ACT_RUN_PIECE_1: u64 = 1 << 49;
 pub const ACT_RUN_PIECE_2: u64 = 1 << 50;
 pub const ACT_RUN_PIECE_3: u64 = 1 << 51;
+
+pub const ACT_RUN_SOLVER_MENU: u64 = 1 << 52;
+pub const ACT_RUN_SOLVER_GPU: u64 = 1 << 53;
+pub const ACT_RUN_SOLVER_CPU: u64 = 1 << 54;
+pub fn on_runner_solver_menu() {
+    dispatch_runner_action(ACT_RUN_SOLVER_MENU);
+}
+pub fn on_runner_solver_gpu() {
+    dispatch_runner_action(ACT_RUN_SOLVER_GPU);
+}
+pub fn on_runner_solver_cpu() {
+    dispatch_runner_action(ACT_RUN_SOLVER_CPU);
+}
+
+pub const ACT_RUN_SOLVER_AL: u64 = 1 << 55;
+pub fn on_runner_solver_al() {
+    dispatch_runner_action(ACT_RUN_SOLVER_AL);
+}
 
 static RUNNER_ACTIONS: AtomicU64 = AtomicU64::new(0);
 
@@ -307,6 +326,8 @@ pub struct CssRunnerState {
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
     pub gpu_sim: bool,
+    pub contact_method: ContactMethod,
+    pub solver_menu_open: bool,
     pub drag_test: bool,
     pub perf_test: bool,
     pub authoring_test: bool,
@@ -361,6 +382,8 @@ impl CssRunnerState {
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
             gpu_sim: false,
+            contact_method: ContactMethod::Ipc,
+            solver_menu_open: false,
             drag_test: false,
             perf_test: false,
             authoring_test: false,
@@ -381,6 +404,7 @@ impl CssRunnerState {
             settings: self.settings.clone(),
             grab: None,
             gpu: self.gpu_sim,
+            contact_method: self.contact_method,
             signal: worker::RepaintSignal::noop(),
             playing: self.playing,
             once,
@@ -408,6 +432,28 @@ impl CssRunnerState {
         }
     }
 
+    /// Transfer the last displayed accepted x/v/time; discard in-flight results
+    /// by generation. Playback pauses; rest geometry and document history stay intact.
+    pub fn select_solver(&mut self, gpu: bool) {
+        self.select_solver_method(gpu, ContactMethod::Ipc);
+    }
+    pub fn select_solver_method(&mut self, gpu: bool, method: ContactMethod) {
+        self.solver_menu_open = false;
+        if self.gpu_sim == gpu && self.contact_method == method {
+            return;
+        }
+        self.gpu_sim = gpu;
+        self.contact_method = method;
+        self.generation = self.generation.wrapping_add(1);
+        self.playing = false;
+        self.worker_pending = false;
+        self.last_metrics = None;
+        self.step_ms = 0.0;
+        self.status_message =
+            "Solver changed; paused at displayed state. Press Play or Step.".into();
+        self.send_control_state(false);
+    }
+
     pub fn reset_simulation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.scene = self.initial_scene.clone();
@@ -424,8 +470,14 @@ impl CssRunnerState {
     pub fn save_project(&mut self) {
         let _ = fs::create_dir_all(&self.files.output);
         let path = self.files.output.join("fitting-project.json");
-        match self.project.save(&path) {
-            Ok(_) => self.status_message = format!("Saved {}", path.display()),
+        let mut snapshot = self.project.clone();
+        snapshot.state = Some(self.scene.state.clone());
+        snapshot.simulation = Some(self.settings.clone());
+        match snapshot.save(&path) {
+            Ok(_) => {
+                self.project = snapshot;
+                self.status_message = format!("Saved {}", path.display());
+            }
             Err(e) => self.status_message = format!("Save error: {e}"),
         }
     }
@@ -469,11 +521,24 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
                 state.scene.state = new_state;
                 state.step_count += 1;
                 state.step_ms = metrics.step_ms;
+                let residual = metrics.barrier_al.as_ref().map_or_else(
+                    || {
+                        metrics
+                            .residual_rms_n
+                            .map_or("N/A".into(), |r| format!("{r:.1e} N RMS"))
+                    },
+                    |al| {
+                        format!(
+                            "{:.1e} N max, gap {:.1e} m",
+                            al.original_force_max_n, al.primal_m
+                        )
+                    },
+                );
                 state.status_message = format!(
-                    "Step {}: min dist {:.3} mm, res {:.1e}, {:.1} ms",
+                    "Step {}: min dist {:.3} mm, residual {}, {:.1} ms",
                     state.step_count,
-                    metrics.minimum_distance_m * 1000.0,
-                    metrics.residual_rms_n.unwrap_or(0.0),
+                    metrics.minimum_distance_m * 1000.,
+                    residual,
                     metrics.step_ms
                 );
                 state.last_metrics = Some(metrics);
@@ -512,6 +577,18 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     // 2. Process pending UI actions
     let actions = RUNNER_ACTIONS.swap(0, Ordering::Relaxed);
 
+    if actions & ACT_RUN_SOLVER_MENU != 0 {
+        state.solver_menu_open = !state.solver_menu_open;
+    }
+    if actions & ACT_RUN_SOLVER_GPU != 0 {
+        state.select_solver(true);
+    }
+    if actions & ACT_RUN_SOLVER_AL != 0 {
+        state.select_solver_method(true, ContactMethod::BarrierAl);
+    }
+    if actions & ACT_RUN_SOLVER_CPU != 0 {
+        state.select_solver(false);
+    }
     if actions & ACT_RUN_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
         state.send_control_state(false);
@@ -649,9 +726,19 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
         state.accordion_open[5] = !state.accordion_open[5];
         state.open_accordion_idx = 5;
     }
-    if actions & ACT_RUN_ACCORDION_TOGGLE != 0 && (actions & (ACT_RUN_ACC_0 | ACT_RUN_ACC_1 | ACT_RUN_ACC_2 | ACT_RUN_ACC_3 | ACT_RUN_ACC_4 | ACT_RUN_ACC_5) == 0) {
+    if actions & ACT_RUN_ACCORDION_TOGGLE != 0
+        && (actions
+            & (ACT_RUN_ACC_0
+                | ACT_RUN_ACC_1
+                | ACT_RUN_ACC_2
+                | ACT_RUN_ACC_3
+                | ACT_RUN_ACC_4
+                | ACT_RUN_ACC_5)
+            == 0)
+    {
         state.open_accordion_idx = (state.open_accordion_idx + 1) % 6;
-        state.accordion_open[state.open_accordion_idx] = !state.accordion_open[state.open_accordion_idx];
+        state.accordion_open[state.open_accordion_idx] =
+            !state.accordion_open[state.open_accordion_idx];
     }
     if actions & ACT_RUN_PIECE_0 != 0 && !state.project.template.panels.is_empty() {
         state.selected_piece_index = 0;
@@ -700,9 +787,10 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                 }
                 if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
                     && name == "Escape"
-                    && state.command_palette_open
+                    && (state.command_palette_open || state.solver_menu_open)
                 {
                     state.command_palette_open = false;
+                    state.solver_menu_open = false;
                     return true;
                 }
             }
@@ -784,7 +872,7 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
     };
 
     let (backend_class, backend_label) = if state.gpu_sim {
-        ("backend-badge gpu", "GPU (VBD)")
+        ("backend-badge gpu", state.contact_method.label())
     } else {
         ("backend-badge cpu", "CPU (OGC)")
     };
@@ -816,9 +904,16 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                     {icon_reset()}
                     <span class="btn-label">"Reset"</span>
                 </button>
-                <span id="sim-backend-indicator" class={backend_class}>
-                    {backend_label}
-                </span>
+                <div class="solver-picker">
+                    <button id="sim-backend-indicator" class={backend_class} onclick={on_runner_solver_menu} title="Choose active solver">{format!("{backend_label} ▾")}</button>
+                    {if state.solver_menu_open { ui! {
+                        <div id="solver-dropdown" class="solver-dropdown">
+                            <button id="solver-wgsl-ipc" class="menu-item" onclick={on_runner_solver_gpu}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-barrier-al" class="menu-item" onclick={on_runner_solver_al}>"WGSL AVBD / barrier AL (experimental)"</button>
+                            <button id="solver-cpu" class="menu-item" onclick={on_runner_solver_cpu}>"CPU VBD / OGC"</button>
+                        </div>
+                    }} else { ui! { <span /> } }}
+                </div>
             </div>
             <div class="top-bar-right">
                 <div class="layout-switcher">
@@ -1535,7 +1630,13 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
             format!("{:.2} mm", m.minimum_distance_m * 1000.0)
         });
     let last_res = state.last_metrics.as_ref().map_or("N/A".to_string(), |m| {
-        format!("{:.1e}", m.residual_rms_n.unwrap_or(0.0))
+        m.barrier_al.as_ref().map_or_else(
+            || {
+                m.residual_rms_n
+                    .map_or("N/A".into(), |r| format!("{r:.1e}"))
+            },
+            |al| format!("{:.1e} N max", al.original_force_max_n),
+        )
     });
 
     let pins_count = selected_panel.map_or(0, |p| p.pins.len() + p.pin_points.len());
@@ -1735,6 +1836,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                 <span>"6. Simulation Diagnostics"</span>
                 {if open_5 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
+
             {if open_5 {
                 ui! {
                     <div class="accordion-content">
@@ -1743,22 +1845,23 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                             <span class="prop-value">{format!("{:.2} ms", state.step_ms)}</span>
                         </div>
                         <div class="prop-row">
-                            <span class="prop-label">"RMS Residual"</span>
+                            <span class="prop-label">"Force Residual"</span>
                             <span class="prop-value">{last_res}</span>
                         </div>
                         <div class="prop-row">
-                            <span class="prop-label">"Max Penetration"</span>
+                            <span class="prop-label">"Minimum Detected Gap"</span>
                             <span class="prop-value">{last_pen}</span>
                         </div>
                         <div class="prop-row">
                             <span class="prop-label">"Active Backend"</span>
-                            <span class="prop-value">{if state.gpu_sim { "GPU (VBD)" } else { "CPU (OGC)" }}</span>
+                            <span class="prop-value">{if state.gpu_sim { state.contact_method.label() } else { "CPU (OGC)" }}</span>
                         </div>
                     </div>
                 }
             } else {
                 ui! { <span class="hidden" /> }
             }}
+
         </div>
     };
 
@@ -2351,36 +2454,23 @@ pub fn create_runner_app<'a>(
 }
 
 fn init_gpu_device() -> Result<(wgpu::Device, wgpu::Queue), String> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        ..Default::default()
-    }))
-    .map_err(|e| format!("Failed to find hardware GPU adapter for --gpu-sim: {e}"))?;
-    let info = adapter.get_info();
-    if info.device_type == wgpu::DeviceType::Cpu {
-        return Err("Hardware GPU required for --gpu-sim".into());
-    }
-    eprintln!("Compute adapter: {} ({:?})", info.name, info.backend);
-    pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("CSSimpler VBD Worker"),
-        required_features: adapter.features()
-            & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::SUBGROUP),
-        ..Default::default()
-    }))
-    .map_err(|e| format!("Failed to create GPU device: {e}"))
+    marvelous_cloth::gpu_avbd::request_device()
 }
 
 pub fn run(
     project: FittingProject,
     scene: FittingScene,
     files: DocumentFiles,
-    smoke: bool,
-    drag_test: bool,
-    perf_test: bool,
-    authoring_test: bool,
-    gpu_sim: bool,
+    options: super::RunOptions,
 ) -> Result<(), String> {
+    let super::RunOptions {
+        barrier_al,
+        smoke,
+        drag_test,
+        perf_test,
+        authoring_test,
+        gpu_sim,
+    } = options;
     let stylesheet =
         Box::leak(Box::new(load_studio_stylesheet().map_err(|e| {
             format!("Failed to load Studio V2 stylesheet: {e}")
@@ -2390,7 +2480,7 @@ pub fn run(
         let (device, queue) = init_gpu_device()?;
         worker::start(device, queue).map_err(|e| format!("Failed to start GPU worker: {e}"))?
     } else {
-        worker::start_cpu().map_err(|e| format!("Failed to start CPU worker: {e}"))?
+        worker::start_switchable().map_err(|e| format!("Failed to start CPU worker: {e}"))?
     };
 
     let mut state = CssRunnerState::new(project, scene, files, tx, latest);
@@ -2399,6 +2489,11 @@ pub fn run(
     state.perf_test = perf_test;
     state.authoring_test = authoring_test;
     state.gpu_sim = gpu_sim;
+    state.contact_method = if barrier_al {
+        ContactMethod::BarrierAl
+    } else {
+        ContactMethod::Ipc
+    };
     if perf_test {
         state.perf = Some(super::perf::PerfRun::new());
         state.playing = true;
@@ -2427,6 +2522,9 @@ mod tests {
 
     #[test]
     fn test_css_runner_headless_frame_and_rendering() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
         let dir = tempfile::tempdir().expect("tempdir");
         let avatar = dir.path().join("avatar.obj");
@@ -2479,6 +2577,97 @@ mod tests {
         assert!(app.find_element_bounds_by_id("#viewport-2d").is_some());
         assert!(app.find_element_bounds_by_id("#right-dock").is_some());
 
+        // The menu is rendered in the live app; changing backend transfers the
+        // displayed checkpoint without stepping or initializing a GPU.
+        let checkpoint = app.state().scene.state.clone();
+        let generation = app.state().generation;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 10,
+        });
+        assert!(app.state().solver_menu_open);
+        let menu = app
+            .find_element_bounds_by_id("#solver-dropdown")
+            .expect("open solver menu");
+        assert!(menu.width > 100.0 && menu.height > 20.0);
+        assert!(app.find_element_bounds_by_id("#solver-wgsl-ipc").is_some());
+        let button = app
+            .find_element_bounds_by_id("#solver-wgsl-ipc")
+            .expect("solver button");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 11,
+        });
+        assert!(app.state().gpu_sim);
+        assert!(!app.state().playing && !app.state().solver_menu_open);
+        assert_eq!(app.state().generation, generation + 1);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
+        assert_eq!(app.state().scene.state.v, checkpoint.v);
+        assert_eq!(app.state().scene.state.time, checkpoint.time);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        let button = app.find_element_bounds_by_id("#solver-barrier-al").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 13,
+        });
+        assert_eq!(app.state().contact_method, ContactMethod::BarrierAl);
+        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        let button = app.find_element_bounds_by_id("#solver-cpu").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
+        assert!(!app.state().gpu_sim);
+        assert_eq!(app.state().generation, generation + 3);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
+
         // Headless RGBA8 rendering
         let width = 640;
         let height = 480;
@@ -2530,6 +2719,16 @@ mod tests {
             },
         );
         assert_ne!(read_points(app.state()), initial_points);
+        // Save the visible accepted checkpoint, not the launch-time project cache.
+        app.state_mut().save_project();
+        let saved =
+            FittingProject::load(&app.state().files.output.join("fitting-project.json")).unwrap();
+        let checkpoint = saved.state.unwrap();
+        assert_eq!(checkpoint.x, app.state().scene.state.x);
+        assert_eq!(checkpoint.v, app.state().scene.state.v);
+        assert_eq!(checkpoint.time, app.state().scene.state.time);
+        assert_eq!(saved.simulation.unwrap().dt, app.state().settings.dt);
+
         app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
         app.frame(FrameInfo {
             delta: Duration::from_millis(16),

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.102777777777778,
+  "clock": 3.25,
   "tickets": [
     {
       "id": "FC-0001",
@@ -545,6 +545,98 @@
       "owner": null,
       "vruntime": 3.0,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/43"
+    },
+    {
+      "id": "FC-0041",
+      "title": "Selectable native solvers and experimental barrier AL contact",
+      "acceptance": "Top bar switches actual solver with explicit state transfer; experimental last-column hybrid has numerical checks and measured optimization",
+      "points": 8.0,
+      "spent": 9.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 4.125,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0042",
+      "title": "Fix global contact throttling in resident WGSL solvers",
+      "acceptance": "Disconnected freefall unaffected by remote close contact; conservative per-vertex bounds; both backends retain collision safety",
+      "points": 4.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0043",
+      "title": "Resolve default-T-shirt protrusion with coupled WGSL convergence",
+      "acceptance": "Unchanged CPU reference; matched 200-step default garment runs remove raised underarm shape, with seam/extension/displacement gates and independent separation audits; preserve force-law defect as a separate open ticket",
+      "points": 8.0,
+      "spent": 8.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 4.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0044",
+      "title": "Remove spurious tangential forces from the resident primitive contact potential",
+      "acceptance": "Flat frictionless slide is invariant across triangulation; multi-wall and self-contact preserved; consistent energy/gradient, nonnegative potentials and independent separation; GPU implementation only",
+      "points": 8.0,
+      "spent": 0,
+      "priority": "high",
+      "depends_on": [],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": null
+    },
+    {
+      "id": "FC-0045",
+      "title": "Reduce resident coupled WGSL solver cost without weakening garment quality",
+      "acceptance": "Measure complete-step baseline against hybrid VBD on identical input; retain GPU-only optimizations with same coupled operator and conservative contact coverage; pass small operator/contact oracles and default T-shirt quality gate, document timings and limits",
+      "points": 5.0,
+      "spent": 5.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.625,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0046",
+      "title": "Write a cited Typst research report on resident WGSL solver quality and performance",
+      "acceptance": "Editable Typst paper and compiled PDF in docs; verified primary-source citations and pinned internal evidence; accurate mathematical scope, timing/quality tables and limitations; compile and visually inspect all pages without simulation changes",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.375,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0047",
+      "title": "Issue 242: GPU-resident WGSL finite AVBD and IPC contact pipeline",
+      "acceptance": "Resident WGSL prediction, finite-material AVBD, finite VF/EE IPC barrier, conservative continuous step bounds, transactional errors; default in fitting and native modes; CPU-only tests and opt-in GPU checks; document limits",
+      "points": 8.0,
+      "spent": 10.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 4.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37",
+      "notes": "Former branch-local FC-0040 (resident WGSL IPC); renumbered on integration of main e904360, whose canonical FC-0040 is the completed UI feature PR43. Historical source snapshots and reports retain their original ticket references."
     }
   ]
 }

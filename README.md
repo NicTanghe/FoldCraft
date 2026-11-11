@@ -8,6 +8,20 @@ Draw patterns, sew them together, place them around an avatar and simulate the r
 
 ![ClothCraft workspace](docs/screenshots/workspace.png)
 
+In either native window, click the solver badge in the top bar to choose the
+active solver. Switching pauses at the displayed cloth state; press Play or
+Step to continue. Fitting offers WGSL AVBD/IPC and CPU VBD/OGC; the Project demo
+offers WGSL AVBD/IPC and CPU reference Newton. These use different contact laws.
+The dropdown also offers the experimental
+[AVBD + barrier AL backend](docs/barrier-al-implementation.md), implemented after
+saving its design and scalar study. Its fixed budget does not certify convergence.
+
+The two WGSL options now use a [coupled GPU correction](docs/wgsl-coupled-correction.md)
+for the reported default T-shirt protrusion. Matched 200-step runs and an opt-in
+garment quality regression compare against the unchanged CPU solver. Start from
+a fresh garment when checking this update; an already distorted cached state
+can retain its earlier assembly history.
+
 ## Try it
 
 Install Rust stable and run from the repository root:
@@ -18,7 +32,7 @@ cargo run --release --locked -j 2 --bin cloth-fit -- --steps 0 --view
 
 The editor opens a T-shirt and the bundled MakeHuman mannequin. Windows is the main development platform; macOS and Linux need equivalent acceptance testing. The desktop requires a graphics adapter supported by wgpu. CPU command-line tools build without graphics dependencies.
 
-Plain `cargo run --locked -j 2` keeps the cloth-over-sphere reference demo.
+Plain `cargo run --locked -j 2` opens the cloth-over-sphere demo with the same WGSL default; `--cpu` selects historical Newton. Headless execution uses `--headless`, independently of solver selection.
 In that window, open **Properties → REST PATTERN → Physics-inspired mesh
 preparation** (also available in **Simulation**) and
 click **Remesh and reset** before simulating. **Use uniform grid and reset**
@@ -37,7 +51,7 @@ Use **Space** to start or pause, **Grab** to pull the cloth and **Ctrl+S** to sa
 - **Patterns:** rectangles, ellipses, arc sectors, Bézier contours, point editing, holes and internal sewing paths; independent and paired linked mirrors; two-piece booleans.
 - **Sewing:** whole boundaries, partial ranges and ordered multi-edge chains, with direction, explicit easing and editable relationships.
 - **Arrangement:** translation and rotation in 3D; a separate 2D board layout; undo/redo and semantic copy/paste.
-- **Simulation:** CPU and hybrid GPU VBD with OGC contact, mouse grabbing and passive motion diagnostics. The floor is currently a visual reference, not a physical collider.
+- **Simulation:** resident WGSL finite AVBD with IPC-style contact by default on this branch; explicit CPU and hybrid VBD/OGC controls remain available. The floor is currently a visual reference, not a physical collider.
 - **Documents:** Open, Save, Save As, portable avatar assets and local recovery. Keep a saved JSON and its adjacent `.assets` folder together.
 - **Starting assets:** six bundled pattern templates, native template JSON import, and static OBJ/glTF/GLB avatars through File → Import avatar. Avatar replacement preserves authored patterns but resets the drape and undo history; [supported geometry and limits](docs/avatar-import.md).
 - **Avatar inspection:** Properties → Simulation reports the actual collision mesh and can check the current arrangement through the CPU solver's initialization gate. [Coverage and limits](docs/avatar-diagnostics.md): topology warnings are not an intersection or global containment certificate.
@@ -53,13 +67,13 @@ These are implemented foundations, not completed production workflows. See the [
 
 ## Physics: strengths and open problems
 
-The interactive engine uses **Vertex Block Descent (VBD) with Offset Geometric Contact (OGC)**. GPU execution is hybrid: candidate search and local solves run on the GPU, while precise contact geometry and movement bounds remain on the CPU. A double-precision Newton reference is also available.
+The default in desktop-enabled builds is an **independent WGSL finite AVBD / Jacobi pipeline with a squared-distance IPC-style barrier**. Contact search, geometry, forces, path bounds and iteration decisions remain on the GPU; one snapshot returns per step for UI/export. This implements the proposal in issue #242, with explicit [scope, numerical limits and commands](docs/wgsl-avbd-ipc.md). It is not the complete published AVBD or IPC solver, and no dense-garment speedup is claimed. CPU VBD/OGC (`cloth-fit --cpu`), historical hybrid VBD/OGC (`--hybrid-vbd`) and double-precision Newton (`--reference`) remain available.
 
 Contact protections are designed to preserve separation from an initially separated arrangement, within the documented geometric assumptions and local seam exclusions. They do not repair arbitrary initial intersections or guarantee every possible garment. See the [contact contract](docs/ogc.md).
 
 The main open problems are residual motion under tension, convergence, cost at fine mesh resolutions, friction, seam treatment and measured material calibration. Some test scenes run in real time; that does not establish a universal performance guarantee. **Rendering FPS and simulation speed are different:** a smooth viewport can show cloth progressing slower than wall time. Comparisons must report simulated seconds per wall second and full-step timings, alongside collision and deformation checks.
 
-The [headless solver lab](docs/solver-lab.md) contains experimental XPBD/OGC, finite-stiffness AVBD adaptations and a separate native Box3D particle lattice. Their failures are recorded; they are not alternative editor modes. Small contact research kernels are also not garment-ready solvers. No alternative has been selected to replace the current engine.
+The [headless solver lab](docs/solver-lab.md) contains experimental XPBD/OGC, finite-stiffness AVBD adaptations and a separate native Box3D particle lattice. Their failures are recorded; they are not alternative editor modes. Small contact research kernels are also not garment-ready solvers. The GPU default on this branch is separate from those CPU lab adapters.
 
 The long-term goal is interchangeable physics behind a stable document and authoring model. There is no public solver plugin ABI yet. A useful solver contribution must preserve collision coverage and fluid pull/release behavior, not just reduce a jitter number.
 
@@ -121,3 +135,5 @@ Original source and documentation are [MIT-licensed](LICENSE). The bundled MakeH
 Some authoring and camera tools were adapted from FireflyTheReal / julienfoss's fork; the [integration notes](docs/firefly-integration.md) record provenance and fixes.
 
 ClothCraft is independent of CLO, Marvelous Designer and ArtCraft. Public manuals inform workflow research; proprietary code, icons and garment examples are not included. The [manual study](docs/manual-study.md) records the references consulted.
+
+The [resident WGSL performance follow-up](docs/wgsl-performance.md) records GPU-only caching/filtering changes, the unchanged CPU control, passing default-garment quality gates, and 2.1–3.3x complete-step gains. The hybrid control remains faster on the measured M1 Pro.

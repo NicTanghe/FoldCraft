@@ -43,10 +43,11 @@ fn test_2d_viewport_svg_preserves_aspect_ratio_and_renders_bezier_handles() {
         if let Node::Element(elem) = node {
             if elem.tag == "svg" {
                 *found_svg = true;
-                if let Some(par) = elem.attribute("preserveAspectRatio") {
-                    if par.contains("xMidYMid") && par.contains("meet") {
-                        *found_aspect = true;
-                    }
+                if let Some(par) = elem.attribute("preserveAspectRatio")
+                    && par.contains("xMidYMid")
+                    && par.contains("meet")
+                {
+                    *found_aspect = true;
                 }
                 if let Some(vb) = elem.attribute("viewBox") {
                     let parts: Vec<f64> = vb

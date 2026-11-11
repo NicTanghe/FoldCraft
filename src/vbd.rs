@@ -121,6 +121,8 @@ pub enum FinalDiagnosticsBackend {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct VbdMetrics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub barrier_al: Option<crate::barrier_al::Diagnostics>,
     pub seam_blocks: SeamBlockMetrics,
     pub motion: Option<crate::motion::MotionMetrics>,
     pub time_s: f64,

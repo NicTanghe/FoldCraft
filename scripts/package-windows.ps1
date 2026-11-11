@@ -276,6 +276,8 @@ if ($Verify) {
     if ($UiSmoke) {
         # This is an explicit, opt-in native-window check. It is not part of the
         # ordinary CPU test suite and does not certify a particular GPU or driver.
+        # Hosted runners may render through WARP. Select the CPU solver explicitly:
+        # this check exercises window launch/capture, not hardware GPU computation.
         $env:WGPU_BACKEND = 'dx12'
         Push-Location -LiteralPath $verifyRoot
         try {
@@ -284,7 +286,7 @@ if ($Verify) {
             # not evidence of native Save or Export.
             $seedOutput = Join-Path $verifyRoot 'ui-project-seed'
             Invoke-PackagedClothFit -Label 'ui-project-seed' `
-                -EditorArguments @('--steps', '0', '--threads', '2', '--output', $seedOutput)
+                -EditorArguments @('--cpu', '--steps', '0', '--threads', '2', '--output', $seedOutput)
             $seedProject = Join-Path $seedOutput 'fitting-project.json'
             if (-not (Test-Path -LiteralPath $seedProject -PathType Leaf)) {
                 throw "CLI project seed did not write fitting-project.json in $seedOutput"
@@ -292,7 +294,7 @@ if ($Verify) {
 
             $launchOutput = Join-Path $verifyRoot 'ui-smoke'
             Invoke-PackagedClothFit -Label 'ui-smoke' `
-                -EditorArguments @('--steps', '0', '--threads', '2', '--project', $seedProject, '--ui-smoke', '--output', $launchOutput)
+                -EditorArguments @('--cpu', '--steps', '0', '--threads', '2', '--project', $seedProject, '--ui-smoke', '--output', $launchOutput)
             foreach ($required in @('ui.png', 'ui.json', 'fitting-project.json')) {
                 if (-not (Test-Path -LiteralPath (Join-Path $launchOutput $required) -PathType Leaf)) {
                     throw "Editor launch/capture smoke did not produce $required in $launchOutput"

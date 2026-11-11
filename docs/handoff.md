@@ -1,5 +1,14 @@
 # Repository handoff
 
+**11 November — FC-0043 coupled WGSL garment correction.** The reported default T-shirt protrusion is reproduced and corrected in matched reset runs with both WGSL backends. See [method, results and limits](wgsl-coupled-correction.md). The unchanged CPU control has final extension 21.174% / seam gap 2.041 mm; corrected IPC 19.957% / 2.181 mm and AL 21.307% / 2.250 mm. A separate long public-fixture regression passed CPU+IPC+AL 200-step comparisons and separation audits; its AL repeat had 21.839% / 2.335 mm and 9.267 mm CPU RMS difference, within the fixed gate. New GPU-only cached-gradient coupled Gauss-Newton/PCG propagates membrane/sewing updates and preserves rigid translation; only its block preconditioner gets numerical conditioning. CPU solver/model/OGC/energy code unchanged. Old Jacobi remains a headless research flag. Larger motion envelope and marginal vector fusion were rejected as fixes/optimizations. The primitive-sum planar sideways-force defect is still open separately as FC-0044. Start from a fresh garment, not a distorted cached checkpoint.
+
+
+**Integration update:** main ebc501d is merged, preserving its CAD board/icon/rail improvements. Queue collisions were resolved by moving this branch’s solver tickets to FC-0040 and FC-0041; main’s FC-0035–0037 entries are retained.
+
+**11 November — FC-0041 selector and experimental hybrid.** Both native windows have a real solver dropdown with paused checkpoint transfer and generation invalidation. Design saved first in 94e1542, then the independent distance-slack AVBD/barrier AL variant was implemented. Read [implementation and evidence](barrier-al-implementation.md): full-key remapping, retained unresolved pairs, transactional retry and fixed-budget residuals. A one-workgroup Armijo path for <=64 vertices reduced local 16-vertex probe medians by 9.8–11.5% with matching trajectories. No dense-garment/equal-quality inter-solver speed claim. CPU suite 632 passed; native tests 134 passed; ten opt-in GPU checks passed. The two-step 466-vertex CLI smoke has a large 1415.97 N force maximum and does not establish assembly/convergence. IPC remains the launch default. External Codex review was not invoked.
+
+**11 November — FC-0040, issue 242 branch implementation.** `gpu_type_1` now defaults desktop-enabled fitting, template simulation and Project v1 modes to the independent resident WGSL finite AVBD / IPC-style pipeline. Read [the method, limits and reproduction](wgsl-avbd-ipc.md). CPU-only builds and explicit CPU/Newton controls remain available; `--hybrid-vbd` retains the old headless hybrid control. `--gpu-sim` selects the new default. This is a finite-material Jacobi variant, not the full published AVBD/IPC implementations, and there is no dense-scene speed claim. The owner requested this branch default and authorized small GPU checks. Main was merged at `2d33e6f`, retaining its Studio UI, independent workers, control signalling and idle invalidation; the solver's queue ID moved from the colliding FC-0033 to FC-0040. CPU suite 629 passed; desktop/native checks and five opt-in GPU checks passed, including f64 force agreement and worker advancement without rendering. Short startup CLI runs pass in all three frontends. Dense folds, sustained pull/release and performance qualification remain open.
+
 ## Software factory — 8 November 2026
 
 The [factory workflow](software-factory.md) supersedes the direct-feature-merge policy below. Local agent messages live in gitignored `comms/`; `implementation/queue.json` and `scripts/factory.py` provide weighted point scheduling. Features use PRs merged through `gh`, with standing authorization for Codex reviews and sensible fixes. This does not restore the upstream coordinator.
@@ -609,3 +618,17 @@ Read [OGC contracts](ogc.md) before changing the solver. Full historical reports
 ## Publication
 
 Initial publication repository: `git@github.com:erythrofr/ClothCraft.git`, branch `main`. `output/` and `target/` are ignored. The owner selected MIT; see `LICENSE`. No OGC/IPC Toolkit author code was incorporated; sources are cited in `ogc.md`. Spade remains pinned in Cargo; MakeHuman provenance is under `assets/makehuman/`. CPU CI is configured in `.github/workflows/cpu.yml`; inspect its GitHub status rather than assuming success.
+
+The [resident WGSL performance follow-up](wgsl-performance.md) records GPU-only caching/filtering changes, the unchanged CPU control, passing default-garment quality gates, and 2.1–3.3x complete-step gains. The hybrid control remains faster on the measured M1 Pro.
+
+Main e904360 integration preserves the day/night pill, vector palette icons and
+interactive piece selection from PR43. Its new piece-action bits48–51 collided
+with the branch's solver actions; solver actions now use bits52–55 and a combined
+accordion/piece/solver regression covers isolation. Upstream FC-0040 remains the
+completed UI ticket; the resident IPC ticket is now FC-0047. Historical notes and
+pinned reports retain the former branch-local FC-0040 reference. CPU/GPU physics
+and the paper artifacts are unchanged by this integration.
+Post-integration validation passed 140 native/library/shader/UI tests (nine
+hardware cases remained ignored), CPU-only all-target compilation and all-target
+Clippy with Rust warnings denied. The existing optional-rfd manifest warning
+remains. No GPU workload was run for this UI integration.

@@ -1,0 +1,748 @@
+{
+  "cpu-control": {
+    "backend": "cpu-f64-vbd-ogc",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 200,
+    "wall_ms": 50029.541583,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 1717810,
+        "candidate_blocks": 55362,
+        "candidate_pairs": 1827293,
+        "candidates_ms": 0.0026249999999999997,
+        "canonical_ms": 0.19216599999999998,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 4.1e-05,
+        "filter_pairs": 1827293,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 4.950792,
+        "gpu_filtered": false,
+        "incidence_ms": 0.048167,
+        "narrow_ms": 5.191167,
+        "refit_ms": 0.109625,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 7213,
+      "contacts": 262,
+      "detection_ms": 5.314666,
+      "detection_updates": 1,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 21.174087966863375,
+      "extension_p95_percent": 4.5448881795135065,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.002040958721850941,
+      "minimum_distance_m": 0.0029923734040271824,
+      "motion": {
+        "highpass_max_m": 0.00041141709815021655,
+        "highpass_rms_m": 0.00016107795764177152,
+        "hotspots": [
+          {
+            "highpass_rms_m": 0.00016796796495068372,
+            "material_point_m": [
+              0.49220174021205615,
+              0.10765937915247488
+            ],
+            "panel": "front",
+            "reversal_fraction": 0.06219018157355755
+          },
+          {
+            "highpass_rms_m": 0.00016196810772945642,
+            "material_point_m": [
+              0.5215202079849997,
+              0.4799718794078418
+            ],
+            "panel": "back",
+            "reversal_fraction": 0.04635931535917772
+          },
+          {
+            "highpass_rms_m": 0.00015887888446123547,
+            "material_point_m": [
+              0.5067975777951913,
+              0.48142824691303265
+            ],
+            "panel": "back",
+            "reversal_fraction": 0.041288450302502805
+          },
+          {
+            "highpass_rms_m": 0.00011356543174146891,
+            "material_point_m": [
+              0.5797234970009261,
+              0.43534703508230854
+            ],
+            "panel": "back",
+            "reversal_fraction": 0.04156704269139763
+          }
+        ],
+        "observed_seconds": 3.3333333333333264,
+        "oscillating_vertices": 4,
+        "speed_rms_m_s": 0.04240806223730282
+      },
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": 0.009583953347541332,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 230.5575,
+      "step_ms": 235.872166,
+      "time_s": 3.3333333333333264,
+      "truncated_vertices": 18
+    }
+  },
+  "ipc-before": {
+    "backend": "wgsl-finite-avbd-ipc",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 200,
+    "wall_ms": 48423.5795,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 0,
+        "candidate_blocks": 0,
+        "candidate_pairs": 0,
+        "candidates_ms": 0.0,
+        "canonical_ms": 0.0,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 0.0,
+        "filter_pairs": 0,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 0.0,
+        "gpu_filtered": false,
+        "incidence_ms": 0.0,
+        "narrow_ms": 0.0,
+        "refit_ms": 0.0,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 42270,
+      "contacts": 456,
+      "detection_ms": null,
+      "detection_updates": 16,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 37.25798147267368,
+      "extension_p95_percent": 7.750386448858793,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.004147212625253551,
+      "minimum_distance_m": 0.002883089240640402,
+      "motion": null,
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": null,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 296.21625,
+      "step_ms": 296.21625,
+      "time_s": 3.3333333333333264,
+      "truncated_vertices": 0
+    }
+  },
+  "al-before": {
+    "backend": "wgsl-finite-avbd-barrier-al",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 200,
+    "wall_ms": 80963.119292,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "barrier_al": {
+        "armijo_trials": 24,
+        "dual_change_n": 0.4261266589164734,
+        "matched_pairs": 7047,
+        "original_force_max_n": 0.34546059370040894,
+        "primal_m": 5.913898348808289e-07,
+        "slack_stationarity_n": 2.8431415557861328e-05
+      },
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 0,
+        "candidate_blocks": 0,
+        "candidate_pairs": 0,
+        "candidates_ms": 0.0,
+        "canonical_ms": 0.0,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 0.0,
+        "filter_pairs": 0,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 0.0,
+        "gpu_filtered": false,
+        "incidence_ms": 0.0,
+        "narrow_ms": 0.0,
+        "refit_ms": 0.0,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 40903,
+      "contacts": 468,
+      "detection_ms": null,
+      "detection_updates": 16,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 36.746747701475634,
+      "extension_p95_percent": 7.400880615119831,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.004037909080604858,
+      "minimum_distance_m": 0.0028852971736341715,
+      "motion": null,
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": null,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 452.280584,
+      "step_ms": 452.280584,
+      "time_s": 3.3333333333333264,
+      "truncated_vertices": 0
+    }
+  },
+  "cpu-from-ipc": {
+    "backend": "cpu-f64-vbd-ogc",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 30,
+    "wall_ms": 9494.957166,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 3227013,
+        "candidate_blocks": 104844,
+        "candidate_pairs": 3485860,
+        "candidates_ms": 0.010501,
+        "canonical_ms": 0.561542,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 4.2e-05,
+        "filter_pairs": 3485860,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 12.091916,
+        "gpu_filtered": false,
+        "incidence_ms": 0.116625,
+        "narrow_ms": 12.770208,
+        "refit_ms": 0.39308300000000007,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 8845,
+      "contacts": 286,
+      "detection_ms": 13.341667,
+      "detection_updates": 2,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 34.37838477883837,
+      "extension_p95_percent": 9.148888561941604,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.003491125915275996,
+      "minimum_distance_m": 0.002026052339906953,
+      "motion": {
+        "highpass_max_m": 0.0004382614114216843,
+        "highpass_rms_m": 0.0001788056512784791,
+        "hotspots": [],
+        "observed_seconds": 0.49999999999999994,
+        "oscillating_vertices": 0,
+        "speed_rms_m_s": 0.066085070855308
+      },
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": 0.13214917125350156,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 298.558,
+      "step_ms": 311.89966699999997,
+      "time_s": 3.8333333333333246,
+      "truncated_vertices": 130
+    }
+  },
+  "ipc-more-iterations": {
+    "backend": "wgsl-finite-avbd-ipc",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 10,
+    "wall_ms": 39306.4555,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 160
+    },
+    "last": {
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 0,
+        "candidate_blocks": 0,
+        "candidate_pairs": 0,
+        "candidates_ms": 0.0,
+        "canonical_ms": 0.0,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 0.0,
+        "filter_pairs": 0,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 0.0,
+        "gpu_filtered": false,
+        "incidence_ms": 0.0,
+        "narrow_ms": 0.0,
+        "refit_ms": 0.0,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 40020,
+      "contacts": 374,
+      "detection_ms": null,
+      "detection_updates": 160,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 31.21284096130401,
+      "extension_p95_percent": 6.208597750691491,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 160,
+      "max_seam_gap_m": 0.0033188054430281343,
+      "minimum_distance_m": 0.002906725974753499,
+      "motion": null,
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": null,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 4280.890625,
+      "step_ms": 4280.890625,
+      "time_s": 3.4999999999999925,
+      "truncated_vertices": 0
+    }
+  },
+  "ipc-envelope": {
+    "backend": "wgsl-finite-avbd-ipc",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 200,
+    "wall_ms": 101717.055958,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 0,
+        "candidate_blocks": 0,
+        "candidate_pairs": 0,
+        "candidates_ms": 0.0,
+        "canonical_ms": 0.0,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 0.0,
+        "filter_pairs": 0,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 0.0,
+        "gpu_filtered": false,
+        "incidence_ms": 0.0,
+        "narrow_ms": 0.0,
+        "refit_ms": 0.0,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 90956,
+      "contacts": 424,
+      "detection_ms": null,
+      "detection_updates": 16,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 35.44222988570773,
+      "extension_p95_percent": 7.617759697258331,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.003880991107113556,
+      "minimum_distance_m": 0.002876478247344494,
+      "motion": null,
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": null,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 1094.926875,
+      "step_ms": 1094.926875,
+      "time_s": 3.3333333333333264,
+      "truncated_vertices": 0
+    },
+    "cpu_vertex_rms_m": 0.023318867601566023
+  },
+  "ipc-coupled": {
+    "backend": "wgsl-finite-avbd-ipc",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 200,
+    "wall_ms": 102229.80099999999,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 0,
+        "candidate_blocks": 0,
+        "candidate_pairs": 0,
+        "candidates_ms": 0.0,
+        "canonical_ms": 0.0,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 0.0,
+        "filter_pairs": 0,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 0.0,
+        "gpu_filtered": false,
+        "incidence_ms": 0.0,
+        "narrow_ms": 0.0,
+        "refit_ms": 0.0,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 40508,
+      "contacts": 417,
+      "detection_ms": null,
+      "detection_updates": 16,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 20.146200335207865,
+      "extension_p95_percent": 3.760412880084596,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.002184878520187059,
+      "minimum_distance_m": 0.0029261435847729445,
+      "motion": null,
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": null,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 568.061125,
+      "step_ms": 568.061125,
+      "time_s": 3.3333333333333264,
+      "truncated_vertices": 0
+    },
+    "cpu_vertex_rms_m": 0.005736007770947407
+  },
+  "al-coupled-conditioned": {
+    "backend": "wgsl-finite-avbd-barrier-al",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 200,
+    "wall_ms": 97492.802583,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "barrier_al": {
+        "armijo_trials": 21,
+        "dual_change_n": 0.14812685549259186,
+        "matched_pairs": 10007,
+        "original_force_max_n": 0.5579384565353394,
+        "primal_m": 1.1734664440155029e-07,
+        "slack_stationarity_n": 2.682209014892578e-05
+      },
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 0,
+        "candidate_blocks": 0,
+        "candidate_pairs": 0,
+        "candidates_ms": 0.0,
+        "canonical_ms": 0.0,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 0.0,
+        "filter_pairs": 0,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 0.0,
+        "gpu_filtered": false,
+        "incidence_ms": 0.0,
+        "narrow_ms": 0.0,
+        "refit_ms": 0.0,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 40809,
+      "contacts": 677,
+      "detection_ms": null,
+      "detection_updates": 16,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 21.307376106686583,
+      "extension_p95_percent": 4.011674639320106,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.002250461064966827,
+      "minimum_distance_m": 0.002921282546594739,
+      "motion": null,
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": null,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 532.524542,
+      "step_ms": 532.524542,
+      "time_s": 3.3333333333333264,
+      "truncated_vertices": 0
+    },
+    "cpu_vertex_rms_m": 0.004364978373933598
+  },
+  "ipc-coupled-conditioned": {
+    "backend": "wgsl-finite-avbd-ipc",
+    "vertices": 2454,
+    "triangles": 4570,
+    "steps": 200,
+    "wall_ms": 101749.19625,
+    "settings": {
+      "contact": {
+        "radius": 0.003,
+        "refresh_fraction": 0.01,
+        "relaxation": 0.45,
+        "stiffness": 100000.0
+      },
+      "damping": 1.5,
+      "dt": 0.016666666666666666,
+      "gravity": [
+        0.0,
+        -9.81,
+        0.0
+      ],
+      "iterations": 16
+    },
+    "last": {
+      "broad_phase_rebuilds": 0,
+      "contact_profile": {
+        "aabb_rejections": 0,
+        "candidate_blocks": 0,
+        "candidate_pairs": 0,
+        "candidates_ms": 0.0,
+        "canonical_ms": 0.0,
+        "filter_decode_ms": 0.0,
+        "filter_dispatch_ms": 0.0,
+        "filter_ms": 0.0,
+        "filter_pairs": 0,
+        "filter_prepare_ms": 0.0,
+        "geometry_ms": 0.0,
+        "gpu_filtered": false,
+        "incidence_ms": 0.0,
+        "narrow_ms": 0.0,
+        "refit_ms": 0.0,
+        "spatial_queries": 0,
+        "spatial_retries": 0
+      },
+      "contact_terms": 40436,
+      "contacts": 423,
+      "detection_ms": null,
+      "detection_updates": 16,
+      "directional_vertices": 0,
+      "dt_s": 0.016666666666666666,
+      "extension_max_percent": 19.956983662241544,
+      "extension_p95_percent": 3.7760901957214266,
+      "gpu_compute_ms": null,
+      "gpu_profile": null,
+      "gpu_subgroups": false,
+      "iterations": 16,
+      "max_seam_gap_m": 0.00218149198247126,
+      "minimum_distance_m": 0.0029264686163514853,
+      "motion": null,
+      "precision_ms": 0.0,
+      "precision_vertices": 0,
+      "residual_rms_n": null,
+      "seam_blocks": {
+        "accepted": 0,
+        "attempts": 0,
+        "blocks": 0,
+        "bound_limited": 0,
+        "elapsed_ms": 0.0,
+        "objective_decrease_j": 0.0
+      },
+      "solve_ms": 570.235417,
+      "step_ms": 570.235417,
+      "time_s": 3.3333333333333264,
+      "truncated_vertices": 0
+    },
+    "cpu_vertex_rms_m": 0.005831261903156355
+  }
+}

@@ -42,6 +42,12 @@ pub struct PerfRun {
     pub finished: bool,
 }
 
+impl Default for PerfRun {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerfRun {
     pub fn new() -> Self {
         Self {
