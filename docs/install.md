@@ -118,14 +118,15 @@ opt-in native launch/capture smoke from that extracted package:
 
 - First it runs the packaged `cloth-fit` headlessly to write a fitting project
   and its assets. This is a CLI document write; no editor is open yet.
-- Then `--ui-smoke --project <that file>` opens the CLI-written project in the
-  actual editor, captures `ui.png`, and closes. The CLI also writes the launch
+- Then `--cpu --ui-smoke --project <that file>` opens the CLI-written project
+  in the actual editor, captures `ui.png`, and closes. The CLI also writes the launch
   output project before the editor starts, so the check covers project
   load/write plus native window launch/capture, not native Save or Export.
 
 A hosted runner is a fresh Windows environment, but it may expose a software
-adapter such as WARP. The smoke therefore does not certify a physical GPU,
-driver version, file-dialog interaction, clipboard/focus behavior or a normal
+adapter such as WARP. The packaged launch/capture check explicitly selects the CPU
+solver with `--cpu`; the normal application launch retains its GPU default.
+The smoke therefore does not certify a physical GPU, driver version, file-dialog interaction, clipboard/focus behavior or a normal
 desktop session. If no usable wgpu adapter or window is available, the smoke
 step fails; the CPU package checks remain valid evidence only.
 
