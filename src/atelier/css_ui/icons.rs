@@ -336,3 +336,128 @@ pub fn icon_chevron_right() -> Node {
         </svg>
     }
 }
+
+// ---------------------------------------------------------------------------
+// Advanced CAD Vector Icons (Matching Clo3D / EXO Studio V2)
+// ---------------------------------------------------------------------------
+
+pub fn icon_select_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l7 18 2.5-7 7-2.5L3 3z" />
+            <rect x="13" y="13" width="8" height="8" stroke-dasharray="2,2" stroke-width="1.5" />
+        </svg>
+    }
+}
+
+pub fn icon_curve_point_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 18C4 10 14 6 20 6" />
+            <circle cx="12" cy="10" r="3" fill="#f59e0b" stroke="currentColor" />
+            <line x1="8" y1="13" x2="16" y2="7" stroke-dasharray="2,2" stroke-width="1.5" />
+            <circle cx="8" cy="13" r="1.5" fill="currentColor" />
+            <circle cx="16" cy="7" r="1.5" fill="currentColor" />
+        </svg>
+    }
+}
+
+pub fn icon_polygon_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12,3 21,9 18,20 6,20 3,9" />
+            <circle cx="12" cy="3" r="2" fill="currentColor" />
+            <circle cx="21" cy="9" r="2" fill="currentColor" />
+            <circle cx="18" cy="20" r="2" fill="currentColor" />
+            <circle cx="6" cy="20" r="2" fill="currentColor" />
+            <circle cx="3" cy="9" r="2" fill="currentColor" />
+        </svg>
+    }
+}
+
+pub fn icon_circle_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="12" rx="9" ry="8" />
+            <circle cx="12" cy="4" r="1.5" fill="currentColor" />
+            <circle cx="21" cy="12" r="1.5" fill="currentColor" />
+            <circle cx="12" cy="20" r="1.5" fill="currentColor" />
+            <circle cx="3" cy="12" r="1.5" fill="currentColor" />
+        </svg>
+    }
+}
+
+pub fn icon_dart_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="5" x2="21" y2="5" stroke-width="2" />
+            <polyline points="8,5 12,19 16,5" stroke-width="2" />
+            <line x1="12" y1="5" x2="12" y2="19" stroke-dasharray="2,2" stroke-width="1.5" />
+            <circle cx="12" cy="19" r="2" fill="#f59e0b" />
+        </svg>
+    }
+}
+
+pub fn icon_notch_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12" stroke-width="2.5" />
+            <line x1="12" y1="6" x2="12" y2="12" stroke-width="2.5" stroke="#f59e0b" />
+            <polyline points="9,6 12,6 15,6" stroke-width="2" stroke="#f59e0b" />
+            <circle cx="12" cy="12" r="2" fill="#f59e0b" />
+        </svg>
+    }
+}
+
+pub fn icon_seam_allowance_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" />
+            <rect x="7" y="7" width="10" height="10" rx="1" stroke-dasharray="2,2" stroke-width="1.5" />
+            <line x1="17" y1="7" x2="21" y2="3" stroke-width="1.5" stroke="#f59e0b" />
+        </svg>
+    }
+}
+
+pub fn icon_pleat_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="4" x2="21" y2="4" stroke-width="2" />
+            <line x1="3" y1="20" x2="21" y2="20" stroke-width="2" />
+            <polyline points="6,4 8,20 12,4 14,20 18,4" stroke-width="1.8" />
+            <line x1="8" y1="4" x2="8" y2="20" stroke-dasharray="2,2" stroke-width="1.2" stroke="#f59e0b" />
+            <line x1="14" y1="4" x2="14" y2="20" stroke-dasharray="2,2" stroke-width="1.2" stroke="#f59e0b" />
+        </svg>
+    }
+}
+
+pub fn icon_free_sew_3d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19c4-6 6-6 10-12l2-3 2 1-1 3.5c-2 6-4 6-9 12.5" />
+            <line x1="17" y1="5" x2="21" y2="2" stroke="#f59e0b" stroke-width="1.5" />
+            <circle cx="19" cy="4" r="1" fill="#f59e0b" />
+            <path d="M6 16c2 1 4 0 6 2s3 2 5 1" stroke-dasharray="2,2" stroke-width="1.5" />
+        </svg>
+    }
+}
+
+pub fn icon_cloth_pull() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v6m0 0l-3-3m3 3l3-3" stroke="#f59e0b" stroke-width="2" />
+            <path d="M4 12c4-2 8 4 12 0s4-2 4-2v6c0 0-3 2-6 1s-6-3-10 0v-5z" stroke-width="1.8" />
+        </svg>
+    }
+}
+
+pub fn icon_dress_form() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 2h8l2 5-3 5v8H9v-8L6 7l2-5z" />
+            <line x1="12" y1="20" x2="12" y2="23" stroke-width="2.5" />
+            <line x1="8" y1="23" x2="16" y2="23" stroke-width="2.5" />
+            <line x1="8" y1="7" x2="16" y2="7" stroke-width="1.5" stroke="#f59e0b" />
+        </svg>
+    }
+}
