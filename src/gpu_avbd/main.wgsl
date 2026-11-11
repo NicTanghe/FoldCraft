@@ -3,9 +3,9 @@
 struct Term {ids:vec4u,info:vec4u,a:vec4f,b:vec4f,c:vec4f}
 struct Particle {initial:vec4f, velocity_mass:vec4f,inertia_target:vec4f,delta:vec4f,energy:vec4f}
 struct Node {lo:vec4f,hi:vec4f,info:vec4u}
-struct Pair {ids:vec4u,kind:u32,pad0:u32,pad1:u32,pad2:u32,next:vec4u}
+struct Pair {ids:vec4u,kind:u32,slack:f32,dual:f32,rho:f32,next:vec4u}
 struct PairBuffer {count:atomic<u32>,pad0:u32,pad1:u32,pad2:u32,pairs:array<Pair>}
-struct Control {error:atomic<u32>,alpha:atomic<u32>,accepted:atomic<u32>,sweep:u32,minimum:atomic<u32>,active_count:atomic<u32>,pad0:u32,pad1:u32}
+struct Control {error:atomic<u32>,alpha:atomic<u32>,accepted:atomic<u32>,sweep:u32,minimum:atomic<u32>,active_count:atomic<u32>,previous_count:u32,matched:atomic<u32>,primal:atomic<u32>,slack_residual:atomic<u32>,dual_change:atomic<u32>,force:atomic<u32>,trials:atomic<u32>,pad0:u32,pad1:u32,pad2:u32}
 struct Config {
     counts:vec4u, // moving, all vertices, faces, edges
     sizes:vec4u, // terms, nodes, contact capacity, iterations
@@ -15,6 +15,7 @@ struct Config {
     physical:vec4f, // dt, damping, barrier radius, barrier stiffness
     gravity:vec4f, // w: numerical clearance
     sphere:vec4f, // centre and radius; zero radius disables
+    method:vec4u, // x: independent barrier AL experiment
 }
 @group(0) @binding(0) var<storage,read_write> positions:array<vec4f>;
 @group(0) @binding(1) var<storage,read_write> particles:array<Particle>;
@@ -132,6 +133,7 @@ fn reset_stiffness(@builtin(global_invocation_id) id:vec3u) {
 }
 @compute @workgroup_size(1)
 fn begin_sweep() {
+    atomicStore(&control.primal,0u);atomicStore(&control.slack_residual,0u);atomicStore(&control.dual_change,0u);
     atomicStore(&control.minimum,bitcast<u32>(1e30));atomicStore(&control.active_count,0u);
     atomicStore(&contacts.count,0u);atomicStore(&control.alpha,bitcast<u32>(1.0));atomicStore(&control.accepted,0u);
 }

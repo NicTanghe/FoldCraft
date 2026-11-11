@@ -19,6 +19,7 @@ use cssimpler::style::Stylesheet;
 use cssimpler::ui;
 
 use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, load_studio_stylesheet};
+use marvelous_cloth::gpu_avbd::ContactMethod;
 use marvelous_cloth::mesh_resolution::preparation::PhysicsSizing;
 use marvelous_cloth::model::{Mesh, Scene, State};
 use marvelous_cloth::project::{self, Project};
@@ -65,6 +66,11 @@ pub fn on_solver_gpu() {
 }
 pub fn on_solver_cpu() {
     dispatch_action(ACT_SOLVER_CPU);
+}
+
+pub const ACT_SOLVER_AL: u64 = 1 << 27;
+pub fn on_solver_al() {
+    dispatch_action(ACT_SOLVER_AL);
 }
 
 static PENDING_ACTIONS: AtomicU64 = AtomicU64::new(0);
@@ -167,6 +173,7 @@ pub enum EditorTab {
 
 pub struct RefWork {
     pub gpu: bool,
+    pub contact_method: ContactMethod,
     pub generation: u64,
     pub mesh: Arc<Mesh>,
     pub state: State,
@@ -255,6 +262,7 @@ fn start_editor_worker(
                     }
                     if work.gpu {
                         let gpu = gpu.as_mut().ok_or("GPU backend unavailable")?;
+                        gpu.set_contact_method(work.contact_method);
                         let project = Project {
                             material: work.material.clone(),
                             solver: work.solver.clone(),
@@ -323,6 +331,7 @@ pub struct CssEditorState {
     pub state: State,
     pub metrics: Option<Metrics>,
     pub gpu_sim: bool,
+    pub contact_method: ContactMethod,
     pub solver_menu_open: bool,
     pub camera: Camera,
     pub playing: bool,
@@ -390,6 +399,7 @@ impl CssEditorState {
             state,
             metrics: None,
             gpu_sim,
+            contact_method: ContactMethod::Ipc,
             solver_menu_open: false,
             camera: Camera::default(),
             playing: false,
@@ -422,6 +432,7 @@ impl CssEditorState {
     pub fn send_control_state(&mut self, once: bool) {
         let work = RefWork {
             gpu: self.gpu_sim,
+            contact_method: self.contact_method,
             generation: self.generation,
             mesh: self.mesh.clone(),
             state: self.state.clone(),
@@ -435,11 +446,15 @@ impl CssEditorState {
     }
 
     pub fn select_solver(&mut self, gpu: bool) {
+        self.select_solver_method(gpu, ContactMethod::Ipc);
+    }
+    pub fn select_solver_method(&mut self, gpu: bool, method: ContactMethod) {
         self.solver_menu_open = false;
-        if self.gpu_sim == gpu {
+        if self.gpu_sim == gpu && self.contact_method == method {
             return;
         }
         self.gpu_sim = gpu;
+        self.contact_method = method;
         self.generation = self.generation.wrapping_add(1);
         self.playing = false;
         self.metrics = None;
@@ -486,10 +501,17 @@ impl CssEditorState {
             EditorMetrics::Avbd(m) => {
                 self.step_ms = m.step_ms;
                 self.metrics = None;
-                self.status_message = format!(
-                    "WGSL AVBD / IPC step {}: {:.1} ms; fixed budget, residual unavailable",
-                    self.step_count, m.step_ms
-                );
+                self.status_message = if let Some(al) = &m.barrier_al {
+                    format!(
+                        "Barrier AL step {}: {:.1} ms; gap residual {:.2e} m, force max {:.2e} N; fixed budget",
+                        self.step_count, m.step_ms, al.primal_m, al.original_force_max_n
+                    )
+                } else {
+                    format!(
+                        "WGSL AVBD / IPC step {}: {:.1} ms; fixed budget, residual unavailable",
+                        self.step_count, m.step_ms
+                    )
+                };
             }
         }
         self.sync_usd_points();
@@ -629,6 +651,9 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
     }
     if actions & ACT_SOLVER_GPU != 0 {
         state.select_solver(true);
+    }
+    if actions & ACT_SOLVER_AL != 0 {
+        state.select_solver_method(true, ContactMethod::BarrierAl);
     }
     if actions & ACT_SOLVER_CPU != 0 {
         state.select_solver(false);
@@ -844,11 +869,12 @@ fn build_top_bar(state: &CssEditorState) -> Node {
                 </button>
                 <div class="solver-picker">
                     <button id="sim-backend-indicator" class="backend-badge" onclick={on_solver_menu}>
-                        {if state.gpu_sim {"WGSL AVBD / IPC ▾"} else {"CPU Reference ▾"}}
+                        {if state.gpu_sim {format!("{} ▾", state.contact_method.label())} else {"CPU Reference ▾".into()}}
                     </button>
                     {if state.solver_menu_open { ui! {
                         <div id="solver-dropdown" class="solver-dropdown">
                             <button id="solver-wgsl-ipc" class="menu-item" onclick={on_solver_gpu}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-barrier-al" class="menu-item" onclick={on_solver_al}>"WGSL AVBD / barrier AL (experimental)"</button>
                             <button id="solver-cpu" class="menu-item" onclick={on_solver_cpu}>"CPU Reference Newton"</button>
                         </div>
                     }} else { ui! { <span /> } }}
@@ -1474,9 +1500,19 @@ mod tests {
         let mut state = CssEditorState::new(project, PathBuf::from("target/test_gpu_editor"));
         // Start CPU-only, initialize the adapter only on explicit GPU selection,
         // then exercise both directions and reuse the GPU after CPU advancement.
-        for (index, gpu) in [false, true, false, true].into_iter().enumerate() {
+        for (index, (gpu, method)) in [
+            (false, ContactMethod::Ipc),
+            (true, ContactMethod::Ipc),
+            (true, ContactMethod::BarrierAl),
+            (false, ContactMethod::Ipc),
+            (true, ContactMethod::BarrierAl),
+            (true, ContactMethod::Ipc),
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let checkpoint = state.state.clone();
-            state.select_solver(gpu);
+            state.select_solver_method(gpu, method);
             assert_eq!(state.state.x, checkpoint.x);
             assert_eq!(state.state.v, checkpoint.v);
             assert_eq!(state.state.time, checkpoint.time);
@@ -1495,6 +1531,9 @@ mod tests {
             assert_eq!(done.generation, state.generation);
             let (accepted, metrics) = done.result.unwrap();
             assert_eq!(matches!(&metrics, EditorMetrics::Avbd(_)), gpu);
+            if let EditorMetrics::Avbd(m) = &metrics {
+                assert_eq!(m.barrier_al.is_some(), method == ContactMethod::BarrierAl);
+            }
             state.accept_step(accepted, metrics);
             assert!((state.state.time - (index + 1) as f64 * dt).abs() < 1e-12);
             assert_eq!(state.metrics.is_none(), gpu);
@@ -1595,6 +1634,31 @@ mod tests {
             delta: Duration::from_millis(16),
             frame_index: 12,
         });
+        let button = app.find_element_bounds_by_id("#solver-barrier-al").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 13,
+        });
+        assert_eq!(app.state().contact_method, ContactMethod::BarrierAl);
+        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().state.x, checkpoint.x);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
         let button = app.find_element_bounds_by_id("#solver-cpu").unwrap();
         assert!(cssimpler::renderer::dispatch_click(
             app.scene(),
@@ -1606,7 +1670,7 @@ mod tests {
             frame_index: 12,
         });
         assert!(!app.state().gpu_sim);
-        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().generation, generation + 3);
         assert_eq!(app.state().state.x, checkpoint.x);
 
         // Test RGBA8 rendering headlessly

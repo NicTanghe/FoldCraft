@@ -1,6 +1,9 @@
 # AVBD + barrier-augmented Lagrangian contact: implementation design
 
-11 November 2026 — FC-0036. **Design, not an implemented or validated backend.**
+11 November 2026 — FC-0036. **Pre-implementation design, saved in 94e1542.**
+Update: the independent distance-slack variant is now experimental;
+read [implementation and results](barrier-al-implementation.md).
+The proposal below is retained as design history.
 The native solver dropdown is implemented separately. The WGSL AVBD/IPC default
 and existing CPU controls remain available; this proposal must not appear as a
 working solver choice until its numerical and integration gates pass.
@@ -304,7 +307,7 @@ D. Opt-in hybrid kernels and native/CLI integration.
 E. Small authorized GPU validation and matched full-step cost measurements.
 F. Optimization with retained baselines and documented failed experiments.
 
-Checkpoint A is the current deliverable. B–F remain implementation work.
+Checkpoint A was saved before implementation. Subsequent B–F work and limited validation are recorded in the implementation notes linked above.
 
 ## First design experiment: augmentation scale can make or break the solve
 

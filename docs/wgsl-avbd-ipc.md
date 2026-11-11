@@ -4,6 +4,10 @@ FC-0035 implements the pipeline proposed in [ClothCraft issue 242](https://githu
 
 This combination is not a reproduction of the complete published AVBD or IPC solvers. The owner explicitly requested this branch default; that selection is not evidence of garment-scale performance or robustness. No speedup or dense-fold qualification is claimed.
 
+The native solver badge now switches to CPU controls or the experimental
+[distance-slack barrier AL hybrid](barrier-al-implementation.md). Both GPU variants
+use a validated one-workgroup Armijo path for <=64 vertices.
+
 ## Execution and model
 
 `src/energy_factors.rs` shares the existing scalar factorization `U = k C²/2` between the CPU laboratory and the new backend. Membrane factors retain grain, compression smoothing and material-space rest geometry; bending retains the normal-difference law; sewing retains its quadrature weights and finite physical stiffness. Pins eliminate degrees of freedom. Barycentric and brush grabs enter the same objective. No positional repair is applied after an accepted update.

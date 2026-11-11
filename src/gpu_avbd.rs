@@ -12,6 +12,27 @@ use std::{cell::RefCell, sync::Arc, time::Instant};
 mod packing;
 use packing::Packed;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ContactMethod {
+    #[default]
+    Ipc,
+    BarrierAl,
+}
+impl ContactMethod {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ipc => "WGSL AVBD / IPC",
+            Self::BarrierAl => "WGSL AVBD / barrier AL (experimental)",
+        }
+    }
+    pub fn backend(self) -> &'static str {
+        match self {
+            Self::Ipc => BACKEND,
+            Self::BarrierAl => "wgsl-finite-avbd-barrier-al",
+        }
+    }
+}
+
 pub const BACKEND: &str = "wgsl-finite-avbd-ipc";
 const ENTRIES: &[&str] = &[
     "predict",
@@ -30,6 +51,13 @@ const ENTRIES: &[&str] = &[
     "end_sweep",
     "finish",
     "probe_material",
+    "al_initialize",
+    "al_retain",
+    "al_update",
+    "al_history",
+    "al_audit",
+    "al_probe",
+    "small_line_search",
 ];
 
 #[repr(C)]
@@ -45,6 +73,7 @@ unsafe impl bytemuck::Zeroable for Particle {}
 unsafe impl bytemuck::Pod for Particle {}
 
 struct Resident {
+    method: ContactMethod,
     garment: Arc<CompiledGarment>,
     fixed: Vec<DVec3>,
     faces: Vec<[usize; 3]>,
@@ -70,6 +99,13 @@ pub struct GpuAvbd {
     resident: RefCell<Option<Resident>>,
     /// Analytic sphere for Project v1. The fitting pipeline uses triangle avatars.
     pub sphere: Option<crate::contact::Sphere>,
+    pub contact_method: ContactMethod,
+    /// Research ablation: false uses fixed contact stiffness as augmentation.
+    pub balance_augmentation: bool,
+    /// Research ablation for skipping reductions after Armijo acceptance.
+    pub skip_accepted_reductions: bool,
+    /// Equivalent one-workgroup Armijo path for at most 64 vertices.
+    pub fuse_small_line_search: bool,
 }
 
 /// Create a compute device independently of rendering. Call only when the
@@ -132,6 +168,7 @@ impl GpuAvbd {
             include_str!("gpu_avbd/jet.wgsl"),
             include_str!("gpu_avbd/contact.wgsl"),
             include_str!("gpu_avbd/solve.wgsl"),
+            include_str!("gpu_avbd/al.wgsl"),
         ]
         .join("\n");
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -158,6 +195,10 @@ impl GpuAvbd {
             pipelines,
             resident: RefCell::new(None),
             sphere: None,
+            contact_method: ContactMethod::Ipc,
+            balance_augmentation: true,
+            skip_accepted_reductions: true,
+            fuse_small_line_search: true,
         }
     }
     fn allocate(
@@ -176,11 +217,19 @@ impl GpuAvbd {
             n * 80,
             (packed.terms.len() * 80).max(80),
             packed.geometry.len() * 4,
-            16 + capacity * 48,
-            n * 4,
+            16 + if self.contact_method == ContactMethod::BarrierAl {
+                (2 * capacity + solver.garment.mesh.triangles.len()) * 48
+            } else {
+                capacity * 48
+            },
+            n * if self.contact_method == ContactMethod::BarrierAl {
+                8
+            } else {
+                4
+            },
             (packed.nodes.len() * 48).max(48),
-            32,
-            128,
+            64,
+            144,
         ];
         let limits = self.device.limits();
         if limits.max_storage_buffers_per_shader_stage < 8
@@ -230,7 +279,7 @@ impl GpuAvbd {
         });
         let read = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("AVBD accepted state snapshot"),
-            size: (n * 16 + 48) as u64,
+            size: (n * 16 + 80) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -245,6 +294,7 @@ impl GpuAvbd {
                 .write_buffer(&buffers[6], 0, bytemuck::cast_slice(&packed.nodes));
         }
         Ok(Resident {
+            method: self.contact_method,
             garment: solver.garment.clone(),
             fixed: solver.world.fixed.clone(),
             faces: solver.world.topology.triangles.clone(),
@@ -346,7 +396,8 @@ impl GpuAvbd {
         let mut storage = self.resident.borrow_mut();
         let key = grab_key(grab);
         if storage.as_ref().is_none_or(|r| {
-            !Arc::ptr_eq(&r.garment, &solver.garment)
+            r.method != self.contact_method
+                || !Arc::ptr_eq(&r.garment, &solver.garment)
                 || r.fixed != solver.world.fixed
                 || r.faces != solver.world.topology.triangles
                 || r.world_id != solver.world.topology_id()
@@ -487,6 +538,12 @@ impl GpuAvbd {
                 .map(f32::to_bits),
             );
             config.extend(sphere.map(f32::to_bits));
+            config.extend([
+                u32::from(self.contact_method == ContactMethod::BarrierAl),
+                u32::from(!self.balance_augmentation),
+                u32::from(!self.skip_accepted_reductions),
+                0,
+            ]);
             self.queue
                 .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
             r.expected = None;
@@ -512,6 +569,17 @@ impl GpuAvbd {
                     dispatch(4, (all.len() + ne).div_ceil(64));
                     dispatch(5, n.div_ceil(64));
                     dispatch(6, r.capacity.div_ceil(64));
+                    if self.contact_method == ContactMethod::BarrierAl {
+                        dispatch(
+                            16,
+                            r.capacity
+                                .max(solver.garment.mesh.triangles.len())
+                                .div_ceil(64),
+                        );
+                        dispatch(17, r.capacity.div_ceil(64));
+                        dispatch(5, n.div_ceil(64));
+                        dispatch(6, r.capacity.div_ceil(64));
+                    }
                     dispatch(7, n.div_ceil(64));
                     dispatch(
                         8,
@@ -519,20 +587,36 @@ impl GpuAvbd {
                             .max(solver.garment.mesh.triangles.len())
                             .div_ceil(64),
                     );
-                    for _ in 0..16 {
-                        dispatch(9, n.div_ceil(64));
-                        dispatch(10, 1);
+                    if self.fuse_small_line_search && n <= 64 {
+                        dispatch(22, 1);
+                    } else {
+                        for _ in 0..16 {
+                            dispatch(9, n.div_ceil(64));
+                            dispatch(10, 1);
+                        }
                     }
                     dispatch(11, n.div_ceil(64));
+                    if self.contact_method == ContactMethod::BarrierAl {
+                        dispatch(
+                            18,
+                            r.capacity
+                                .max(solver.garment.mesh.triangles.len())
+                                .div_ceil(64),
+                        );
+                        dispatch(19, r.capacity.max(n).div_ceil(64));
+                    }
                     dispatch(12, r.packed.terms.len().div_ceil(64));
                     dispatch(13, 1);
+                }
+                if self.contact_method == ContactMethod::BarrierAl {
+                    dispatch(20, n.div_ceil(64));
                 }
                 dispatch(14, n.div_ceil(64));
             }
             let bytes = (n * 16) as u64;
             encoder.copy_buffer_to_buffer(&r.buffers[0], 0, &r.read, 0, bytes);
-            encoder.copy_buffer_to_buffer(&r.buffers[7], 0, &r.read, bytes, 32);
-            encoder.copy_buffer_to_buffer(&r.buffers[4], 0, &r.read, bytes + 32, 16);
+            encoder.copy_buffer_to_buffer(&r.buffers[7], 0, &r.read, bytes, 64);
+            encoder.copy_buffer_to_buffer(&r.buffers[4], 0, &r.read, bytes + 64, 16);
             let submission = self.queue.submit([encoder.finish()]);
             let (tx, rx) = std::sync::mpsc::channel();
             r.read.map_async(wgpu::MapMode::Read, .., move |result| {
@@ -550,7 +634,17 @@ impl GpuAvbd {
             let data = r.read.get_mapped_range(..).map_err(|e| e.to_string())?;
             let header: &[u32] = bytemuck::cast_slice(&data[n * 16..]);
             let error = header[0];
-            let contact_count = header[8] as usize;
+            let contact_count = header[16] as usize;
+            let al = (self.contact_method == ContactMethod::BarrierAl).then(|| {
+                crate::barrier_al::Diagnostics {
+                    primal_m: f32::from_bits(header[8]) as f64,
+                    slack_stationarity_n: f32::from_bits(header[9]) as f64,
+                    dual_change_n: f32::from_bits(header[10]) as f64,
+                    original_force_max_n: f32::from_bits(header[11]) as f64,
+                    armijo_trials: header[12],
+                    matched_pairs: header[7],
+                }
+            });
             let active = header[5] as usize;
             let minimum = f32::from_bits(header[4]) as f64;
             if error != 0 {
@@ -566,7 +660,7 @@ impl GpuAvbd {
                     continue;
                 }
                 return Err(format!(
-                    "WGSL AVBD rejected step (flags {error:#x}: overflow=1, degenerate=2, clearance=4, incidence=8, solve=16); state unchanged"
+                    "WGSL AVBD rejected step (flags {error:#x}: overflow=1, degenerate=2, clearance=4, incidence=8, solve=16, slack bracket=32, slack residual=64, slack finite=128; diagnostics {al:?}); state unchanged"
                 ));
             }
             let values: &[[f32; 4]] = bytemuck::cast_slice(&data[..n * 16]);
@@ -607,6 +701,7 @@ impl GpuAvbd {
             let extension = crate::garment::diagnostics::extension_percent(&solver.garment, state);
             let elapsed = started.elapsed().as_secs_f64() * 1000.;
             return Ok(VbdMetrics {
+                barrier_al: al,
                 time_s: state.time,
                 dt_s: settings.dt,
                 step_ms: elapsed,
@@ -650,6 +745,9 @@ pub struct ProjectAvbd {
     cache: Option<(Arc<crate::model::Mesh>, String, VbdSolver)>,
 }
 impl ProjectAvbd {
+    pub fn set_contact_method(&mut self, method: ContactMethod) {
+        self.gpu.contact_method = method;
+    }
     pub fn reset(&mut self) {
         self.cache = None;
         self.gpu.reset();

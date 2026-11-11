@@ -63,6 +63,7 @@ pub struct Work {
     pub settings: VbdSettings,
     pub grab: Option<Grab>,
     pub gpu: bool,
+    pub contact_method: marvelous_cloth::gpu_avbd::ContactMethod,
     pub signal: RepaintSignal,
     pub playing: bool,
     pub once: bool,
@@ -314,6 +315,7 @@ fn start_inner(
                         clear_final_diagnostics();
                     }
                     let solver = &mut cache.as_mut().unwrap().1;
+                    if let Some(gpu)=&mut gpu {gpu.contact_method=w.contact_method;}
                     let metrics = if w.gpu {
                         gpu.as_ref()
                             .ok_or_else(|| {
@@ -496,6 +498,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu,
+            contact_method: Default::default(),
             signal: RepaintSignal::noop(),
             playing: false,
             once: true,
@@ -690,6 +693,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu: false,
+            contact_method: Default::default(),
             signal: RepaintSignal::noop(),
             playing: false,
             once: true,
@@ -778,6 +782,7 @@ mod final_diagnostics_transport_tests {
                     settings: settings.clone(),
                     grab: None,
                     gpu,
+                    contact_method: Default::default(),
                     signal: RepaintSignal::noop(),
                     playing: false,
                     once: true,

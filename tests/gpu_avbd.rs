@@ -1,7 +1,7 @@
 //! Opt-in hardware checks. Ordinary cargo test never initializes an adapter.
 #![cfg(feature = "desktop")]
 use marvelous_cloth::{
-    gpu_avbd::{ProjectAvbd, request_device},
+    gpu_avbd::{ContactMethod, ProjectAvbd, request_device},
     model::Scene,
     project::Project,
 };
@@ -10,8 +10,19 @@ use std::sync::Arc;
 #[test]
 #[ignore = "requires explicit coordination and a hardware GPU"]
 fn resident_free_fall_pins_sphere_and_transactional_failure() {
+    check_resident_free_fall_pins_sphere_and_transactional_failure(ContactMethod::Ipc);
+}
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn al_resident_free_fall_pins_sphere_and_transactional_failure() {
+    check_resident_free_fall_pins_sphere_and_transactional_failure(ContactMethod::BarrierAl);
+}
+
+fn check_resident_free_fall_pins_sphere_and_transactional_failure(method: ContactMethod) {
     let (device, queue) = request_device().expect("hardware compute adapter");
     let mut solver = ProjectAvbd::new(device, queue);
+    solver.set_contact_method(method);
     let mut p = Project {
         sphere: None,
         ..Default::default()
@@ -97,6 +108,16 @@ mod common;
 #[test]
 #[ignore = "requires explicit coordination and a hardware GPU"]
 fn resident_vf_reciprocal_vf_self_contact_and_translation() {
+    check_resident_vf_reciprocal_vf_self_contact_and_translation(ContactMethod::Ipc);
+}
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn al_resident_vf_reciprocal_vf_self_contact_and_translation() {
+    check_resident_vf_reciprocal_vf_self_contact_and_translation(ContactMethod::BarrierAl);
+}
+
+fn check_resident_vf_reciprocal_vf_self_contact_and_translation(method: ContactMethod) {
     use glam::DVec3;
     use marvelous_cloth::{
         garment::GarmentTemplate,
@@ -104,7 +125,8 @@ fn resident_vf_reciprocal_vf_self_contact_and_translation() {
         vbd::{VbdSettings, VbdSolver},
     };
     let (device, queue) = request_device().unwrap();
-    let gpu = GpuAvbd::new(device, queue);
+    let mut gpu = GpuAvbd::new(device, queue);
+    gpu.contact_method = method;
     let settings = VbdSettings {
         dt: 1. / 60.,
         iterations: 8,
@@ -126,14 +148,23 @@ fn resident_vf_reciprocal_vf_self_contact_and_translation() {
                 v.y = -2.;
             }
             let mut solver = VbdSolver::new(g, Some(&floor), &state).unwrap();
+            let mut matched = 0;
             for _ in 0..12 {
                 let m = gpu.step(&mut solver, &mut state, &settings, None).unwrap();
                 assert!(m.contact_terms > 0);
+                if method == ContactMethod::BarrierAl {
+                    let al = m.barrier_al.as_ref().expect("AL diagnostics");
+                    assert!(al.primal_m.is_finite() && al.original_force_max_n.is_finite());
+                    matched += al.matched_pairs;
+                }
                 assert!(m.minimum_distance_m > 0.);
                 solver
                     .world
                     .validate_start(&solver.world.positions(&state.x))
                     .unwrap();
+            }
+            if method == ContactMethod::BarrierAl {
+                assert!(matched > 0, "active contacts must retain identities");
             }
             let local: Vec<_> = state.x.iter().map(|p| *p - offset).collect();
             if let Some(reference) = &reference {
@@ -185,4 +216,80 @@ fn resident_vf_reciprocal_vf_self_contact_and_translation() {
             .fold(f64::INFINITY, f64::min);
         assert!(top > bottom, "cloth layers crossed: {top} vs {bottom}");
     }
+}
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn barrier_al_small_matched_cost_probe() {
+    use marvelous_cloth::{
+        gpu_avbd::GpuAvbd,
+        vbd::{VbdSettings, VbdSolver},
+    };
+    let (device, queue) = request_device().unwrap();
+    let (garment, floor) = common::resting_patch(glam::DVec3::ZERO);
+    let settings = VbdSettings {
+        iterations: 32,
+        dt: 1. / 60.,
+        ..Default::default()
+    };
+    let mut rows = Vec::new();
+    let mut ipc_reference = Vec::<marvelous_cloth::model::State>::new();
+    let mut al_reference = Vec::<marvelous_cloth::model::State>::new();
+    for (name, method, balanced, skip) in [
+        ("ipc_baseline", ContactMethod::Ipc, true, false),
+        ("ipc", ContactMethod::Ipc, true, true),
+        (
+            "al_balanced_baseline",
+            ContactMethod::BarrierAl,
+            true,
+            false,
+        ),
+        ("al_fixed", ContactMethod::BarrierAl, false, true),
+        ("al_balanced", ContactMethod::BarrierAl, true, true),
+    ] {
+        let mut gpu = GpuAvbd::new(device.clone(), queue.clone());
+        gpu.contact_method = method;
+        gpu.balance_augmentation = balanced;
+        gpu.skip_accepted_reductions = skip;
+        gpu.fuse_small_line_search = skip;
+        let mut state = garment.initial_state.clone();
+        let mut solver = VbdSolver::new(garment.clone(), Some(&floor), &state).unwrap();
+        for step in 0..8 {
+            let metrics = gpu.step(&mut solver, &mut state, &settings, None).unwrap();
+            solver
+                .world
+                .validate_start(&solver.world.positions(&state.x))
+                .unwrap();
+            if name == "ipc_baseline" {
+                ipc_reference.push(state.clone());
+            }
+            if name == "al_balanced_baseline" {
+                al_reference.push(state.clone());
+            }
+            if name == "ipc" || name == "al_balanced" {
+                let reference = if name == "ipc" {
+                    &ipc_reference[step]
+                } else {
+                    &al_reference[step]
+                };
+                for (a, b) in state.x.iter().zip(&reference.x) {
+                    assert!(
+                        a.distance(*b) < 1e-7,
+                        "fused line search changed accepted trajectory"
+                    );
+                }
+                for (a, b) in state.v.iter().zip(&reference.v) {
+                    assert!(a.distance(*b) < 1e-5, "fused line search changed velocity");
+                }
+            }
+            rows.push(serde_json::json!({
+                "backend":name,"step":step,"step_ms":metrics.step_ms,
+                "minimum_m":metrics.minimum_distance_m,
+                "extension_max_percent":metrics.extension_max_percent,
+                "speed_max_m_s":state.v.iter().map(|v|v.length()).fold(0.,f64::max),
+                "al":metrics.barrier_al,
+            }));
+        }
+    }
+    println!("BAL_COST_JSON={}", serde_json::to_string(&rows).unwrap());
 }

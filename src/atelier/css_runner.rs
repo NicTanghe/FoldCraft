@@ -31,6 +31,7 @@ use marvelous_cloth::css_ui::icons::*;
 use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, load_studio_stylesheet};
 use marvelous_cloth::fitting::{FittingProject, FittingScene};
 use marvelous_cloth::garment::export;
+use marvelous_cloth::gpu_avbd::ContactMethod;
 use marvelous_cloth::render::Camera;
 use marvelous_cloth::vbd::{VbdMetrics, VbdSettings};
 
@@ -95,6 +96,11 @@ pub fn on_runner_solver_gpu() {
 }
 pub fn on_runner_solver_cpu() {
     dispatch_runner_action(ACT_RUN_SOLVER_CPU);
+}
+
+pub const ACT_RUN_SOLVER_AL: u64 = 1 << 45;
+pub fn on_runner_solver_al() {
+    dispatch_runner_action(ACT_RUN_SOLVER_AL);
 }
 
 static RUNNER_ACTIONS: AtomicU64 = AtomicU64::new(0);
@@ -280,6 +286,7 @@ pub struct CssRunnerState {
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
     pub gpu_sim: bool,
+    pub contact_method: ContactMethod,
     pub solver_menu_open: bool,
     pub drag_test: bool,
     pub perf_test: bool,
@@ -334,6 +341,7 @@ impl CssRunnerState {
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
             gpu_sim: false,
+            contact_method: ContactMethod::Ipc,
             solver_menu_open: false,
             drag_test: false,
             perf_test: false,
@@ -354,6 +362,7 @@ impl CssRunnerState {
             settings: self.settings.clone(),
             grab: None,
             gpu: self.gpu_sim,
+            contact_method: self.contact_method,
             signal: worker::RepaintSignal::noop(),
             playing: self.playing,
             once,
@@ -384,11 +393,15 @@ impl CssRunnerState {
     /// Transfer the last displayed accepted x/v/time; discard in-flight results
     /// by generation. Playback pauses; rest geometry and document history stay intact.
     pub fn select_solver(&mut self, gpu: bool) {
+        self.select_solver_method(gpu, ContactMethod::Ipc);
+    }
+    pub fn select_solver_method(&mut self, gpu: bool, method: ContactMethod) {
         self.solver_menu_open = false;
-        if self.gpu_sim == gpu {
+        if self.gpu_sim == gpu && self.contact_method == method {
             return;
         }
         self.gpu_sim = gpu;
+        self.contact_method = method;
         self.generation = self.generation.wrapping_add(1);
         self.playing = false;
         self.worker_pending = false;
@@ -460,11 +473,24 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
                 state.scene.state = new_state;
                 state.step_count += 1;
                 state.step_ms = metrics.step_ms;
+                let residual = metrics.barrier_al.as_ref().map_or_else(
+                    || {
+                        metrics
+                            .residual_rms_n
+                            .map_or("N/A".into(), |r| format!("{r:.1e} N RMS"))
+                    },
+                    |al| {
+                        format!(
+                            "{:.1e} N max, gap {:.1e} m",
+                            al.original_force_max_n, al.primal_m
+                        )
+                    },
+                );
                 state.status_message = format!(
-                    "Step {}: min dist {:.3} mm, res {:.1e}, {:.1} ms",
+                    "Step {}: min dist {:.3} mm, residual {}, {:.1} ms",
                     state.step_count,
-                    metrics.minimum_distance_m * 1000.0,
-                    metrics.residual_rms_n.unwrap_or(0.0),
+                    metrics.minimum_distance_m * 1000.,
+                    residual,
                     metrics.step_ms
                 );
                 state.last_metrics = Some(metrics);
@@ -508,6 +534,9 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     }
     if actions & ACT_RUN_SOLVER_GPU != 0 {
         state.select_solver(true);
+    }
+    if actions & ACT_RUN_SOLVER_AL != 0 {
+        state.select_solver_method(true, ContactMethod::BarrierAl);
     }
     if actions & ACT_RUN_SOLVER_CPU != 0 {
         state.select_solver(false);
@@ -748,7 +777,7 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
     };
 
     let (backend_class, backend_label) = if state.gpu_sim {
-        ("backend-badge gpu", "WGSL AVBD / IPC")
+        ("backend-badge gpu", state.contact_method.label())
     } else {
         ("backend-badge cpu", "CPU (OGC)")
     };
@@ -785,6 +814,7 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                     {if state.solver_menu_open { ui! {
                         <div id="solver-dropdown" class="solver-dropdown">
                             <button id="solver-wgsl-ipc" class="menu-item" onclick={on_runner_solver_gpu}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-barrier-al" class="menu-item" onclick={on_runner_solver_al}>"WGSL AVBD / barrier AL (experimental)"</button>
                             <button id="solver-cpu" class="menu-item" onclick={on_runner_solver_cpu}>"CPU VBD / OGC"</button>
                         </div>
                     }} else { ui! { <span /> } }}
@@ -1479,7 +1509,13 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
             format!("{:.2} mm", m.minimum_distance_m * 1000.0)
         });
     let last_res = state.last_metrics.as_ref().map_or("N/A".to_string(), |m| {
-        format!("{:.1e}", m.residual_rms_n.unwrap_or(0.0))
+        m.barrier_al.as_ref().map_or_else(
+            || {
+                m.residual_rms_n
+                    .map_or("N/A".into(), |r| format!("{r:.1e}"))
+            },
+            |al| format!("{:.1e} N max", al.original_force_max_n),
+        )
     });
 
     let pins_count = selected_panel.map_or(0, |p| p.pins.len() + p.pin_points.len());
@@ -1659,7 +1695,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                 </div>
                 <div class="prop-row">
                     <span class="prop-label">"Active Backend"</span>
-                    <span class="prop-value">{if state.gpu_sim { "WGSL AVBD / IPC" } else { "CPU (OGC)" }}</span>
+                    <span class="prop-value">{if state.gpu_sim { state.contact_method.label() } else { "CPU (OGC)" }}</span>
                 </div>
             </div>
         </div>
@@ -2064,6 +2100,7 @@ pub fn run(
     options: super::RunOptions,
 ) -> Result<(), String> {
     let super::RunOptions {
+        barrier_al,
         smoke,
         drag_test,
         perf_test,
@@ -2088,6 +2125,11 @@ pub fn run(
     state.perf_test = perf_test;
     state.authoring_test = authoring_test;
     state.gpu_sim = gpu_sim;
+    state.contact_method = if barrier_al {
+        ContactMethod::BarrierAl
+    } else {
+        ContactMethod::Ipc
+    };
     if perf_test {
         state.perf = Some(super::perf::PerfRun::new());
         state.playing = true;
@@ -2220,6 +2262,31 @@ mod tests {
             delta: Duration::from_millis(16),
             frame_index: 12,
         });
+        let button = app.find_element_bounds_by_id("#solver-barrier-al").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 13,
+        });
+        assert_eq!(app.state().contact_method, ContactMethod::BarrierAl);
+        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 12,
+        });
         let button = app.find_element_bounds_by_id("#solver-cpu").unwrap();
         assert!(cssimpler::renderer::dispatch_click(
             app.scene(),
@@ -2231,7 +2298,7 @@ mod tests {
             frame_index: 12,
         });
         assert!(!app.state().gpu_sim);
-        assert_eq!(app.state().generation, generation + 2);
+        assert_eq!(app.state().generation, generation + 3);
         assert_eq!(app.state().scene.state.x, checkpoint.x);
 
         // Headless RGBA8 rendering

@@ -33,6 +33,7 @@ pub fn current_worker_result(done: Option<worker::Done>, generation: u64) -> Opt
 
 #[derive(Clone, Copy, Default)]
 pub struct RunOptions {
+    pub barrier_al: bool,
     pub smoke: bool,
     pub drag_test: bool,
     pub perf_test: bool,

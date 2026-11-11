@@ -71,6 +71,9 @@ struct Args {
     /// Historical hybrid VBD / OGC headless benchmark control.
     #[arg(long, conflicts_with_all = ["reference", "view", "ui_smoke", "ui_interaction_smoke", "ui_perf_smoke", "ui_authoring_smoke"])]
     hybrid_vbd: bool,
+    /// Experimental GPU distance-slack barrier augmented Lagrangian contact.
+    #[arg(long, conflicts_with_all = ["cpu", "reference", "hybrid_vbd"])]
+    barrier_al: bool,
     /// Compare GPU energies/forces against f64 AD before each step (slow).
     #[arg(long, requires = "hybrid_vbd")]
     check_gpu_gradients: bool,
@@ -107,7 +110,11 @@ fn run_ogc(
     #[cfg(feature = "desktop")]
     let avbd = if !args.cpu && !args.hybrid_vbd && args.steps > 0 {
         let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
-        Some(marvelous_cloth::gpu_avbd::GpuAvbd::new(device, queue))
+        let mut solver = marvelous_cloth::gpu_avbd::GpuAvbd::new(device, queue);
+        if args.barrier_al {
+            solver.contact_method = marvelous_cloth::gpu_avbd::ContactMethod::BarrierAl;
+        }
+        Some(solver)
     } else {
         None
     };
@@ -140,7 +147,7 @@ fn run_ogc(
         None
     };
     #[cfg(not(feature = "desktop"))]
-    if args.gpu_sim || args.hybrid_vbd {
+    if args.gpu_sim || args.hybrid_vbd || args.barrier_al {
         return Err("Rebuild with desktop for --gpu-sim".into());
     }
     fs::write(
@@ -151,7 +158,9 @@ fn run_ogc(
         64 * 1024,
         fs::File::create(args.output.join("metrics.jsonl"))?,
     );
-    let backend = if args.hybrid_vbd {
+    let backend = if args.barrier_al {
+        "wgsl-finite-avbd-barrier-al"
+    } else if args.hybrid_vbd {
         "hybrid-cpu-ogc-gpu-vbd"
     } else if cfg!(feature = "desktop") && !args.cpu {
         "wgsl-finite-avbd-ipc"
@@ -200,7 +209,7 @@ fn run_ogc(
         "vertices":scene.state.x.len(),"triangles":scene.garment.mesh.triangles.len(),"wall_ms":wall_ms,
         "mean_step_ms":if rows.is_empty(){0.}else{wall_ms/rows.len() as f64},"last":rows.last(),
         "seams":scene.garment.seams.iter().map(|s|serde_json::json!({"id":s.id,"max_gap_m":s.max_gap(&scene.state.x)})).collect::<Vec<_>>(),
-        "scope":if backend=="wgsl-finite-avbd-ipc" {"Independent finite AVBD / squared-distance IPC-style VF/EE barrier; conservative Lipschitz path bounds, local sewing exclusions; no friction or convergence certificate; one snapshot readback per step"} else {"VBD/OGC control; local sewing exclusions; no friction or convergence certificate"}});
+        "scope":if args.barrier_al {"Experimental independent AVBD / distance-slack barrier AL; fixed iteration budget, see barrier_al residuals; conservative path bounds, no friction"} else if backend=="wgsl-finite-avbd-ipc" {"Independent finite AVBD / squared-distance IPC-style VF/EE barrier; conservative Lipschitz path bounds, local sewing exclusions; no friction or convergence certificate; one snapshot readback per step"} else {"VBD/OGC control; local sewing exclusions; no friction or convergence certificate"}});
     fs::write(
         args.output.join("run.json"),
         serde_json::to_string_pretty(&report)?,
@@ -228,6 +237,7 @@ fn run_ogc(
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
             fitting_editor::RunOptions {
+                barrier_al: args.barrier_al,
                 smoke: args.ui_smoke,
                 drag_test: args.ui_interaction_smoke,
                 perf_test: args.ui_perf_smoke,
@@ -386,6 +396,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
             fitting_editor::RunOptions {
+                barrier_al: args.barrier_al,
                 smoke: args.ui_smoke,
                 drag_test: args.ui_interaction_smoke,
                 perf_test: args.ui_perf_smoke,

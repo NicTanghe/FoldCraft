@@ -1,0 +1,533 @@
+{
+  "scope": "16 vertices; 32 sweeps; 8 steps per backend; first step excluded from timing summary; single local run, no dense-garment or equal-quality inter-solver speed claim",
+  "rows": [
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 4.240923701104293e-06,
+      "minimum_m": 0.0029935999773442745,
+      "speed_max_m_s": 0.0033839859534054995,
+      "step": 0,
+      "step_ms": 78.68612499999999
+    },
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 1.2333492449556616e-06,
+      "minimum_m": 0.002993464469909668,
+      "speed_max_m_s": 8.147908374667168e-06,
+      "step": 1,
+      "step_ms": 118.87775
+    },
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 1.6127651436548263e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 3.975073923356831e-06,
+      "step": 2,
+      "step_ms": 73.10020899999999
+    },
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 4.5014471039550585e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.522286217121891e-07,
+      "step": 3,
+      "step_ms": 72.612666
+    },
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 2.3696491879832138e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 2.146306344602643e-07,
+      "step": 4,
+      "step_ms": 95.27179199999999
+    },
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 1.5305151812583517e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.8495473004500768e-07,
+      "step": 5,
+      "step_ms": 96.110291
+    },
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 9.728190253355251e-07,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.6140734384466913e-07,
+      "step": 6,
+      "step_ms": 109.98375
+    },
+    {
+      "al": null,
+      "backend": "ipc_baseline",
+      "extension_max_percent": 3.8131484636494406e-07,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.0449528032155919e-07,
+      "step": 7,
+      "step_ms": 122.10837500000001
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 4.240923701104293e-06,
+      "minimum_m": 0.0029935999773442745,
+      "speed_max_m_s": 0.0033839859534054995,
+      "step": 0,
+      "step_ms": 69.033209
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 1.2333492449556616e-06,
+      "minimum_m": 0.002993464469909668,
+      "speed_max_m_s": 8.147908374667168e-06,
+      "step": 1,
+      "step_ms": 104.889708
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 1.6127651436548263e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 3.975073923356831e-06,
+      "step": 2,
+      "step_ms": 65.697667
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 4.5014471039550585e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.522286217121891e-07,
+      "step": 3,
+      "step_ms": 65.47812499999999
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 2.3696491879832138e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 2.146306344602643e-07,
+      "step": 4,
+      "step_ms": 84.458667
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 1.5305151812583517e-06,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.8495473004500768e-07,
+      "step": 5,
+      "step_ms": 85.063666
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 9.728190253355251e-07,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.6140734384466913e-07,
+      "step": 6,
+      "step_ms": 96.343417
+    },
+    {
+      "al": null,
+      "backend": "ipc",
+      "extension_max_percent": 3.8131484636494406e-07,
+      "minimum_m": 0.002993531059473753,
+      "speed_max_m_s": 1.0449528032155919e-07,
+      "step": 7,
+      "step_ms": 108.283541
+    },
+    {
+      "al": {
+        "armijo_trials": 43,
+        "dual_change_n": 0.0027474015951156616,
+        "matched_pairs": 464,
+        "original_force_max_n": 0.0027668310794979334,
+        "primal_m": 4.656612873077393e-10,
+        "slack_stationarity_n": 2.244231291115284e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 5.69801517080748e-07,
+      "minimum_m": 0.0029963762499392033,
+      "speed_max_m_s": 0.0032190908677875996,
+      "step": 0,
+      "step_ms": 78.97800000000001
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0022351741790771484,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0022601590026170015,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.3427768610417843e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 4.4656491837713475e-07,
+      "minimum_m": 0.002995545044541359,
+      "speed_max_m_s": 4.95730600960087e-05,
+      "step": 1,
+      "step_ms": 74.752375
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0015832483768463135,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0016040728660300374,
+        "primal_m": 4.656612873077393e-10,
+        "slack_stationarity_n": 2.3453612811863422e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 3.9646756988531706e-07,
+      "minimum_m": 0.0029949371237307787,
+      "speed_max_m_s": 3.61011152563151e-05,
+      "step": 2,
+      "step_ms": 74.78262500000001
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0011641532182693481,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0011439321096986532,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.0427629351615906e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 3.846138518781572e-06,
+      "minimum_m": 0.002994498237967491,
+      "speed_max_m_s": 2.6052437533508055e-05,
+      "step": 3,
+      "step_ms": 74.33475
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0007916241884231567,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.000798010965809226,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.2115360479801893e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 2.7535914215448543e-06,
+      "minimum_m": 0.002994189038872719,
+      "speed_max_m_s": 1.8312273823539726e-05,
+      "step": 4,
+      "step_ms": 74.58687499999999
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.000605359673500061,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0005459612584672868,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 1.8810387700796127e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 2.51346763402438e-06,
+      "minimum_m": 0.0029939746018499136,
+      "speed_max_m_s": 1.2763411177729722e-05,
+      "step": 5,
+      "step_ms": 74.95224999999999
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0003259629011154175,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.00036953386734239757,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 1.6836507711559534e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 1.8164547643806372e-06,
+      "minimum_m": 0.002993826987221837,
+      "speed_max_m_s": 8.679853635840118e-06,
+      "step": 6,
+      "step_ms": 75.103458
+    },
+    {
+      "al": {
+        "armijo_trials": 36,
+        "dual_change_n": 0.00027939677238464355,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0002535486128181219,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.2702384740114212e-05
+      },
+      "backend": "al_balanced_baseline",
+      "extension_max_percent": 4.2018122314857465e-08,
+      "minimum_m": 0.0029937331564724445,
+      "speed_max_m_s": 5.598194093181519e-06,
+      "step": 7,
+      "step_ms": 76.59629199999999
+    },
+    {
+      "al": {
+        "armijo_trials": 43,
+        "dual_change_n": 0.0027474015951156616,
+        "matched_pairs": 464,
+        "original_force_max_n": 0.0027668310794979334,
+        "primal_m": 4.656612873077393e-10,
+        "slack_stationarity_n": 2.244231291115284e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 5.69801517080748e-07,
+      "minimum_m": 0.0029963762499392033,
+      "speed_max_m_s": 0.0032190908677875996,
+      "step": 0,
+      "step_ms": 71.88333399999999
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0022351741790771484,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0022601590026170015,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.3427768610417843e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 4.4656491837713475e-07,
+      "minimum_m": 0.002995545044541359,
+      "speed_max_m_s": 4.95730600960087e-05,
+      "step": 1,
+      "step_ms": 67.531125
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0015832483768463135,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0016040728660300374,
+        "primal_m": 4.656612873077393e-10,
+        "slack_stationarity_n": 2.3453612811863422e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 3.9646756988531706e-07,
+      "minimum_m": 0.0029949371237307787,
+      "speed_max_m_s": 3.61011152563151e-05,
+      "step": 2,
+      "step_ms": 67.510375
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0011641532182693481,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0011439321096986532,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.0427629351615906e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 3.846138518781572e-06,
+      "minimum_m": 0.002994498237967491,
+      "speed_max_m_s": 2.6052437533508055e-05,
+      "step": 3,
+      "step_ms": 67.15
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0007916241884231567,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.000798010965809226,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.2115360479801893e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 2.7535914215448543e-06,
+      "minimum_m": 0.002994189038872719,
+      "speed_max_m_s": 1.8312273823539726e-05,
+      "step": 4,
+      "step_ms": 67.394792
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.000605359673500061,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0005459612584672868,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 1.8810387700796127e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 2.51346763402438e-06,
+      "minimum_m": 0.0029939746018499136,
+      "speed_max_m_s": 1.2763411177729722e-05,
+      "step": 5,
+      "step_ms": 67.571292
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0003259629011154175,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.00036953386734239757,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 1.6836507711559534e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 1.8164547643806372e-06,
+      "minimum_m": 0.002993826987221837,
+      "speed_max_m_s": 8.679853635840118e-06,
+      "step": 6,
+      "step_ms": 67.451958
+    },
+    {
+      "al": {
+        "armijo_trials": 36,
+        "dual_change_n": 0.00027939677238464355,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0002535486128181219,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.2702384740114212e-05
+      },
+      "backend": "al_fixed",
+      "extension_max_percent": 4.2018122314857465e-08,
+      "minimum_m": 0.0029937331564724445,
+      "speed_max_m_s": 5.598194093181519e-06,
+      "step": 7,
+      "step_ms": 68.9545
+    },
+    {
+      "al": {
+        "armijo_trials": 43,
+        "dual_change_n": 0.0027474015951156616,
+        "matched_pairs": 464,
+        "original_force_max_n": 0.0027668310794979334,
+        "primal_m": 4.656612873077393e-10,
+        "slack_stationarity_n": 2.244231291115284e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 5.69801517080748e-07,
+      "minimum_m": 0.0029963762499392033,
+      "speed_max_m_s": 0.0032190908677875996,
+      "step": 0,
+      "step_ms": 71.971916
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0022351741790771484,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0022601590026170015,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.3427768610417843e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 4.4656491837713475e-07,
+      "minimum_m": 0.002995545044541359,
+      "speed_max_m_s": 4.95730600960087e-05,
+      "step": 1,
+      "step_ms": 67.57995799999999
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0015832483768463135,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0016040728660300374,
+        "primal_m": 4.656612873077393e-10,
+        "slack_stationarity_n": 2.3453612811863422e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 3.9646756988531706e-07,
+      "minimum_m": 0.0029949371237307787,
+      "speed_max_m_s": 3.61011152563151e-05,
+      "step": 2,
+      "step_ms": 67.400291
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0011641532182693481,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0011439321096986532,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.0427629351615906e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 3.846138518781572e-06,
+      "minimum_m": 0.002994498237967491,
+      "speed_max_m_s": 2.6052437533508055e-05,
+      "step": 3,
+      "step_ms": 67.449625
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0007916241884231567,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.000798010965809226,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.2115360479801893e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 2.7535914215448543e-06,
+      "minimum_m": 0.002994189038872719,
+      "speed_max_m_s": 1.8312273823539726e-05,
+      "step": 4,
+      "step_ms": 67.181917
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.000605359673500061,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0005459612584672868,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 1.8810387700796127e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 2.51346763402438e-06,
+      "minimum_m": 0.0029939746018499136,
+      "speed_max_m_s": 1.2763411177729722e-05,
+      "step": 5,
+      "step_ms": 67.599125
+    },
+    {
+      "al": {
+        "armijo_trials": 32,
+        "dual_change_n": 0.0003259629011154175,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.00036953386734239757,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 1.6836507711559534e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 1.8164547643806372e-06,
+      "minimum_m": 0.002993826987221837,
+      "speed_max_m_s": 8.679853635840118e-06,
+      "step": 6,
+      "step_ms": 67.454791
+    },
+    {
+      "al": {
+        "armijo_trials": 36,
+        "dual_change_n": 0.00027939677238464355,
+        "matched_pairs": 496,
+        "original_force_max_n": 0.0002535486128181219,
+        "primal_m": 2.3283064365386963e-10,
+        "slack_stationarity_n": 2.2702384740114212e-05
+      },
+      "backend": "al_balanced",
+      "extension_max_percent": 4.2018122314857465e-08,
+      "minimum_m": 0.0029937331564724445,
+      "speed_max_m_s": 5.598194093181519e-06,
+      "step": 7,
+      "step_ms": 69.077
+    }
+  ]
+}

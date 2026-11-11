@@ -52,3 +52,5 @@ pub mod vbd;
 pub mod viewport_controller;
 /// Typed workspace actions and capability checks, independent of desktop UI.
 pub mod workspace_commands;
+
+pub mod barrier_al;
