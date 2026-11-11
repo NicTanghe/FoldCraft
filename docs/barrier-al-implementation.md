@@ -135,3 +135,7 @@ of the native viewport at 800×600, share a test-only diagnostic-mailbox lock,
 and fix an upstream test lint. Clippy passed after these code fixes.
 Queue collisions were resolved as FC-0040 (IPC) and FC-0041 (selector/AL), retaining
 upstream tickets and owners.
+
+Main subsequently advanced to 98004f3 (Project-window Studio unification).
+That update is merged too; its icon imports/layout were retained alongside the
+selector. The Project headless frame/dropdown test passed after this merge.
