@@ -762,14 +762,13 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                 </button>
                 <button id="command-palette-trigger" onclick={on_runner_palette_toggle} title="Open Command Palette (Ctrl+K)">
                     {icon_palette()}
-                    <span class="btn-label">"Palette"</span>
+                    <span class="btn-label">"Commands"</span>
                 </button>
-                <button id="theme-toggle" onclick={on_runner_theme_toggle} title="Toggle Dark/Light Theme">
+                <button id="theme-toggle" onclick={on_runner_theme_toggle} title={theme_label}>
                     {match state.theme {
                         Theme::Dark => icon_sun(),
                         Theme::Light => icon_moon(),
                     }}
-                    <span class="btn-label">{theme_label}</span>
                 </button>
             </div>
         </header>
@@ -808,41 +807,24 @@ fn build_runner_3d_rail(state: &CssRunnerState) -> Node {
         "tool-btn"
     };
 
-    let pin_badge = if state.pin_mode_contour {
-        "Contour"
-    } else {
-        "Interior"
-    };
-
     ui! {
         <aside id="rail-3d" class="tool-rail tool-rail-3d">
             <button class={gizmo_class} onclick={on_runner_tool_gizmo} title="Select & Arrange (Gizmo)">
                 {icon_gizmo()}
                 <span class="tool-label">"Gizmo"</span>
             </button>
-            <div class="tool-composite grab-composite">
-                <button class={grab_class} onclick={on_runner_tool_grab} title="Grab Cloth (Pull & Drag)">
-                    {icon_grab()}
-                    <span class="tool-label">"Grab"</span>
-                </button>
-                <div class="grab-readouts">
-                    <span class="readout">"50mm"</span>
-                    <span class="readout">"1.0"</span>
-                </div>
-            </div>
+            <button class={grab_class} onclick={on_runner_tool_grab} title="Grab Cloth (Pull & Drag in Simulation)">
+                {icon_grab()}
+                <span class="tool-label">"Grab"</span>
+            </button>
             <button class={sew3d_class} onclick={on_runner_tool_sew3d} title="3D Sew (Connect boundaries)">
                 {icon_sew_3d()}
                 <span class="tool-label">"3D Sew"</span>
             </button>
-            <div class="tool-composite pin-composite">
-                <button class={pin_class} onclick={on_runner_tool_pin} title="Pin Cloth">
-                    {icon_pin()}
-                    <span class="tool-label">"Pin"</span>
-                </button>
-                <button class="pin-mode-badge" onclick={on_runner_pin_mode_toggle} title="Toggle Contour / Interior pin mode">
-                    {pin_badge}
-                </button>
-            </div>
+            <button class={pin_class} onclick={on_runner_tool_pin} title="Pin Cloth (Click vertices to anchor)">
+                {icon_pin()}
+                <span class="tool-label">"Pin"</span>
+            </button>
             <button class={msr_class} onclick={on_runner_tool_measure3d} title="3D Distance Measurement">
                 {icon_measure_3d()}
                 <span class="tool-label">"Measure"</span>
@@ -851,12 +833,12 @@ fn build_runner_3d_rail(state: &CssRunnerState) -> Node {
                 {icon_avatar_diag()}
                 <span class="tool-label">"Avatar"</span>
             </button>
-            <button class="tool-btn" onclick={on_runner_cam_reset} title="Reset Camera View">
-                {icon_reset()}
+            <button class="tool-btn" onclick={on_runner_cam_reset} title="Reset Camera View (Framing)">
+                {icon_cam_reset()}
                 <span class="tool-label">"Reset"</span>
             </button>
-            <button class="tool-btn" onclick={on_runner_drawer_toggle} title="Toggle Asset Drawer">
-                {icon_view_split()}
+            <button class="tool-btn" onclick={on_runner_drawer_toggle} title="Toggle Asset & Piece Drawer">
+                {icon_sidebar_toggle()}
                 <span class="tool-label">"Drawer"</span>
             </button>
         </aside>
@@ -919,12 +901,6 @@ fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
         "tool-btn"
     };
 
-    let corner_badge = if state.corner_mode_radius {
-        "Rad"
-    } else {
-        "Shape"
-    };
-
     ui! {
         <aside id="rail-2d" class="tool-rail tool-rail-2d">
             <button class={edit_class} onclick={on_runner_2d_edit} title="Select & Edit Vertices">
@@ -963,15 +939,10 @@ fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
                 {icon_trim_2d()}
                 <span class="tool-label">"Trim"</span>
             </button>
-            <div class="tool-composite">
-                <button class={corner_class} onclick={on_runner_2d_corner} title="Corner Rounding Tool">
-                    {icon_corner_2d()}
-                    <span class="tool-label">"Corner"</span>
-                </button>
-                <button class="corner-mode-badge" onclick={on_runner_corner_mode_toggle} title="Toggle Radius / Shape corner rule">
-                    {corner_badge}
-                </button>
-            </div>
+            <button class={corner_class} onclick={on_runner_2d_corner} title="Corner Rounding & Shaping Tool">
+                {icon_corner_2d()}
+                <span class="tool-label">"Corner"</span>
+            </button>
         </aside>
     }
 }

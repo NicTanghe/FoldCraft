@@ -455,6 +455,21 @@
       "owner": null,
       "vruntime": 3.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/36"
+    },
+    {
+      "id": "FC-0035",
+      "title": "Redesign CAD vector icons, remove rail badge overflows, and fix top-bar / right-dock layout",
+      "acceptance": "Replace unclear icons with standard CAD symbols (open hand grab, crisp white seam stitches, dress form avatar, target cam reset, clean scissors/fillet); eliminate rail-overflowing badges and readouts; fix horizontal alignment in top bar right; add right dock scrollbar breathing room; pass CPU and desktop checks.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0034"
+      ],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/38"
     }
   ]
 }
