@@ -1080,7 +1080,7 @@ fn build_runner_3d_viewport(_state: &CssRunnerState) -> Node {
     }
 }
 
-fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
+pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
     let (svg_nodes, view_box) = render_runner_2d_svg(state);
 
     ui! {
@@ -1090,7 +1090,7 @@ fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
                 <span class="viewport-sub">"Metric rest geometry (metres)"</span>
             </div>
             <div class="canvas-area">
-                <svg viewBox={view_box} class="svg-canvas">
+                <svg viewBox={view_box} preserveAspectRatio="xMidYMid meet" class="svg-canvas">
                     {svg_nodes}
                 </svg>
             </div>
@@ -1702,13 +1702,22 @@ fn build_runner_command_palette(state: &CssRunnerState) -> Node {
 // 2D Pattern Board SVG
 // ============================================================================
 
-fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
+pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let mut nodes = Vec::new();
     let panels = &state.project.template.panels;
+
+    struct PanelCurve {
+        edge_idx: usize,
+        c1: (f64, f64),
+        c2: (f64, f64),
+    }
 
     struct PanelGeo {
         id: String,
         points: Vec<(f64, f64)>,
+        curves: Vec<PanelCurve>,
+        internal_lines: Vec<Vec<(f64, f64)>>,
+        holes: Vec<Vec<(f64, f64)>>,
         min_x: f64,
         min_y: f64,
         max_x: f64,
@@ -1724,10 +1733,30 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     for (idx, panel) in panels.iter().enumerate() {
         let is_selected = idx == state.selected_piece_index;
         let mut raw_points = Vec::new();
+        let mut raw_curves = Vec::new();
+        let mut internal_lines = Vec::new();
+        let mut holes = Vec::new();
 
         if let Some(ref poly) = panel.polygon {
             for pt in &poly.points {
                 raw_points.push((pt.x, pt.y));
+            }
+            for (edge_idx, edge_name) in poly.edges.iter().enumerate() {
+                if let Some([c1, c2]) = poly.curves.get(edge_name) {
+                    raw_curves.push((edge_idx, (c1.x, c1.y), (c2.x, c2.y)));
+                }
+            }
+            for line in &poly.lines {
+                let pts: Vec<(f64, f64)> = line.points.iter().map(|p| (p.x, p.y)).collect();
+                if !pts.is_empty() {
+                    internal_lines.push(pts);
+                }
+            }
+            for hole in &poly.holes {
+                let pts: Vec<(f64, f64)> = hole.points.iter().map(|p| (p.x, p.y)).collect();
+                if !pts.is_empty() {
+                    holes.push(pts);
+                }
             }
         }
         if raw_points.is_empty() {
@@ -1744,11 +1773,6 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
             .iter()
             .map(|p| p.0)
             .fold(f64::NEG_INFINITY, f64::max);
-        let _p_min_y = raw_points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-        let _p_max_y = raw_points
-            .iter()
-            .map(|p| p.1)
-            .fold(f64::NEG_INFINITY, f64::max);
         let width = (p_max_x - p_min_x).max(0.05);
 
         let (offset_x, offset_y) = if let Some(l2d) = panel.layout_2d {
@@ -1764,21 +1788,59 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
             .map(|&(x, y)| (x + offset_x, y + offset_y))
             .collect();
 
-        let s_min_x = shifted.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-        let s_max_x = shifted
+        let shifted_curves: Vec<PanelCurve> = raw_curves
+            .into_iter()
+            .map(|(edge_idx, c1, c2)| PanelCurve {
+                edge_idx,
+                c1: (c1.0 + offset_x, c1.1 + offset_y),
+                c2: (c2.0 + offset_x, c2.1 + offset_y),
+            })
+            .collect();
+
+        let shifted_internal_lines: Vec<Vec<(f64, f64)>> = internal_lines
+            .into_iter()
+            .map(|pts| {
+                pts.into_iter()
+                    .map(|(x, y)| (x + offset_x, y + offset_y))
+                    .collect()
+            })
+            .collect();
+
+        let shifted_holes: Vec<Vec<(f64, f64)>> = holes
+            .into_iter()
+            .map(|pts| {
+                pts.into_iter()
+                    .map(|(x, y)| (x + offset_x, y + offset_y))
+                    .collect()
+            })
+            .collect();
+
+        let mut s_min_x = shifted.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+        let mut s_max_x = shifted
             .iter()
             .map(|p| p.0)
             .fold(f64::NEG_INFINITY, f64::max);
-        let s_min_y = shifted.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-        let s_max_y = shifted
+        let mut s_min_y = shifted.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+        let mut s_max_y = shifted
             .iter()
             .map(|p| p.1)
             .fold(f64::NEG_INFINITY, f64::max);
+
+        for c in &shifted_curves {
+            s_min_x = s_min_x.min(c.c1.0).min(c.c2.0);
+            s_max_x = s_max_x.max(c.c1.0).max(c.c2.0);
+            s_min_y = s_min_y.min(c.c1.1).min(c.c2.1);
+            s_max_y = s_max_y.max(c.c1.1).max(c.c2.1);
+        }
+
         let center = ((s_min_x + s_max_x) * 0.5, (s_min_y + s_max_y) * 0.5);
 
         panel_geos.push(PanelGeo {
             id: panel.id.clone(),
             points: shifted,
+            curves: shifted_curves,
+            internal_lines: shifted_internal_lines,
+            holes: shifted_holes,
             min_x: s_min_x,
             min_y: s_min_y,
             max_x: s_max_x,
@@ -1794,14 +1856,19 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let global_min_y = panel_geos.iter().map(|p| p.min_y).fold(0.0_f64, f64::min);
     let global_max_y = panel_geos.iter().map(|p| p.max_y).fold(0.6_f64, f64::max);
 
+    // Isotropic aspect ratio: enforce a square viewbox (vb_w == vb_h) centered on content
     let span_x = (global_max_x - global_min_x).max(0.2);
     let span_y = (global_max_y - global_min_y).max(0.2);
-    let margin = (span_x.max(span_y) * 0.12).max(0.08);
+    let max_span = span_x.max(span_y).max(0.4);
+    let center_x = (global_min_x + global_max_x) * 0.5;
+    let center_y = (global_min_y + global_max_y) * 0.5;
+    let margin = (max_span * 0.12).max(0.06);
+    let half_span = max_span * 0.5 + margin;
 
-    let vb_min_x = global_min_x - margin;
-    let vb_min_y = global_min_y - margin;
-    let vb_w = span_x + 2.0 * margin;
-    let vb_h = span_y + 2.0 * margin;
+    let vb_min_x = center_x - half_span;
+    let vb_min_y = center_y - half_span;
+    let vb_w = half_span * 2.0;
+    let vb_h = half_span * 2.0;
     let view_box = format!("{vb_min_x:.3} {vb_min_y:.3} {vb_w:.3} {vb_h:.3}");
 
     // Background rect
@@ -1809,7 +1876,7 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         <rect x={format!("{vb_min_x:.3}")} y={format!("{vb_min_y:.3}")} width={format!("{vb_w:.3}")} height={format!("{vb_h:.3}")} fill="#0d0f15" />
     });
 
-    // Drafting grid (every 0.1m / 100mm)
+    // Drafting grid (minor 0.10m / 100mm, major 0.50m / 500mm)
     let grid_step = 0.10_f64;
     let start_gx = (vb_min_x / grid_step).floor() * grid_step;
     let mut gx = start_gx;
@@ -1836,7 +1903,7 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         gy += grid_step;
     }
 
-    // Panels
+    // Panels rendering
     for p in &panel_geos {
         let stroke_color = if p.is_selected { "#f59e0b" } else { "#3b82f6" };
         let fill_color = if p.is_selected {
@@ -1845,22 +1912,119 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
             "rgba(59, 130, 246, 0.08)"
         };
         let stroke_w = if p.is_selected {
-            vb_w * 0.005
+            vb_w * 0.0045
         } else {
             vb_w * 0.0025
         };
 
-        let mut pts_str = String::new();
-        for (x, y) in &p.points {
-            if !pts_str.is_empty() {
-                pts_str.push(' ');
+        // Construct SVG path following straight edges and cubic Bézier curves
+        let n_pts = p.points.len();
+        if n_pts > 0 {
+            let mut path_d = String::new();
+            let (x0, y0) = p.points[0];
+            path_d.push_str(&format!("M {x0:.4},{y0:.4}"));
+
+            for i in 0..n_pts {
+                let next_idx = (i + 1) % n_pts;
+                let (next_x, next_y) = p.points[next_idx];
+                if let Some(c) = p.curves.iter().find(|c| c.edge_idx == i) {
+                    path_d.push_str(&format!(
+                        " C {:.4},{:.4} {:.4},{:.4} {next_x:.4},{next_y:.4}",
+                        c.c1.0, c.c1.1, c.c2.0, c.c2.1
+                    ));
+                } else {
+                    path_d.push_str(&format!(" L {next_x:.4},{next_y:.4}"));
+                }
             }
-            pts_str.push_str(&format!("{x:.3},{y:.3}"));
+            path_d.push_str(" Z");
+
+            nodes.push(ui! {
+                <path d={path_d} fill={fill_color} stroke={stroke_color} stroke-width={format!("{stroke_w:.4}")} class="pattern-piece" />
+            });
         }
 
-        nodes.push(ui! {
-            <polygon points={pts_str} fill={fill_color} stroke={stroke_color} stroke-width={format!("{stroke_w:.4}")} />
-        });
+        // Internal lines (fold lines, darts, styling marks)
+        for line_pts in &p.internal_lines {
+            let mut l_pts_str = String::new();
+            for (x, y) in line_pts {
+                if !l_pts_str.is_empty() {
+                    l_pts_str.push(' ');
+                }
+                l_pts_str.push_str(&format!("{x:.4},{y:.4}"));
+            }
+            nodes.push(ui! {
+                <polyline points={l_pts_str} fill="none" stroke="#64748b" stroke-dasharray={format!("{:.4},{:.4}", vb_w * 0.006, vb_w * 0.004)} stroke-width={format!("{:.4}", vb_w * 0.002)} />
+            });
+        }
+
+        // Holes
+        for hole_pts in &p.holes {
+            let mut h_pts_str = String::new();
+            for (x, y) in hole_pts {
+                if !h_pts_str.is_empty() {
+                    h_pts_str.push(' ');
+                }
+                h_pts_str.push_str(&format!("{x:.4},{y:.4}"));
+            }
+            nodes.push(ui! {
+                <polygon points={h_pts_str} fill="#0d0f15" stroke={stroke_color} stroke-width={format!("{:.4}", stroke_w * 0.8)} />
+            });
+        }
+
+        // Bézier Control Handles & Tangent Stalks (for selected piece)
+        if p.is_selected {
+            for c in &p.curves {
+                let (p0_x, p0_y) = p.points[c.edge_idx];
+                let (p3_x, p3_y) = p.points[(c.edge_idx + 1) % n_pts];
+
+                let stalk1 = format!("{p0_x:.4},{p0_y:.4} {:.4},{:.4}", c.c1.0, c.c1.1);
+                let stalk2 = format!("{p3_x:.4},{p3_y:.4} {:.4},{:.4}", c.c2.0, c.c2.1);
+                let stalk_w = format!("{:.4}", vb_w * 0.0016);
+                let dash = format!("{:.4},{:.4}", vb_w * 0.004, vb_w * 0.003);
+
+                nodes.push(ui! {
+                    <polyline points={stalk1} fill="none" stroke="#38bdf8" stroke-width={stalk_w.clone()} stroke-dasharray={dash.clone()} />
+                });
+                nodes.push(ui! {
+                    <polyline points={stalk2} fill="none" stroke="#38bdf8" stroke-width={stalk_w} stroke-dasharray={dash} />
+                });
+
+                // Tangent control knobs
+                let handle_r = format!("{:.4}", vb_w * 0.006);
+                let handle_sw = format!("{:.4}", vb_w * 0.0015);
+                nodes.push(ui! {
+                    <circle cx={format!("{:.4}", c.c1.0)} cy={format!("{:.4}", c.c1.1)} r={handle_r.clone()} fill="#38bdf8" stroke="#ffffff" stroke-width={handle_sw.clone()} class="bezier-handle" />
+                });
+                nodes.push(ui! {
+                    <circle cx={format!("{:.4}", c.c2.0)} cy={format!("{:.4}", c.c2.1)} r={handle_r} fill="#38bdf8" stroke="#ffffff" stroke-width={handle_sw} class="bezier-handle" />
+                });
+            }
+        }
+
+        // Contour Edge Points (CAD vertices)
+        let vertex_r = format!(
+            "{:.4}",
+            if p.is_selected {
+                vb_w * 0.0065
+            } else {
+                vb_w * 0.0045
+            }
+        );
+        let vertex_sw = format!(
+            "{:.4}",
+            if p.is_selected {
+                vb_w * 0.0025
+            } else {
+                vb_w * 0.0015
+            }
+        );
+        let vertex_stroke = if p.is_selected { "#f59e0b" } else { "#2563eb" };
+
+        for (pt_x, pt_y) in &p.points {
+            nodes.push(ui! {
+                <circle cx={format!("{pt_x:.4}")} cy={format!("{pt_y:.4}")} r={vertex_r.clone()} fill="#ffffff" stroke={vertex_stroke} stroke-width={vertex_sw.clone()} class="cad-vertex" />
+            });
+        }
 
         // Grainline
         let rad = p.grain_deg.to_radians();
@@ -1876,7 +2040,7 @@ fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         });
 
         // Label
-        let font_size = format!("{:.3}", (vb_w * 0.025).max(0.015));
+        let font_size = format!("{:.3}", (vb_w * 0.024).max(0.015));
         nodes.push(ui! {
             <text x={format!("{cx:.3}")} y={format!("{:.3}", cy - grain_len * 0.4)} fill="#cbd5e1" font-size={font_size} font-family="sans-serif">
                 {p.id.clone()}
