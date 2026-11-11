@@ -554,7 +554,7 @@
       "spent": 9.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 4.125,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
@@ -567,7 +567,7 @@
       "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
@@ -580,7 +580,7 @@
       "spent": 8.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 4.0,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
@@ -606,7 +606,7 @@
       "spent": 5.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.625,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
@@ -619,7 +619,7 @@
       "spent": 3.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.375,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
@@ -632,7 +632,7 @@
       "spent": 10.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 4.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37",
