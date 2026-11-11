@@ -533,16 +533,18 @@
     },
     {
       "id": "FC-0040",
-      "title": "Issue 242: GPU-resident WGSL finite AVBD and IPC contact pipeline",
-      "acceptance": "Resident WGSL prediction, finite-material AVBD, finite VF/EE IPC barrier, conservative continuous step bounds, transactional errors; default in fitting and native modes; CPU-only tests and opt-in GPU checks; document limits",
-      "points": 8.0,
-      "spent": 10.0,
+      "title": "Day/night theme pill switch, command palette vector icons, and interactive 2D piece selection",
+      "acceptance": "Custom day/night switch styled with dark/light mode tokens; command palette rendered with vector SVG icons; interactive 2D pattern piece cards in drawer and browser tree; all CPU tests pass.",
+      "points": 2.0,
+      "spent": 0,
       "priority": "urgent",
-      "depends_on": [],
-      "status": "review",
+      "depends_on": [
+        "FC-0039"
+      ],
+      "status": "done",
       "owner": null,
-      "vruntime": 4.25,
-      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/43"
     },
     {
       "id": "FC-0041",
@@ -621,6 +623,20 @@
       "owner": null,
       "vruntime": 3.375,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0047",
+      "title": "Issue 242: GPU-resident WGSL finite AVBD and IPC contact pipeline",
+      "acceptance": "Resident WGSL prediction, finite-material AVBD, finite VF/EE IPC barrier, conservative continuous step bounds, transactional errors; default in fitting and native modes; CPU-only tests and opt-in GPU checks; document limits",
+      "points": 8.0,
+      "spent": 10.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 4.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37",
+      "notes": "Former branch-local FC-0040 (resident WGSL IPC); renumbered on integration of main e904360, whose canonical FC-0040 is the completed UI feature PR43. Historical source snapshots and reports retain their original ticket references."
     }
   ]
 }

@@ -620,3 +620,15 @@ Read [OGC contracts](ogc.md) before changing the solver. Full historical reports
 Initial publication repository: `git@github.com:erythrofr/ClothCraft.git`, branch `main`. `output/` and `target/` are ignored. The owner selected MIT; see `LICENSE`. No OGC/IPC Toolkit author code was incorporated; sources are cited in `ogc.md`. Spade remains pinned in Cargo; MakeHuman provenance is under `assets/makehuman/`. CPU CI is configured in `.github/workflows/cpu.yml`; inspect its GitHub status rather than assuming success.
 
 The [resident WGSL performance follow-up](wgsl-performance.md) records GPU-only caching/filtering changes, the unchanged CPU control, passing default-garment quality gates, and 2.1–3.3x complete-step gains. The hybrid control remains faster on the measured M1 Pro.
+
+Main e904360 integration preserves the day/night pill, vector palette icons and
+interactive piece selection from PR43. Its new piece-action bits48–51 collided
+with the branch's solver actions; solver actions now use bits52–55 and a combined
+accordion/piece/solver regression covers isolation. Upstream FC-0040 remains the
+completed UI ticket; the resident IPC ticket is now FC-0047. Historical notes and
+pinned reports retain the former branch-local FC-0040 reference. CPU/GPU physics
+and the paper artifacts are unchanged by this integration.
+Post-integration validation passed 140 native/library/shader/UI tests (nine
+hardware cases remained ignored), CPU-only all-target compilation and all-target
+Clippy with Rust warnings denied. The existing optional-rfd manifest warning
+remains. No GPU workload was run for this UI integration.
