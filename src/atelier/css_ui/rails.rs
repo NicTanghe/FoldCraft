@@ -393,7 +393,7 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
             <button
                 class={gizmo_class}
                 data-tool="gizmo"
-                title="Select & Arrange (Gizmo)"
+                title="Select & Arrange [Gizmo] (1)"
             >
                 {icon_gizmo()}
                 <span class="tool-label">"Gizmo"</span>
@@ -402,7 +402,7 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                 <button
                     class={grab_class}
                     data-tool="grab"
-                    title="Grab Cloth (Pull & Drag)"
+                    title="Grab Cloth (Pull & Drag) (W)"
                 >
                     {icon_grab()}
                     <span class="tool-label">"Grab"</span>
@@ -415,7 +415,7 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
             <button
                 class={sew_class}
                 data-tool="sew"
-                title="3D Sew (Connect boundaries)"
+                title="3D Segment Sewing (N)"
             >
                 {icon_sew_3d()}
                 <span class="tool-label">"3D Sew"</span>
@@ -424,7 +424,7 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                 <button
                     class={pin_class}
                     data-tool="pin"
-                    title="Pin Cloth (Click vertices)"
+                    title="Pin Cloth [Click vertices] (P)"
                 >
                     {icon_pin()}
                     <span class="tool-label">"Pin"</span>
@@ -436,7 +436,7 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
             <button
                 class={measure_class}
                 data-tool="measure"
-                title="3D Measure"
+                title="3D Tape Measure (T)"
             >
                 {icon_measure_3d()}
                 <span class="tool-label">"Measure"</span>
@@ -445,9 +445,9 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                 id="avatar-diagnostics-btn"
                 class={avatar_class}
                 data-tool="avatar-diagnostics"
-                title="Avatar Diagnostics"
+                title="Avatar & Dress Form Diagnostics (Shift+A)"
             >
-                {icon_avatar_diag()}
+                {icon_dress_form()}
                 <span class="tool-label">"Avatar Diagnostics"</span>
             </button>
         </aside>
@@ -613,44 +613,44 @@ pub fn render_2d_rail(state: &Rail2dState) -> Node {
 
     ui! {
         <aside id="rail-2d" class="tool-rail tool-rail-2d">
-            <button class={edit_class} data-tool="edit" title="Edit Point / Curve">
+            <button class={edit_class} data-tool="edit" title="Edit Point / Transform (Z / A)">
                 {icon_edit_2d()}
                 <span class="tool-label">"Edit"</span>
             </button>
-            <button class={rect_class} data-tool="rect" title="Draw Rectangle">
+            <button class={rect_class} data-tool="rect" title="Draw Rectangle Pattern (S)">
                 {icon_rect_2d()}
                 <span class="tool-label">"Rect"</span>
             </button>
-            <button class={pen_class} data-tool="pen" title="Draw Polygon / Pen">
-                {icon_pen_2d()}
+            <button class={pen_class} data-tool="pen" title="Draw Polygon Pattern (H)">
+                {icon_polygon_2d()}
                 <span class="tool-label">"Pen"</span>
             </button>
-            <button class={freehand_class} data-tool="freehand" title="Freehand Pattern">
+            <button class={freehand_class} data-tool="freehand" title="Freehand Pattern Curve (F)">
                 {icon_freehand_2d()}
                 <span class="tool-label">"Freehand"</span>
             </button>
-            <button class={sew_class} data-tool="sew" title="Sew Seams">
+            <button class={sew_class} data-tool="sew" title="Sew Seams (B)">
                 {icon_sew_2d()}
                 <span class="tool-label">"Sew"</span>
             </button>
-            <button class={split_class} data-tool="split-point" title="Split / Add Point">
+            <button class={split_class} data-tool="split-point" title="Split / Add Point (X)">
                 {icon_split_2d()}
                 <span class="tool-label">"Split"</span>
             </button>
-            <button class={internal_class} data-tool="internal-line" title="Internal Line / Cutout">
+            <button class={internal_class} data-tool="internal-line" title="Internal Polygon / Line (G)">
                 {icon_internal_2d()}
                 <span class="tool-label">"Internal"</span>
             </button>
-            <button class={measure_class} data-tool="measure" title="2D Measure">
+            <button class={measure_class} data-tool="measure" title="2D Tape Measure (M)">
                 {icon_measure_2d()}
                 <span class="tool-label">"Measure"</span>
             </button>
-            <button class={trim_class} data-tool="trim" title="Trim">
+            <button class={trim_class} data-tool="trim" title="Trim (T)">
                 {icon_trim_2d()}
                 <span class="tool-label">"Trim"</span>
             </button>
             <div class="tool-composite corner-composite">
-                <button class={corner_class} data-tool="corner" title="Corner Tool (Rounding & Shaping)">
+                <button class={corner_class} data-tool="corner" title="Corner Rounding & Chamfer (C)">
                     {icon_corner_2d()}
                     <span class="tool-label">"Corner"</span>
                 </button>

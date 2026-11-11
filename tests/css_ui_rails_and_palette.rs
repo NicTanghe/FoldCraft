@@ -291,3 +291,81 @@ fn radial_menu_renders_at_pointer_coordinates_when_open() {
         assert!(element_text(sector_elem).contains(sec.label()));
     }
 }
+
+#[test]
+fn cad_vector_icons_and_rail_hotkeys_are_consistent_and_render_crisp_svgs() {
+    use marvelous_cloth::css_ui::{
+        icon_circle_2d, icon_cloth_pull, icon_curve_point_2d, icon_dart_2d, icon_dress_form,
+        icon_free_sew_3d, icon_notch_2d, icon_pleat_2d, icon_polygon_2d, icon_seam_allowance_2d,
+        icon_select_2d,
+    };
+
+    let icons = [
+        icon_select_2d(),
+        icon_curve_point_2d(),
+        icon_polygon_2d(),
+        icon_circle_2d(),
+        icon_dart_2d(),
+        icon_notch_2d(),
+        icon_seam_allowance_2d(),
+        icon_pleat_2d(),
+        icon_free_sew_3d(),
+        icon_cloth_pull(),
+        icon_dress_form(),
+    ];
+
+    for icon_node in &icons {
+        if let Node::Element(elem) = icon_node {
+            assert_eq!(elem.tag, "svg");
+            assert_eq!(elem.attribute("viewBox"), Some("0 0 24 24"));
+            assert!(
+                elem.classes.iter().any(|c| c == "tool-icon"),
+                "icon must have tool-icon class"
+            );
+            assert!(
+                !elem.children.is_empty(),
+                "icon must contain svg child elements"
+            );
+        } else {
+            panic!("icon node must be an ElementNode");
+        }
+    }
+
+    // Verify 3D tool rail hotkey shortcuts in button titles
+    let rail_3d = Rail3dState::default();
+    let node_3d = render_3d_rail(&rail_3d);
+    let mut btns_3d = Vec::new();
+    find_elements_by_attr(&node_3d, "data-tool", &mut btns_3d);
+    let titles_3d: Vec<String> = btns_3d
+        .iter()
+        .map(|b| b.attribute("title").unwrap_or("").to_string())
+        .collect();
+
+    assert!(titles_3d.iter().any(|t| t.contains("(1)")));
+    assert!(titles_3d.iter().any(|t| t.contains("(W)")));
+    assert!(titles_3d.iter().any(|t| t.contains("(N)")));
+    assert!(titles_3d.iter().any(|t| t.contains("(P)")));
+    assert!(titles_3d.iter().any(|t| t.contains("(T)")));
+    assert!(titles_3d.iter().any(|t| t.contains("(Shift+A)")));
+
+    // Verify 2D tool rail hotkey shortcuts in button titles
+    let rail_2d = Rail2dState::default();
+    let node_2d = render_2d_rail(&rail_2d);
+    let mut btns_2d = Vec::new();
+    find_elements_by_attr(&node_2d, "data-tool", &mut btns_2d);
+    let titles_2d: Vec<String> = btns_2d
+        .iter()
+        .map(|b| b.attribute("title").unwrap_or("").to_string())
+        .collect();
+
+    assert!(titles_2d.iter().any(|t| t.contains("(Z / A)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(S)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(H)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(F)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(B)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(X)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(G)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(M)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(T)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(C)")));
+}

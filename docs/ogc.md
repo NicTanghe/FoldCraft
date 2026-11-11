@@ -1,6 +1,6 @@
 # Offset Geometric Contact and VBD
 
-**Branch update (FC-0035):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
+**Branch update (FC-0038):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
 
 **19 October EE investigation:** [endpoint activation diagnosis and CPU experiment](edge-transition.md). The experimental interior potential is off by default and changes the contact law; it must not be described as unchanged OGC or an accepted jitter correction. Safety bounds remain identical.
 

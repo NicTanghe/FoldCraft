@@ -1,6 +1,6 @@
 # Resident WGSL finite AVBD / IPC-style contact
 
-FC-0035 implements the pipeline proposed in [ClothCraft issue 242](https://github.com/erythrofr/ClothCraft/issues/242), as an **independent finite-material AVBD / Jacobi variant with a squared-distance IPC barrier**. It is the default on this branch for desktop-enabled builds: the fitting CLI and workspace, Project v1 headless and native demo, and `cloth-template simulate`. CPU-only builds retain their CPU paths and never request an adapter. No document version changes.
+FC-0038 implements the pipeline proposed in [ClothCraft issue 242](https://github.com/erythrofr/ClothCraft/issues/242), as an **independent finite-material AVBD / Jacobi variant with a squared-distance IPC barrier**. It is the default on this branch for desktop-enabled builds: the fitting CLI and workspace, Project v1 headless and native demo, and `cloth-template simulate`. CPU-only builds retain their CPU paths and never request an adapter. No document version changes.
 
 This combination is not a reproduction of the complete published AVBD or IPC solvers. The owner explicitly requested this branch default; that selection is not evidence of garment-scale performance or robustness. No speedup or dense-fold qualification is claimed.
 
