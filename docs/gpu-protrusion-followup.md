@@ -52,3 +52,22 @@ covered small GPU checks. Preserve the source project and use separate outputs.
 A captured protruded state allows CPU force decomposition and restart comparisons
 without inventing a visual success metric. The original solver provides the
 control, with its different contact law clearly recorded.
+
+## CPU control completed; CPU implementation unchanged
+
+A separate reset copy of the default saved T-shirt was run through the existing
+CPU VBD/OGC control for 200 steps, two threads. The 2454-vertex / 4570-triangle
+control reached 3.3333 s, maximum seam gap 2.041 mm and maximum extension 21.174%.
+[Recorded metrics](protrusion-cpu-control.json) are retained; local geometry is
+under output/protrusion-repro/cpu-control. Original user files were preserved.
+No CPU solver, material energy, OGC force model or CPU settings were edited.
+The only runtime code correction in this follow-up is the graphical Save path.
+
+Further source consultation: the official IPC Toolkit releases describe an
+improved max approximator and area weighting
+(https://github.com/ipc-sim/ipc-toolkit/releases). The maintainer's issue #133
+(https://github.com/ipc-sim/ipc-toolkit/issues/133) documents that combining signed
+corrections with EE mollification without area weighting can produce negative
+potentials. This rules out treating a simple subtraction of duplicate edge
+barriers as a validated drop-in repair. The convergent-formulation tutorial URL
+could not be fetched. No external implementation was copied or enabled.
