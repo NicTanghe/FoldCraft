@@ -1,6 +1,7 @@
 //! Modular cssimpler UI components for the top menu bar, simulation transport,
 //! 3D/2D tool rails, and radial context menu.
 
+use super::icons::*;
 use cssimpler::core::Node;
 use cssimpler::ui;
 pub use marvelous_cloth::authoring::CornerRule;
@@ -231,7 +232,8 @@ pub fn render_top_bar(state: &TopBarState) -> Node {
                     data-disabled-reason={play_reason.unwrap_or("")}
                     title={play_title}
                 >
-                    {play_label}
+                    {if state.playing { icon_pause() } else { icon_play() }}
+                    <span class="btn-label">{play_label}</span>
                 </button>
                 <button
                     id="transport-step"
@@ -241,7 +243,8 @@ pub fn render_top_bar(state: &TopBarState) -> Node {
                     data-disabled-reason={step_reason.unwrap_or("")}
                     title={step_title}
                 >
-                    Step
+                    {icon_step()}
+                    <span class="btn-label">"Step"</span>
                 </button>
                 <button
                     id="transport-reset"
@@ -251,12 +254,14 @@ pub fn render_top_bar(state: &TopBarState) -> Node {
                     data-disabled-reason={reset_reason.unwrap_or("")}
                     title={reset_title}
                 >
-                    Reset
+                    {icon_reset()}
+                    <span class="btn-label">"Reset"</span>
                 </button>
             </div>
             <div class="top-bar-trailing">
                 <button id="clean-view-toggle" class={clean_view_class} data-action="workspace.clean_view">
-                    Clean View
+                    {icon_clean_view()}
+                    <span class="btn-label">"Clean View"</span>
                 </button>
                 <span id="backend-badge" class={badge_class}>
                     {badge_text}
@@ -390,7 +395,8 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                 data-tool="gizmo"
                 title="Select & Arrange (Gizmo)"
             >
-                Gizmo
+                {icon_gizmo()}
+                <span class="tool-label">"Gizmo"</span>
             </button>
             <div class="tool-composite grab-composite">
                 <button
@@ -398,7 +404,8 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                     data-tool="grab"
                     title="Grab Cloth (Pull & Drag)"
                 >
-                    Grab
+                    {icon_grab()}
+                    <span class="tool-label">"Grab"</span>
                 </button>
                 <div class="grab-readouts">
                     <span class="readout grab-radius" title="Grab radius">{grab_radius_mm}</span>
@@ -410,7 +417,8 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                 data-tool="sew"
                 title="3D Sew (Connect boundaries)"
             >
-                3D Sew
+                {icon_sew_3d()}
+                <span class="tool-label">"3D Sew"</span>
             </button>
             <div class="tool-composite pin-composite">
                 <button
@@ -418,7 +426,8 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                     data-tool="pin"
                     title="Pin Cloth (Click vertices)"
                 >
-                    Pin
+                    {icon_pin()}
+                    <span class="tool-label">"Pin"</span>
                 </button>
                 <span class="pin-mode-badge" title="Pin mode (Contour / Interior)">
                     {pin_mode_label}
@@ -429,7 +438,8 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                 data-tool="measure"
                 title="3D Measure"
             >
-                Measure
+                {icon_measure_3d()}
+                <span class="tool-label">"Measure"</span>
             </button>
             <button
                 id="avatar-diagnostics-btn"
@@ -437,7 +447,8 @@ pub fn render_3d_rail(state: &Rail3dState) -> Node {
                 data-tool="avatar-diagnostics"
                 title="Avatar Diagnostics"
             >
-                Avatar Diagnostics
+                {icon_avatar_diag()}
+                <span class="tool-label">"Avatar Diagnostics"</span>
             </button>
         </aside>
     }
@@ -603,42 +614,52 @@ pub fn render_2d_rail(state: &Rail2dState) -> Node {
     ui! {
         <aside id="rail-2d" class="tool-rail tool-rail-2d">
             <button class={edit_class} data-tool="edit" title="Edit Point / Curve">
-                Edit
+                {icon_edit_2d()}
+                <span class="tool-label">"Edit"</span>
             </button>
             <button class={rect_class} data-tool="rect" title="Draw Rectangle">
-                Rect
+                {icon_rect_2d()}
+                <span class="tool-label">"Rect"</span>
             </button>
             <button class={pen_class} data-tool="pen" title="Draw Polygon / Pen">
-                Pen
+                {icon_pen_2d()}
+                <span class="tool-label">"Pen"</span>
             </button>
             <button class={freehand_class} data-tool="freehand" title="Freehand Pattern">
-                Freehand
+                {icon_freehand_2d()}
+                <span class="tool-label">"Freehand"</span>
             </button>
             <button class={sew_class} data-tool="sew" title="Sew Seams">
-                Sew
+                {icon_sew_2d()}
+                <span class="tool-label">"Sew"</span>
             </button>
             <button class={split_class} data-tool="split-point" title="Split / Add Point">
-                Split
+                {icon_split_2d()}
+                <span class="tool-label">"Split"</span>
             </button>
             <button class={internal_class} data-tool="internal-line" title="Internal Line / Cutout">
-                Internal
+                {icon_internal_2d()}
+                <span class="tool-label">"Internal"</span>
             </button>
             <button class={measure_class} data-tool="measure" title="2D Measure">
-                Measure
+                {icon_measure_2d()}
+                <span class="tool-label">"Measure"</span>
             </button>
             <button class={trim_class} data-tool="trim" title="Trim">
-                Trim
+                {icon_trim_2d()}
+                <span class="tool-label">"Trim"</span>
             </button>
             <div class="tool-composite corner-composite">
                 <button class={corner_class} data-tool="corner" title="Corner Tool (Rounding & Shaping)">
-                    Corner
+                    {icon_corner_2d()}
+                    <span class="tool-label">"Corner"</span>
                 </button>
                 <div class="corner-subcontrols">
                     <button class={radius_mode_class} data-mode="radius" title="Fillet Radius mode">
-                        Radius
+                        "Radius"
                     </button>
                     <button class={shape_mode_class} data-mode="shape" title="Bézier Shape mode">
-                        Shape
+                        "Shape"
                     </button>
                     <span class="readout corner-radius" title="Numeric fillet radius in mm">
                         {radius_str}

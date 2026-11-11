@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 use clap::Parser;
 use marvelous_cloth::{
     model::Scene,

@@ -1,6 +1,6 @@
 # ClothCraft roadmap
 
-**Branch update (FC-0033):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](docs/wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
+**Branch update (FC-0035):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](docs/wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
 
 Build a useful garment authoring tool whose physics can evolve independently. Public Marvelous Designer manuals inform expected interactions; ClothCraft implements its own code, data model, UI and test fixtures. This is an independent implementation effort, not an affiliated product or a claim of formal clean-room certification.
 

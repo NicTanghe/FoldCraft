@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.5,
+  "clock": 3.102777777777778,
   "tickets": [
     {
       "id": "FC-0001",
@@ -427,6 +427,37 @@
     },
     {
       "id": "FC-0033",
+      "title": "Fix CSSimpler performance regressions: backend selection, decoupled workers, control signaling, and idle invalidation",
+      "acceptance": "Wire GPU simulation backend into css_runner; decouple ReferenceSolver into background worker; fix pause/reset worker control signaling and eliminate per-frame scene resubmission; return Clean when idle in update_runner; re-wire ui_perf_smoke and smoke flags; pass CPU and desktop checks.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0031",
+        "FC-0032"
+      ],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/35"
+    },
+    {
+      "id": "FC-0034",
+      "title": "Integrate modular Studio V2 CSS components and true 2D metric pattern board in css_runner to match EXO Studio V2 layout and styling",
+      "acceptance": "Replace inline stubs in css_runner with modular Studio V2 top bar, tool rails (3D & 2D), left asset & piece browser, right 5-category object browser and property accordions; render true 2D metric pattern board SVG from garment panels; update studio_v2.css to match EXO Studio V2 layout and tokens; pass CPU and desktop checks and open PR.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0033"
+      ],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/36"
+    },
+    {
+      "id": "FC-0035",
       "title": "Issue 242: GPU-resident WGSL finite AVBD and IPC contact pipeline",
       "acceptance": "Resident WGSL prediction, finite-material AVBD, finite VF/EE IPC barrier, conservative continuous step bounds, transactional errors; default in fitting and native modes; CPU-only tests and opt-in GPU checks; document limits",
       "points": 8.0,

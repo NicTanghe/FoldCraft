@@ -219,7 +219,7 @@ fn run_ogc(
         || args.ui_authoring_smoke
     {
         #[cfg(feature = "desktop")]
-        fitting_editor::run_with_cpu(
+        fitting_editor::run(
             project,
             scene,
             fitting_editor::DocumentFiles {
@@ -228,7 +228,10 @@ fn run_ogc(
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
             args.ui_smoke,
-            args.cpu,
+            args.ui_interaction_smoke,
+            args.ui_perf_smoke,
+            args.ui_authoring_smoke,
+            !args.cpu,
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]
@@ -372,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || args.ui_authoring_smoke
     {
         #[cfg(feature = "desktop")]
-        fitting_editor::run_with_cpu(
+        fitting_editor::run(
             project,
             scene,
             fitting_editor::DocumentFiles {
@@ -381,7 +384,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
             args.ui_smoke,
-            args.cpu,
+            args.ui_interaction_smoke,
+            args.ui_perf_smoke,
+            args.ui_authoring_smoke,
+            !args.cpu,
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]

@@ -17,6 +17,7 @@
 #[cfg(feature = "desktop")]
 pub mod browsers;
 pub mod compositor;
+pub mod icons;
 pub mod palette;
 pub mod properties_part1;
 pub mod rails;
@@ -30,6 +31,8 @@ pub use compositor::{
     extract_viewport_layout, generate_pattern_board_svg, pattern_board_svg_node,
     punch_viewport_cutouts, route_pointer_event, studio_window_config,
 };
+#[allow(unused_imports)]
+pub use icons::*;
 #[allow(unused_imports)]
 pub use palette::{
     ALL_COMMAND_IDS, CommandPaletteState, PaletteAction, PaletteItem, PaletteKey, command_aliases,

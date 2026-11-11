@@ -646,6 +646,10 @@ pub struct ProjectAvbd {
     cache: Option<(Arc<crate::model::Mesh>, String, VbdSolver)>,
 }
 impl ProjectAvbd {
+    pub fn reset(&mut self) {
+        self.cache = None;
+        self.gpu.reset();
+    }
     pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
         Self {
             gpu: GpuAvbd::new(device, queue),
