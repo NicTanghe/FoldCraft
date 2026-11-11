@@ -521,15 +521,15 @@
       "title": "Right dock property editor independent expand/collapse, sleek thin scrollbar styling, and gutter spacing",
       "acceptance": "Provide independent expand/collapse toggles with individual action dispatches for all right dock property editor sections (1. Piece Information, 2. Boundary & Allowance, 3. Arrange & Transform, 4. Measurements & Tension, 5. Active Simulation, 6. Fabric Material); only render contents when expanded; style accordions with collapsed/open classes; configure thin subtle scrollbars and right gutter padding to prevent text overlap; pass CPU checks.",
       "points": 3.0,
-      "spent": 0.0,
+      "spent": 3.0,
       "priority": "urgent",
       "depends_on": [
         "FC-0038"
       ],
-      "status": "in_progress",
+      "status": "done",
       "owner": null,
       "vruntime": 3.25,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/42"
     }
   ]
 }
