@@ -58,3 +58,5 @@ For UI work, verify cancelled operations, undo/redo, text-field keyboard ownersh
 - Original source and documentation are MIT-licensed; preserve [LICENSE](LICENSE). The bundled MakeHuman assets retain their own CC0 notice, and dependencies retain their respective licenses. Public reference manuals are not project-owned assets.
 
 Suggested first message in a contribution: **“I changed X; on scene Y, at settings Z, this is the quality/cost difference, and this is the case that still fails.”**
+
+The [resident WGSL performance follow-up](docs/wgsl-performance.md) records GPU-only caching/filtering changes, the unchanged CPU control, passing default-garment quality gates, and 2.1–3.3x complete-step gains. The hybrid control remains faster on the measured M1 Pro.

@@ -69,11 +69,16 @@ fn pair_motion(pair:Pair)->f32 {
 }
 @compute @workgroup_size(64)
 fn ccd(@builtin(global_invocation_id) id:vec3u) {
+    // Overflow/error sweeps have no valid frozen cache. Preserve the original
+    // failure flag so pure capacity overflow can retry transactionally.
+    if atomicLoad(&control.error)!=0u {return;}
     let slot=id.x;
     if config.sphere.w>0 && slot<config.extra.y {
         let face=primitive(config.counts.y+slot);
-        let q=triangle_closest(config.sphere.xyz,at(face.x,0),at(face.y,0),at(face.z,0));
-        let gap=length(q.q)-config.sphere.w;
+        var gap:f32;
+        if config.coupled.x>0u {gap=contacts.pairs[sphere_slot(slot)].frozen.x;} else {
+            gap=length(triangle_closest(config.sphere.xyz,at(face.x,0),at(face.y,0),at(face.z,0)).q)-config.sphere.w;
+        }
         if !(gap>config.gravity.w) {atomicOr(&control.error,4u);}
         else {
             let motion=max(length(particles[face.x].delta.xyz),max(length(particles[face.y].delta.xyz),length(particles[face.z].delta.xyz)));
@@ -82,7 +87,9 @@ fn ccd(@builtin(global_invocation_id) id:vec3u) {
         }
     }
     if slot>=min(atomicLoad(&contacts.count),config.sizes.z) {return;}
-    let pair=contacts.pairs[slot];let d=length(closest(pair,0).q);let clearance=config.gravity.w;
+    let pair=contacts.pairs[slot];var d:f32;
+    if config.coupled.x>0u {d=pair.frozen.x;} else {d=length(closest(pair,0).q);}
+    let clearance=config.gravity.w;
     atomicMin(&control.minimum,bitcast<u32>(d));if d<config.physical.z {atomicAdd(&control.active_count,1u);}
     if !(d>clearance) {atomicOr(&control.error,4u);return;}
     let fraction=min(1.0,0.8*(d-clearance)/max(pair_motion(pair),1e-30));
@@ -102,7 +109,9 @@ fn limit_contact_motion(@builtin(global_invocation_id) id:vec3u) {
         if slot==0xffffffffu {break;}
         if slot>=config.sizes.z || visits>=config.sizes.z {atomicOr(&control.error,8u);return;}
         let pair=contacts.pairs[slot];
-        let gap=length(closest(pair,0).q)-config.gravity.w;
+        var d:f32;
+        if config.coupled.x>0u {d=pair.frozen.x;} else {d=length(closest(pair,0).q);}
+        let gap=d-config.gravity.w;
         if !(gap>0) {atomicOr(&control.error,4u);return;}
         bound=min(bound,0.4*gap);
         var local=0u;for(var j=0u;j<4u;j++){if pair.ids[j]==v {local=j;}}
@@ -112,7 +121,11 @@ fn limit_contact_motion(@builtin(global_invocation_id) id:vec3u) {
         let start=geometry[config.extra.x+v];let end=geometry[config.extra.x+v+1u];
         for(var i=start;i<end;i++){
             let f=primitive(config.counts.y+geometry[i]);
-            let gap=length(triangle_closest(config.sphere.xyz,at(f.x,0),at(f.y,0),at(f.z,0)).q)-config.sphere.w-config.gravity.w;
+            var d:f32;
+            if config.coupled.x>0u {d=contacts.pairs[sphere_slot(geometry[i])].frozen.x;} else {
+                d=length(triangle_closest(config.sphere.xyz,at(f.x,0),at(f.y,0),at(f.z,0)).q)-config.sphere.w;
+            }
+            let gap=d-config.gravity.w;
             if !(gap>0) {atomicOr(&control.error,4u);return;}
             bound=min(bound,0.4*gap);
         }
@@ -122,4 +135,22 @@ fn limit_contact_motion(@builtin(global_invocation_id) id:vec3u) {
     particles[v].delta=vec4f(delta*scale,0);
     // The gradient is frozen; scaling the direction scales its Armijo slope.
     particles[v].energy.z*=scale;
+}
+
+// A closest-point estimate proposes an axis, never a rejection distance. The
+// support-interval gap on ANY axis is a lower bound on primitive separation,
+// even if a nearly-parallel closest-point estimate is inaccurate. Padding
+// covers f32 projection error in the documented origin-relative coordinate range.
+fn separated_beyond_envelope(pair:Pair)->bool {
+    let axis=closest(pair,0).q;let norm=length(axis);
+    if !(norm>1e-20 && norm<1e20) {return false;}
+    var amin=1e30;var amax=-1e30;var bmin=1e30;var bmax=-1e30;
+    for(var j=0u;j<4u;j++) {
+        let projection=dot(axis,positions[pair.ids[j]].xyz);
+        if (pair.kind==0u && j==0u) || (pair.kind==1u && j<2u) {
+            amin=min(amin,projection);amax=max(amax,projection);
+        } else {bmin=min(bmin,projection);bmax=max(bmax,projection);}
+    }
+    let gap=max(amin-bmax,bmin-amax);
+    return gap>(config.physical.z+2*proposal_radius()+8*config.gravity.w)*norm;
 }

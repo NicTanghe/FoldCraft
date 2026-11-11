@@ -13,7 +13,6 @@ pub(super) struct Term {
     pub b: [f32; 4],
     pub c: [f32; 4],
     pub gradients: [[f32; 4]; 4],
-    pub curvature: [[f32; 4]; 4],
 }
 unsafe impl bytemuck::Zeroable for Term {}
 unsafe impl bytemuck::Pod for Term {}
@@ -47,7 +46,6 @@ impl Packed {
             }
             let mut term = Term {
                 gradients: [[0.; 4]; 4],
-                curvature: [[0.; 4]; 4],
                 ids: [factor.ids[0] as u32; 4],
                 info: [0, 0, factor.ids.len() as u32, 0],
                 a: [0.; 4],
@@ -232,7 +230,6 @@ pub(super) fn grab_terms(grab: Option<&Grab>, origin: DVec3) -> Vec<Term> {
         for axis in 0..3 {
             let mut term = Term {
                 gradients: [[0.; 4]; 4],
-                curvature: [[0.; 4]; 4],
                 ids: [ids[0] as u32; 4],
                 info: [2, axis as u32, ids.len() as u32, 0],
                 a: [0.; 4],

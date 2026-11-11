@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.102777777777778,
+  "clock": 3.25,
   "tickets": [
     {
       "id": "FC-0001",
@@ -595,6 +595,19 @@
       "owner": null,
       "vruntime": 3.0,
       "pr": null
+    },
+    {
+      "id": "FC-0045",
+      "title": "Reduce resident coupled WGSL solver cost without weakening garment quality",
+      "acceptance": "Measure complete-step baseline against hybrid VBD on identical input; retain GPU-only optimizations with same coupled operator and conservative contact coverage; pass small operator/contact oracles and default T-shirt quality gate, document timings and limits",
+      "points": 5.0,
+      "spent": 5.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.625,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
     }
   ]
 }

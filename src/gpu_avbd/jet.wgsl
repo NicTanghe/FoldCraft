@@ -49,3 +49,24 @@ fn factor(t:Term,v:u32,alpha:f32)->Jet {
     }
     return value;
 }
+// Scalar objective evaluation: no local AD arrays or derivative work in Armijo.
+fn factor_value(t:Term,alpha:f32)->f32 {
+    let x0=at(t.ids.x,alpha);let x1=at(t.ids.y,alpha);
+    if t.info.x==0u {
+        let e=x1-x0;let f=at(t.ids.z,alpha)-x0;
+        let warp=e*t.a.y+f*t.a.z;let weft=e*t.b.y+f*t.b.z;
+        if t.info.y==4u {return dot(warp,weft);}
+        var q=warp;if t.info.y>=2u {q=weft;}
+        let strain=0.5*(dot(q,q)-1);
+        if t.info.y%2u==0u {return strain;}
+        return 0.5*(strain+sqrt(max(strain*strain+t.c.y*t.c.y,1e-30))-t.c.y);
+    }
+    if t.info.x==1u {
+        let e=x1-x0;let qa=cross(e,at(t.ids.z,alpha)-x0);let qb=cross(at(t.ids.w,alpha)-x0,e);
+        let a=qa*(1.0/sqrt(max(dot(qa,qa),1e-30)));let b=qb*(1.0/sqrt(max(dot(qb,qb),1e-30)));
+        return (a-b)[t.info.y];
+    }
+    let first=x0[t.info.y];var value=first*t.b.w-t.c.z;
+    for(var j=1u;j<t.info.z;j++){value+=(at(t.ids[j],alpha)[t.info.y]-first)*t.a[j];}
+    return value;
+}

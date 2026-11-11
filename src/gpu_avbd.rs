@@ -10,7 +10,9 @@ use crate::{
 use glam::DVec3;
 use std::{cell::RefCell, sync::Arc, time::Instant};
 mod packing;
+mod profile;
 use packing::Packed;
+pub use profile::StepProfile;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ContactMethod {
@@ -66,6 +68,8 @@ const ENTRIES: &[&str] = &[
     "cg_update",
     "cg_beta",
     "cg_search",
+    "cache_contacts",
+    "link_coupled",
 ];
 
 #[repr(C)]
@@ -120,6 +124,9 @@ pub struct GpuAvbd {
     /// Numerical proposal envelope in contact radii; detection covers r+2L.
     pub motion_radius_scale: f32,
     pub coupled_iterations: u32,
+    /// Explicit diagnostic; timestamps add overhead and are not complete step times.
+    pub profile: bool,
+    last_profile: RefCell<Option<StepProfile>>,
 }
 
 /// Create a compute device independently of rendering. Call only when the
@@ -140,6 +147,7 @@ pub fn request_device() -> Result<(wgpu::Device, wgpu::Queue), String> {
     }
     pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("Resident AVBD IPC compute"),
+        required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
         ..Default::default()
     }))
     .map_err(|e| e.to_string())
@@ -217,7 +225,12 @@ impl GpuAvbd {
             local_contact_bounds: true,
             motion_radius_scale: 0.25,
             coupled_iterations: 8,
+            profile: false,
+            last_profile: RefCell::new(None),
         }
+    }
+    pub fn take_profile(&self) -> Option<StepProfile> {
+        self.last_profile.borrow_mut().take()
     }
     fn allocate(
         &self,
@@ -237,9 +250,9 @@ impl GpuAvbd {
                 .max(std::mem::size_of::<packing::Term>()),
             packed.geometry.len() * 4,
             16 + if self.contact_method == ContactMethod::BarrierAl {
-                (2 * capacity + solver.garment.mesh.triangles.len()) * 48
+                (2 * capacity + solver.garment.mesh.triangles.len()) * 96
             } else {
-                capacity * 48
+                (capacity + solver.garment.mesh.triangles.len()) * 96
             },
             n * if self.contact_method == ContactMethod::BarrierAl {
                 8
@@ -339,6 +352,7 @@ impl GpuAvbd {
         grab: Option<&Grab>,
     ) -> Result<VbdMetrics, String> {
         let started = Instant::now();
+        *self.last_profile.borrow_mut() = None;
         let mut metrics = self.step_inner(solver, state, settings, grab)?;
         let elapsed = started.elapsed().as_secs_f64() * 1000.;
         metrics.step_ms = elapsed;
@@ -581,17 +595,13 @@ impl GpuAvbd {
                 .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
             r.expected = None;
             let mut encoder = self.device.create_command_encoder(&Default::default());
+            let mut profile;
             encoder.clear_buffer(&r.buffers[7], 0, None);
             {
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some(BACKEND),
-                    ..Default::default()
-                });
-                pass.set_bind_group(0, &r.bind, &[]);
+                let mut dispatches = Vec::new();
                 let mut dispatch = |index: usize, count: usize| {
                     if count > 0 {
-                        pass.set_pipeline(&self.pipelines[index]);
-                        pass.dispatch_workgroups(count as u32, 1, 1);
+                        dispatches.push((index, count as u32));
                     }
                 };
                 dispatch(0, n.div_ceil(64));
@@ -615,7 +625,17 @@ impl GpuAvbd {
                     }
                     if self.coupled_iterations > 0 {
                         dispatch(24, r.packed.terms.len().div_ceil(64));
+                        dispatch(
+                            31,
+                            r.capacity
+                                .max(solver.garment.mesh.triangles.len())
+                                .div_ceil(64),
+                        );
                         dispatch(25, n.div_ceil(64));
+                        // Only PCG may omit exactly zero curvature. Restore the
+                        // complete candidate incidence before path/trial checks.
+                        dispatch(5, n.div_ceil(64));
+                        dispatch(32, r.capacity.div_ceil(64));
                         for _ in 0..self.coupled_iterations {
                             dispatch(26, n.div_ceil(64));
                             dispatch(27, 1);
@@ -623,6 +643,8 @@ impl GpuAvbd {
                             dispatch(29, 1);
                             dispatch(30, n.div_ceil(64));
                         }
+                        dispatch(5, n.div_ceil(64));
+                        dispatch(6, r.capacity.div_ceil(64));
                     }
                     dispatch(7, n.div_ceil(64));
                     if self.local_contact_bounds {
@@ -662,6 +684,26 @@ impl GpuAvbd {
                     dispatch(20, n.div_ceil(64));
                 }
                 dispatch(14, n.div_ceil(64));
+                profile = self
+                    .profile
+                    .then(|| profile::Recorder::new(&self.device, dispatches.len()))
+                    .transpose()?;
+                if let Some(p) = &mut profile {
+                    p.encode(&mut encoder, &self.pipelines, &r.bind, &dispatches);
+                } else {
+                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: Some(BACKEND),
+                        ..Default::default()
+                    });
+                    pass.set_bind_group(0, &r.bind, &[]);
+                    for (index, count) in dispatches {
+                        pass.set_pipeline(&self.pipelines[index]);
+                        pass.dispatch_workgroups(count, 1, 1);
+                    }
+                }
+            }
+            if let Some(p) = &profile {
+                p.resolve(&mut encoder);
             }
             let bytes = (n * 16) as u64;
             encoder.copy_buffer_to_buffer(&r.buffers[0], 0, &r.read, 0, bytes);
@@ -734,6 +776,10 @@ impl GpuAvbd {
             }
             drop(data);
             r.read.unmap();
+            if let Some(p) = &profile {
+                *self.last_profile.borrow_mut() =
+                    Some(p.collect(&self.device, self.queue.get_timestamp_period())?);
+            }
             for i in 0..n {
                 state.v[i] = if solver.garment.mesh.pins[i].is_some() {
                     DVec3::ZERO

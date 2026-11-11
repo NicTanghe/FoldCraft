@@ -244,6 +244,7 @@ fn barrier_al_scalar_gpu_matches_f64() {
             0,
             0,
         ]);
+        records.extend([0u32; 12]);
         particles.push(Particle {
             cg: [[0.; 4]; 7],
             initial: [d, 0., 0., 0.],
@@ -385,9 +386,9 @@ fn barrier_al_matches_full_keys_and_retains_unresolved_pairs() {
     let r = residency.as_ref().unwrap();
     let data = read_test_buffer(&gpu, &r.buffers[4], r.buffers[4].size());
     let count = data[0] as usize;
-    let history = &data[4 + r.capacity * 12..4 + (r.capacity + count) * 12];
+    let history = &data[4 + r.capacity * 24..4 + (r.capacity + count) * 24];
     let old: Vec<Vec<u32>> = history
-        .as_chunks::<12>()
+        .as_chunks::<24>()
         .0
         .iter()
         .map(|p| p.to_vec())
@@ -442,7 +443,7 @@ fn barrier_al_matches_full_keys_and_retains_unresolved_pairs() {
         actual[0] as usize, count,
         "missing unresolved pair must be retained"
     );
-    for p in actual[4..4 + count * 12].as_chunks::<12>().0 {
+    for p in actual[4..4 + count * 24].as_chunks::<24>().0 {
         if let Some(values) = expected.get(&p[..5]) {
             assert_eq!(
                 &p[5..7],
@@ -666,4 +667,302 @@ fn coupled_correction_reduces_stressed_patch_objective() {
         energies[1] < 0.8 * energies[0],
         "coupled solve did not improve physical objective"
     );
+}
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn cached_contact_matvec_matches_independent_vf_and_ee_operators() {
+    let (device, queue) = request_device().unwrap();
+    for method in [ContactMethod::Ipc, ContactMethod::BarrierAl] {
+        let mut gpu = GpuAvbd::new(device.clone(), queue.clone());
+        gpu.contact_method = method;
+        let garment = Arc::new(GarmentTemplate::two_panel_demo().compile().unwrap());
+        let state = garment.initial_state.clone();
+        let solver = VbdSolver::new(garment.clone(), None, &state).unwrap();
+        let r = gpu.allocate(&solver, &state, None, 1024).unwrap();
+        let n = state.x.len();
+        // Isolate contact from all material rows. Both VF and EE witnesses lie
+        // strictly inside their primitives; the known barycentrics are analytic.
+        gpu.queue.write_buffer(
+            &r.buffers[3],
+            r.packed.offsets[3] as u64 * 4,
+            bytemuck::cast_slice(&vec![0u32; n + 1]),
+        );
+        for kind in [0u32, 1] {
+            for distance in [0.001f32, 0.006] {
+                let points = if kind == 0 {
+                    [
+                        [0.03f32, 0.05, distance],
+                        [0., 0., 0.],
+                        [0.1, 0., 0.],
+                        [0., 0.1, 0.],
+                    ]
+                } else {
+                    [
+                        [-0.05, 0., distance],
+                        [0.05, 0., distance],
+                        [0., -0.05, 0.],
+                        [0., 0.05, 0.],
+                    ]
+                };
+                let weights = if kind == 0 {
+                    [1., -0.2, -0.3, -0.5]
+                } else {
+                    [0.5, 0.5, -0.5, -0.5]
+                };
+                let mut positions = vec![[0f32; 4]; n];
+                for (dst, p) in positions.iter_mut().zip(points) {
+                    dst[..3].copy_from_slice(&p);
+                }
+                let direction: Vec<_> = (0..n)
+                    .map(|i| glam::Vec3::new(i as f32 * 0.1, 0.2, (i as f32 * 0.7).cos()))
+                    .collect();
+                let particles: Vec<_> = direction
+                    .iter()
+                    .map(|p| {
+                        let mut cg = [[0.; 4]; 7];
+                        cg[2] = p.extend(0.).to_array();
+                        Particle {
+                            initial: [0.; 4],
+                            velocity_mass: [0.; 4],
+                            target: [0., 0., 0., 1.5],
+                            delta: [0.; 4],
+                            energy: [0.; 4],
+                            cg,
+                        }
+                    })
+                    .collect();
+                gpu.queue
+                    .write_buffer(&r.buffers[0], 0, bytemuck::cast_slice(&positions));
+                gpu.queue
+                    .write_buffer(&r.buffers[1], 0, bytemuck::cast_slice(&particles));
+                let rho = 170000f32;
+                let mut pair = vec![0u32; 24];
+                pair[..5].copy_from_slice(&[0, 1, 2, 3, kind]);
+                pair[5] = 0.001f32.to_bits();
+                pair[7] = rho.to_bits();
+                // Poison the cache: this must be rebuilt after AL variables/geometry.
+                pair[12..].fill(f32::NAN.to_bits());
+                gpu.queue
+                    .write_buffer(&r.buffers[4], 0, bytemuck::cast_slice(&[1u32]));
+                gpu.queue
+                    .write_buffer(&r.buffers[4], 16, bytemuck::cast_slice(&pair));
+                let mut config = vec![0u32; 40];
+                config[0] = n as u32;
+                config[1] = n as u32;
+                config[6] = 1024;
+                config[12..16].copy_from_slice(&r.packed.offsets);
+                config[22] = 0.003f32.to_bits();
+                config[23] = 100000f32.to_bits();
+                config[27] = 1e-8f32.to_bits();
+                config[32] = u32::from(method == ContactMethod::BarrierAl);
+                config[36] = 8;
+                gpu.queue
+                    .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                {
+                    let mut pass = encoder.begin_compute_pass(&Default::default());
+                    pass.set_bind_group(0, &r.bind, &[]);
+                    for (entry, count) in [
+                        (5, n.div_ceil(64)),
+                        (6, 1),
+                        (31, 1),
+                        (15, n.div_ceil(64)),
+                        (5, n.div_ceil(64)),
+                        (32, 1),
+                        (26, n.div_ceil(64)),
+                    ] {
+                        pass.set_pipeline(&gpu.pipelines[entry]);
+                        pass.dispatch_workgroups(count as u32, 1, 1);
+                    }
+                }
+                gpu.queue.submit([encoder.finish()]);
+                let data = read_test_buffer(
+                    &gpu,
+                    &r.buffers[1],
+                    (n * std::mem::size_of::<Particle>()) as u64,
+                );
+                let actual: &[Particle] = bytemuck::cast_slice(&data);
+                let curvature = if method == ContactMethod::Ipc {
+                    crate::ipc::barrier(distance as f64, 0.003f32 as f64, 100000.)[2]
+                } else {
+                    rho as f64
+                };
+                let dotp: f64 = (0..4).map(|i| weights[i] * direction[i].z as f64).sum();
+                let barrier = if method == ContactMethod::Ipc {
+                    crate::ipc::barrier(distance as f64, 0.003f32 as f64, 100000.)
+                } else {
+                    crate::barrier_al::Contact {
+                        slack: 0.001f32 as f64,
+                        dual: 0.,
+                        rho: rho as f64,
+                    }
+                    .primal(distance as f64, 0.003f32 as f64, 100000.)
+                };
+                for v in 0..n {
+                    let x =
+                        glam::Vec3::from_array(positions[v][..3].try_into().unwrap()).as_dvec3();
+                    let mut gradient = 1.5 * x;
+                    let mut energy = 0.75 * x.length_squared();
+                    if v < 4 {
+                        gradient.z += barrier[1] * weights[v];
+                        energy += barrier[0] / 4.;
+                    }
+                    let got_gradient =
+                        glam::Vec3::from_array(actual[v].delta[..3].try_into().unwrap()).as_dvec3();
+                    assert!(
+                        got_gradient.distance(gradient) < 0.002 + gradient.length() * 3e-5,
+                        "cached {method:?} contact gradient differs from f64"
+                    );
+                    assert!(
+                        (actual[v].delta[3] as f64 - energy).abs() < 1e-6 + energy.abs() * 1e-4,
+                        "scalar contact energy differs from f64"
+                    );
+                    let mut expected = 1.5 * direction[v].as_dvec3();
+                    if v < 4 {
+                        expected.z += curvature * weights[v] * dotp;
+                    }
+                    let got =
+                        glam::Vec3::from_array(actual[v].cg[3][..3].try_into().unwrap()).as_dvec3();
+                    assert!(
+                        got.distance(expected) < 0.05 + expected.length() * 3e-5,
+                        "{method:?} kind={kind} v={v}: {got:?} != {expected:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn separating_axis_filter_retains_close_vf_ee_and_nearly_parallel_pairs() {
+    let (device, queue) = request_device().unwrap();
+    let gpu = GpuAvbd::new(device, queue);
+    let mut template = GarmentTemplate::two_panel_demo();
+    for p in &mut template.panels {
+        p.pattern.nx = 12;
+        p.pattern.ny = 12;
+    }
+    let garment = Arc::new(template.compile().unwrap());
+    let state = garment.initial_state.clone();
+    let solver = VbdSolver::new(garment, None, &state).unwrap();
+    let r = gpu.allocate(&solver, &state, None, 1024).unwrap();
+    let source=[include_str!("main.wgsl"),include_str!("jet.wgsl"),include_str!("contact.wgsl"),
+        include_str!("solve.wgsl"),include_str!("al.wgsl"),include_str!("coupled.wgsl"),
+        "@compute @workgroup_size(64) fn probe_filter(@builtin(global_invocation_id) id:vec3u) { if id.x<64u {contacts.pairs[id.x].normal_curvature.w=select(0.0,1.0,separated_beyond_envelope(contacts.pairs[id.x]));}}"].join("\n");
+    let module = gpu
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("pair-filter oracle"),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+    let layout = gpu
+        .device
+        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[Some(&gpu.layout)],
+            immediate_size: 0,
+        });
+    let pipeline = gpu
+        .device
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&layout),
+            module: &module,
+            entry_point: Some("probe_filter"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+    for translation in [0f32, 10., 100.] {
+        let mut positions = vec![[0f32; 4]; state.x.len()];
+        let mut pairs = Vec::new();
+        let mut close = Vec::new();
+        for i in 0..64 {
+            let rotation = glam::Quat::from_euler(
+                glam::EulerRot::XYZ,
+                i as f32 * 0.27,
+                i as f32 * 0.53,
+                i as f32 * 0.17,
+            );
+            let u = rotation * glam::Vec3::X;
+            let v = rotation * glam::Vec3::Y;
+            let normal = rotation * glam::Vec3::Z;
+            let case = i % 4;
+            let kind = u32::from(i >= 32);
+            let p = if kind == 0 {
+                let point = match case {
+                    0 => u * 0.03 + v * 0.05 + normal * 0.002,
+                    1 => normal * 0.002,
+                    2 => -u * 0.1 - v * 0.1 + normal * 0.001,
+                    _ => u * 0.03 + v * 0.05 + normal * 0.02,
+                };
+                [point, glam::Vec3::ZERO, u * 0.1, v * 0.1]
+            } else {
+                let direction = (u + v * if i % 2 == 0 { 1e-5 } else { 0.8 }).normalize();
+                let d = if case == 2 {
+                    0.02
+                } else if case == 3 {
+                    0.
+                } else {
+                    0.002
+                };
+                [
+                    -u * 0.05,
+                    u * 0.05,
+                    -direction * 0.05 + normal * d,
+                    direction * 0.05 + normal * d,
+                ]
+            };
+            close.push(case < 2 || (kind == 1 && case == 3));
+            for j in 0..4 {
+                positions[4 * i + j] = (p[j] + glam::Vec3::splat(translation))
+                    .extend(0.)
+                    .to_array();
+            }
+            let mut pair = [0u32; 24];
+            pair[..5].copy_from_slice(&[
+                (4 * i) as u32,
+                (4 * i + 1) as u32,
+                (4 * i + 2) as u32,
+                (4 * i + 3) as u32,
+                kind,
+            ]);
+            pairs.extend(pair);
+        }
+        gpu.queue
+            .write_buffer(&r.buffers[0], 0, bytemuck::cast_slice(&positions));
+        gpu.queue
+            .write_buffer(&r.buffers[4], 16, bytemuck::cast_slice(&pairs));
+        let mut config = vec![0u32; 40];
+        config[22] = 0.003f32.to_bits();
+        config[27] = (64. * f32::EPSILON * translation.max(1.)).to_bits();
+        config[35] = 0.25f32.to_bits();
+        gpu.queue
+            .write_buffer(&r.buffers[8], 0, bytemuck::cast_slice(&config));
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_bind_group(0, &r.bind, &[]);
+            pass.set_pipeline(&pipeline);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        gpu.queue.submit([encoder.finish()]);
+        let result = read_test_buffer(&gpu, &r.buffers[4], 16 + 64 * 96);
+        let mut rejected = 0;
+        for (i, pair) in result[4..].as_chunks::<24>().0.iter().enumerate() {
+            let culled = f32::from_bits(pair[15]) > 0.;
+            if close[i] {
+                assert!(
+                    !culled,
+                    "lost known close witness {i} at translation {translation}"
+                );
+            }
+            rejected += usize::from(culled);
+        }
+        assert!(
+            rejected >= 12,
+            "filter must reject separated VF/EE pairs: {rejected}"
+        );
+    }
 }

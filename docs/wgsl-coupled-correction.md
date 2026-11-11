@@ -164,3 +164,8 @@ solver actions were moved to independent bits and a regression was added.
 The latest UI behavior is retained. Post-merge native/shader/accordion checks
 passed (139 tests), along with CPU-only all-target compilation and Clippy.
 GPU solver sources are unchanged from the fully validated correction.
+
+The subsequent [GPU performance pass](wgsl-performance.md) retains this coupled
+operator and budget, with 2.1–3.3x complete-step savings on the measured cases
+and another passing full default-garment quality comparison. The hybrid remains
+faster; the unoptimized correction timings above are historical.

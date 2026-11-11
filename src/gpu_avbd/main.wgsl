@@ -1,9 +1,9 @@
 // Independent finite AVBD / squared-distance IPC-style barrier pipeline.
 // All iteration decisions stay on the device. No global floating-point atomics.
-struct Term {ids:vec4u,info:vec4u,a:vec4f,b:vec4f,c:vec4f,gradients:array<vec4f,4>,curvature:array<vec4f,4>}
+struct Term {ids:vec4u,info:vec4u,a:vec4f,b:vec4f,c:vec4f,gradients:array<vec4f,4>}
 struct Particle {initial:vec4f, velocity_mass:vec4f,inertia_target:vec4f,delta:vec4f,energy:vec4f,cg:array<vec4f,7>}
 struct Node {lo:vec4f,hi:vec4f,info:vec4u}
-struct Pair {ids:vec4u,kind:u32,slack:f32,dual:f32,rho:f32,next:vec4u}
+struct Pair {ids:vec4u,kind:u32,slack:f32,dual:f32,rho:f32,next:vec4u,normal_curvature:vec4f,weights:vec4f,frozen:vec4f}
 struct PairBuffer {count:atomic<u32>,pad0:u32,pad1:u32,pad2:u32,pairs:array<Pair>}
 struct Control {error:atomic<u32>,alpha:atomic<u32>,accepted:atomic<u32>,sweep:u32,minimum:atomic<u32>,active_count:atomic<u32>,previous_count:u32,matched:atomic<u32>,primal:atomic<u32>,slack_residual:atomic<u32>,dual_change:atomic<u32>,force:atomic<u32>,trials:atomic<u32>,pad0:u32,pad1:u32,pad2:u32}
 struct Config {
@@ -98,10 +98,13 @@ fn search(@builtin(global_invocation_id) id:vec3u) {
             for(var j=0u;j<node.info.y;j++) {
                 let bi=geometry[config.offsets.y+node.info.x+j];if edge && ai>=bi {continue;}
                 let bv=primitive(bi);if adjacent(av,bv) || outside(query_box,bounds(bi)) {continue;}
+                var pair:Pair;
+                if edge {pair.ids=vec4u(av.xy,bv.xy);pair.kind=1u;}
+                else {pair.ids=vec4u(av.x,bv.xyz);pair.kind=0u;}
+                if separated_beyond_envelope(pair) {continue;}
                 let slot=atomicAdd(&contacts.count,1u);
                 if slot>=config.sizes.z {atomicOr(&control.error,1u);continue;}
-                if edge {contacts.pairs[slot].ids=vec4u(av.xy,bv.xy);contacts.pairs[slot].kind=1u;}
-                else {contacts.pairs[slot].ids=vec4u(av.x,bv.xyz);contacts.pairs[slot].kind=0u;}
+                contacts.pairs[slot].ids=pair.ids;contacts.pairs[slot].kind=pair.kind;
             }
         }
     }

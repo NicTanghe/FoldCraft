@@ -80,6 +80,9 @@ struct Args {
     /// Headless research control: numerical proposal envelope in contact radii.
     #[arg(long, conflicts_with_all = ["cpu","reference","hybrid_vbd","view","ui_smoke","ui_interaction_smoke","ui_perf_smoke","ui_authoring_smoke"])]
     proposal_radii: Option<f32>,
+    /// Opt-in GPU phase timestamps (adds overhead; headless WGSL only).
+    #[arg(long, conflicts_with_all = ["cpu","reference","hybrid_vbd","view","ui_smoke","ui_interaction_smoke","ui_perf_smoke","ui_authoring_smoke"])]
+    profile_wgsl: bool,
     /// Compare GPU energies/forces against f64 AD before each step (slow).
     #[arg(long, requires = "hybrid_vbd")]
     check_gpu_gradients: bool,
@@ -117,6 +120,7 @@ fn run_ogc(
     let avbd = if !args.cpu && !args.hybrid_vbd && args.steps > 0 {
         let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
         let mut solver = marvelous_cloth::gpu_avbd::GpuAvbd::new(device, queue);
+        solver.profile = args.profile_wgsl;
         if let Some(n) = args.coupled_iterations {
             solver.coupled_iterations = n;
         }
@@ -164,6 +168,7 @@ fn run_ogc(
         || args.barrier_al
         || args.coupled_iterations.is_some()
         || args.proposal_radii.is_some()
+        || args.profile_wgsl
     {
         return Err("Rebuild with desktop for --gpu-sim".into());
     }
@@ -186,6 +191,8 @@ fn run_ogc(
     };
     let start = Instant::now();
     let mut rows = Vec::new();
+    #[cfg(feature = "desktop")]
+    let mut profiles = Vec::new();
     for i in 0..args.steps {
         #[cfg(feature = "desktop")]
         let m = if let Some(avbd) = &avbd {
@@ -197,6 +204,12 @@ fn run_ogc(
         };
         #[cfg(not(feature = "desktop"))]
         let m = solver.step(&mut scene.state, &settings, None)?;
+        #[cfg(feature = "desktop")]
+        if let Some(a) = &avbd
+            && let Some(p) = a.take_profile()
+        {
+            profiles.push(p);
+        }
         serde_json::to_writer(&mut log, &m)?;
         writeln!(log)?;
         if i % 30 == 0 || i + 1 == args.steps {
@@ -214,6 +227,13 @@ fn run_ogc(
     }
     log.flush()?;
     let wall_ms = start.elapsed().as_secs_f64() * 1000.;
+    #[cfg(feature = "desktop")]
+    if args.profile_wgsl {
+        fs::write(
+            args.output.join("gpu-phases.json"),
+            serde_json::to_string_pretty(&profiles)?,
+        )?;
+    }
     export::write_artifacts(
         &project.template,
         &scene.garment,

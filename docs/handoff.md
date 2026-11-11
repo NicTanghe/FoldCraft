@@ -618,3 +618,5 @@ Read [OGC contracts](ogc.md) before changing the solver. Full historical reports
 ## Publication
 
 Initial publication repository: `git@github.com:erythrofr/ClothCraft.git`, branch `main`. `output/` and `target/` are ignored. The owner selected MIT; see `LICENSE`. No OGC/IPC Toolkit author code was incorporated; sources are cited in `ogc.md`. Spade remains pinned in Cargo; MakeHuman provenance is under `assets/makehuman/`. CPU CI is configured in `.github/workflows/cpu.yml`; inspect its GitHub status rather than assuming success.
+
+The [resident WGSL performance follow-up](wgsl-performance.md) records GPU-only caching/filtering changes, the unchanged CPU control, passing default-garment quality gates, and 2.1–3.3x complete-step gains. The hybrid control remains faster on the measured M1 Pro.

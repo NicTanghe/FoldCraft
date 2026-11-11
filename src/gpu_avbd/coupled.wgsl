@@ -4,12 +4,11 @@
 fn cache_material(@builtin(global_invocation_id) id:vec3u) {
     let i=id.x;if i>=config.sizes.x || atomicLoad(&control.error)!=0u {return;}
     let t=terms[i];
+    // Coupled Gauss-Newton uses J^T k J. Per-vertex row-norm curvature
+    // would resist rigid translation of a stressed patch.
     for(var j=0u;j<t.info.z;j++){
         let c=factor(t,t.ids[j],0);
         terms[i].gradients[j]=vec4f(c.g,c.v);
-        // Coupled Gauss-Newton uses J^T k J. Adding per-vertex row-norm
-        // curvature would resist rigid translation of a stressed patch.
-        terms[i].curvature[j]=vec4f(0);
     }
 }
 fn precondition(v:u32,r:vec3f)->vec3f {
@@ -28,7 +27,8 @@ fn cg_init(@builtin(global_invocation_id) id:vec3u) {
         if !(det>0 && det<1e30) {atomicOr(&control.error,256u);return;}
         inverse=transpose(mat3x3f(a,b,c))*(1.0/det);
     }
-    particles[v].cg[4]=vec4f(inverse[0],0);particles[v].cg[5]=vec4f(inverse[1],0);particles[v].cg[6]=vec4f(inverse[2],0);
+    particles[v].cg[4]=vec4f(inverse[0],s.g.x);particles[v].cg[5]=vec4f(inverse[1],s.g.y);particles[v].cg[6]=vec4f(inverse[2],s.g.z);
+    particles[v].energy=vec4f(s.e,s.e,0,0);
     let z=inverse*r;
     particles[v].cg[0]=vec4f(r,0);particles[v].cg[1]=vec4f(z,0);particles[v].cg[2]=vec4f(z,0);
     particles[v].delta=vec4f(0);
@@ -48,31 +48,28 @@ fn cg_matvec(@builtin(global_invocation_id) id:vec3u) {
             if t.ids[j]==v {local=j;}
             dotp+=dot(t.gradients[j].xyz,search_vector(t.ids[j]));
         }
-        value+=t.c.x*t.c.w*t.gradients[local].xyz*dotp+t.curvature[local].xyz*p;
+        value+=t.c.x*t.c.w*t.gradients[local].xyz*dotp;
     }
     var slot=atomicLoad(&heads[v]);var visits=0u;
     loop {
         if slot==0xffffffffu {break;}
         if slot>=config.sizes.z || visits>=config.sizes.z {atomicOr(&control.error,8u);return;}
-        let pair=contacts.pairs[slot];let c=closest(pair,0);let d=length(c.q);
-        let b=contact_value(d,pair,config.physical.w,false);let normal=c.q/max(d,1e-30);
+        let pair=contacts.pairs[slot];
+        let normal=pair.normal_curvature.xyz;
         var local=0u;var delta=vec3f(0);
-        for(var j=0u;j<4u;j++){if pair.ids[j]==v {local=j;}delta+=c.w[j]*search_vector(pair.ids[j]);}
-        value+=max(b.z,0)*c.w[local]*normal*dot(normal,delta);
+        for(var j=0u;j<4u;j++){if pair.ids[j]==v {local=j;}delta+=pair.weights[j]*search_vector(pair.ids[j]);}
+        value+=pair.normal_curvature.w*pair.weights[local]*normal*dot(normal,delta);
         slot=pair.next[local];visits++;
     }
     if config.sphere.w>0 {
         let start=geometry[config.extra.x+v];let end=geometry[config.extra.x+v+1u];
         for(var i=start;i<end;i++){
             let f=primitive(config.counts.y+geometry[i]);
-            let c=triangle_closest(config.sphere.xyz,at(f.x,0),at(f.y,0),at(f.z,0));let distance=length(c.q);
-            let k=bitcast<f32>(config.extra.z)*bitcast<f32>(geometry[config.extra.w+geometry[i]]);
-            var b=scalar_barrier(distance-config.sphere.w,k);
-            if config.method.x==1u {b=contact_value(distance-config.sphere.w,contacts.pairs[2u*config.sizes.z+geometry[i]],k,false);}
+            let pair=contacts.pairs[sphere_slot(geometry[i])];
             var local=0u;var delta=vec3f(0);
-            for(var j=0u;j<3u;j++){if f[j]==v {local=j;}delta+=c.w[j+1u]*search_vector(f[j]);}
-            let normal=c.q/max(distance,1e-30);
-            value+=max(b.z,0)*c.w[local+1u]*normal*dot(normal,delta);
+            for(var j=0u;j<3u;j++){if f[j]==v {local=j;}delta+=pair.weights[j+1u]*search_vector(f[j]);}
+            let normal=pair.normal_curvature.xyz;
+            value+=pair.normal_curvature.w*pair.weights[local+1u]*normal*dot(normal,delta);
         }
     }
     if positions[v].w>0.5 {value=vec3f(0);}
@@ -120,4 +117,43 @@ fn cg_beta(@builtin(local_invocation_index) lane:u32) {
 fn cg_search(@builtin(global_invocation_id) id:vec3u) {
     let v=id.x;if v>=config.counts.x || atomicLoad(&control.error)!=0u {return;}
     particles[v].cg[2]=particles[v].cg[1]+bitcast<f32>(control.pad2)*particles[v].cg[2];
+}
+
+fn sphere_slot(face:u32)->u32 {return (1u+config.method.x)*config.sizes.z+face;}
+// The iterate and AL variables stay frozen throughout PCG. Recompute once per
+// nonlinear sweep; line search/CCD still evaluate their actual trial geometry.
+@compute @workgroup_size(64)
+fn cache_contacts(@builtin(global_invocation_id) id:vec3u) {
+    let i=id.x;if atomicLoad(&control.error)!=0u {return;}
+    if i<min(atomicLoad(&contacts.count),config.sizes.z) {
+        let pair=contacts.pairs[i];let c=closest(pair,0);let d=length(c.q);
+        let b=contact_value(d,pair,config.physical.w,false);
+        contacts.pairs[i].normal_curvature=vec4f(c.q/max(d,1e-30),max(b.z,0));
+        contacts.pairs[i].weights=c.w;
+        contacts.pairs[i].frozen=vec4f(d,b.x,b.y,0);
+    }
+    if config.sphere.w>0 && i<config.extra.y {
+        let f=primitive(config.counts.y+i);
+        let c=triangle_closest(config.sphere.xyz,at(f.x,0),at(f.y,0),at(f.z,0));let d=length(c.q);
+        let k=bitcast<f32>(config.extra.z)*bitcast<f32>(geometry[config.extra.w+i]);
+        let slot=sphere_slot(i);var b=scalar_barrier(d-config.sphere.w,k);
+        if config.method.x==1u {b=contact_value(d-config.sphere.w,contacts.pairs[slot],k,false);}
+        contacts.pairs[slot].normal_curvature=vec4f(c.q/max(d,1e-30),max(b.z,0));
+        contacts.pairs[slot].weights=c.w;
+        contacts.pairs[slot].frozen=vec4f(d-config.sphere.w,b.x,b.y,0);
+    }
+}
+
+
+// Temporary active-curvature incidence, only for frozen PCG products. The
+// complete incidence is restored before local bounds, CCD and trial energy.
+@compute @workgroup_size(64)
+fn link_coupled(@builtin(global_invocation_id) id:vec3u) {
+    let slot=id.x;
+    if slot>=min(atomicLoad(&contacts.count),config.sizes.z) {return;}
+    if !(contacts.pairs[slot].normal_curvature.w>0) {return;}
+    for(var j=0u;j<4u;j++) {
+        let v=contacts.pairs[slot].ids[j];
+        if v<config.counts.x {contacts.pairs[slot].next[j]=atomicExchange(&heads[v],slot);}
+    }
 }
