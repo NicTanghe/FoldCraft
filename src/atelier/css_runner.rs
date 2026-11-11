@@ -83,6 +83,12 @@ pub const ACT_RUN_TOOL_CORNER2D: u64 = 1 << 38;
 pub const ACT_RUN_PIN_MODE_TOGGLE: u64 = 1 << 39;
 pub const ACT_RUN_CORNER_MODE_TOGGLE: u64 = 1 << 40;
 pub const ACT_RUN_ACCORDION_TOGGLE: u64 = 1 << 41;
+pub const ACT_RUN_ACC_0: u64 = 1 << 41;
+pub const ACT_RUN_ACC_1: u64 = 1 << 42;
+pub const ACT_RUN_ACC_2: u64 = 1 << 43;
+pub const ACT_RUN_ACC_3: u64 = 1 << 44;
+pub const ACT_RUN_ACC_4: u64 = 1 << 45;
+pub const ACT_RUN_ACC_5: u64 = 1 << 46;
 
 static RUNNER_ACTIONS: AtomicU64 = AtomicU64::new(0);
 
@@ -217,6 +223,24 @@ pub fn on_runner_corner_mode_toggle() {
 pub fn on_runner_accordion_toggle() {
     dispatch_runner_action(ACT_RUN_ACCORDION_TOGGLE);
 }
+pub fn on_runner_accordion_0() {
+    dispatch_runner_action(ACT_RUN_ACC_0);
+}
+pub fn on_runner_accordion_1() {
+    dispatch_runner_action(ACT_RUN_ACC_1);
+}
+pub fn on_runner_accordion_2() {
+    dispatch_runner_action(ACT_RUN_ACC_2);
+}
+pub fn on_runner_accordion_3() {
+    dispatch_runner_action(ACT_RUN_ACC_3);
+}
+pub fn on_runner_accordion_4() {
+    dispatch_runner_action(ACT_RUN_ACC_4);
+}
+pub fn on_runner_accordion_5() {
+    dispatch_runner_action(ACT_RUN_ACC_5);
+}
 
 // ============================================================================
 // Object Browser Category Enum
@@ -276,6 +300,7 @@ pub struct CssRunnerState {
     pub pin_mode_contour: bool,
     pub corner_mode_radius: bool,
     pub open_accordion_idx: usize,
+    pub accordion_open: [bool; 6],
 }
 
 impl CssRunnerState {
@@ -329,6 +354,7 @@ impl CssRunnerState {
             pin_mode_contour: true,
             corner_mode_radius: true,
             open_accordion_idx: 0,
+            accordion_open: [true, false, true, false, false, false],
         }
     }
 
@@ -583,8 +609,33 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     if actions & ACT_RUN_CORNER_MODE_TOGGLE != 0 {
         state.corner_mode_radius = !state.corner_mode_radius;
     }
-    if actions & ACT_RUN_ACCORDION_TOGGLE != 0 {
-        state.open_accordion_idx = (state.open_accordion_idx + 1) % 9;
+    if actions & ACT_RUN_ACC_0 != 0 {
+        state.accordion_open[0] = !state.accordion_open[0];
+        state.open_accordion_idx = 0;
+    }
+    if actions & ACT_RUN_ACC_1 != 0 {
+        state.accordion_open[1] = !state.accordion_open[1];
+        state.open_accordion_idx = 1;
+    }
+    if actions & ACT_RUN_ACC_2 != 0 {
+        state.accordion_open[2] = !state.accordion_open[2];
+        state.open_accordion_idx = 2;
+    }
+    if actions & ACT_RUN_ACC_3 != 0 {
+        state.accordion_open[3] = !state.accordion_open[3];
+        state.open_accordion_idx = 3;
+    }
+    if actions & ACT_RUN_ACC_4 != 0 {
+        state.accordion_open[4] = !state.accordion_open[4];
+        state.open_accordion_idx = 4;
+    }
+    if actions & ACT_RUN_ACC_5 != 0 {
+        state.accordion_open[5] = !state.accordion_open[5];
+        state.open_accordion_idx = 5;
+    }
+    if actions & ACT_RUN_ACCORDION_TOGGLE != 0 && (actions & (ACT_RUN_ACC_0 | ACT_RUN_ACC_1 | ACT_RUN_ACC_2 | ACT_RUN_ACC_3 | ACT_RUN_ACC_4 | ACT_RUN_ACC_5) == 0) {
+        state.open_accordion_idx = (state.open_accordion_idx + 1) % 6;
+        state.accordion_open[state.open_accordion_idx] = !state.accordion_open[state.open_accordion_idx];
     }
 
     if state.playing {
@@ -1406,184 +1457,225 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
 
     let pins_count = selected_panel.map_or(0, |p| p.pins.len() + p.pin_points.len());
 
-    let open_idx = state.open_accordion_idx;
+    let open_0 = state.accordion_open[0];
+    let open_1 = state.accordion_open[1];
+    let open_2 = state.accordion_open[2];
+    let open_3 = state.accordion_open[3];
+    let open_4 = state.accordion_open[4];
+    let open_5 = state.accordion_open[5];
 
     // Accordion 0: Information
     let acc_info = ui! {
-        <div class="accordion">
-            <button class="accordion-header" onclick={on_runner_accordion_toggle}>
+        <div class={if open_0 { "accordion open" } else { "accordion collapsed" }}>
+            <button class="accordion-header" onclick={on_runner_accordion_0}>
                 <span>"1. Piece Information"</span>
-                {if open_idx == 0 { icon_chevron_down() } else { icon_chevron_right() }}
+                {if open_0 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
-            <div class="accordion-content">
-                <div class="prop-row">
-                    <span class="prop-label">"Name"</span>
-                    <span class="prop-value">{selected_name}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"ID"</span>
-                    <span class="prop-value">{selected_id}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Width"</span>
-                    <span class="prop-value">{format!("{width_mm:.1} mm")}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Height"</span>
-                    <span class="prop-value">{format!("{height_mm:.1} mm")}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Area"</span>
-                    <span class="prop-value">{format!("{area_dm2:.2} dm²")}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Perimeter"</span>
-                    <span class="prop-value">{format!("{perimeter_mm:.1} mm")}</span>
-                </div>
-            </div>
+            {if open_0 {
+                ui! {
+                    <div class="accordion-content">
+                        <div class="prop-row">
+                            <span class="prop-label">"Name"</span>
+                            <span class="prop-value">{selected_name}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"ID"</span>
+                            <span class="prop-value">{selected_id}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Width"</span>
+                            <span class="prop-value">{format!("{width_mm:.1} mm")}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Height"</span>
+                            <span class="prop-value">{format!("{height_mm:.1} mm")}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Area"</span>
+                            <span class="prop-value">{format!("{area_dm2:.2} dm²")}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Perimeter"</span>
+                            <span class="prop-value">{format!("{perimeter_mm:.1} mm")}</span>
+                        </div>
+                    </div>
+                }
+            } else {
+                ui! { <span class="hidden" /> }
+            }}
         </div>
     };
 
     // Accordion 1: Selected Line & Seam Allowance
     let acc_line = ui! {
-        <div class="accordion">
-            <button class="accordion-header" onclick={on_runner_accordion_toggle}>
+        <div class={if open_1 { "accordion open" } else { "accordion collapsed" }}>
+            <button class="accordion-header" onclick={on_runner_accordion_1}>
                 <span>"2. Boundary & Allowance"</span>
-                {if open_idx == 1 { icon_chevron_down() } else { icon_chevron_right() }}
+                {if open_1 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
-            <div class="accordion-content">
-                <div class="prop-row">
-                    <span class="prop-label">"Curvature Type"</span>
-                    <span class="prop-value">"Cubic Bézier"</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Seam Allowance"</span>
-                    <span class="prop-value">"10.0 mm"</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Cutting Line Offset"</span>
-                    <span class="prop-value">"+10.0 mm"</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Notches"</span>
-                    <span class="prop-value">"Stored (V-Cut)"</span>
-                </div>
-            </div>
+            {if open_1 {
+                ui! {
+                    <div class="accordion-content">
+                        <div class="prop-row">
+                            <span class="prop-label">"Curvature Type"</span>
+                            <span class="prop-value">"Cubic Bézier"</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Seam Allowance"</span>
+                            <span class="prop-value">"10.0 mm"</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Cutting Line Offset"</span>
+                            <span class="prop-value">"+10.0 mm"</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Notches"</span>
+                            <span class="prop-value">"Stored (V-Cut)"</span>
+                        </div>
+                    </div>
+                }
+            } else {
+                ui! { <span class="hidden" /> }
+            }}
         </div>
     };
 
     // Accordion 2: 3D Arrangement
     let acc_arrange = ui! {
-        <div class="accordion">
-            <button class="accordion-header" onclick={on_runner_accordion_toggle}>
+        <div class={if open_2 { "accordion open" } else { "accordion collapsed" }}>
+            <button class="accordion-header" onclick={on_runner_accordion_2}>
                 <span>"3. 3D Arrangement"</span>
-                {if open_idx == 2 { icon_chevron_down() } else { icon_chevron_right() }}
+                {if open_2 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
-            <div class="accordion-content">
-                <div class="prop-row">
-                    <span class="prop-label">"Translation X"</span>
-                    <span class="prop-value">{format!("{:.1} cm", selected_panel.map_or(0.0, |p| p.placement.translation.x * 100.0))}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Translation Y"</span>
-                    <span class="prop-value">{format!("{:.1} cm", selected_panel.map_or(0.0, |p| p.placement.translation.y * 100.0))}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Translation Z"</span>
-                    <span class="prop-value">{format!("{:.1} cm", selected_panel.map_or(0.0, |p| p.placement.translation.z * 100.0))}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Rotation (X/Y/Z)"</span>
-                    <span class="prop-value">{format!("{:.0}°/{:.0}°/{:.0}°",
-                        selected_panel.map_or(0.0, |p| p.placement.rotation_degrees.x),
-                        selected_panel.map_or(0.0, |p| p.placement.rotation_degrees.y),
-                        selected_panel.map_or(0.0, |p| p.placement.rotation_degrees.z))}</span>
-                </div>
-            </div>
+            {if open_2 {
+                ui! {
+                    <div class="accordion-content">
+                        <div class="prop-row">
+                            <span class="prop-label">"Translation X"</span>
+                            <span class="prop-value">{format!("{:.1} cm", selected_panel.map_or(0.0, |p| p.placement.translation.x * 100.0))}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Translation Y"</span>
+                            <span class="prop-value">{format!("{:.1} cm", selected_panel.map_or(0.0, |p| p.placement.translation.y * 100.0))}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Translation Z"</span>
+                            <span class="prop-value">{format!("{:.1} cm", selected_panel.map_or(0.0, |p| p.placement.translation.z * 100.0))}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Rotation (X/Y/Z)"</span>
+                            <span class="prop-value">{format!("{:.0}°/{:.0}°/{:.0}°",
+                                selected_panel.map_or(0.0, |p| p.placement.rotation_degrees.x),
+                                selected_panel.map_or(0.0, |p| p.placement.rotation_degrees.y),
+                                selected_panel.map_or(0.0, |p| p.placement.rotation_degrees.z))}</span>
+                        </div>
+                    </div>
+                }
+            } else {
+                ui! { <span class="hidden" /> }
+            }}
         </div>
     };
 
     // Accordion 3: Pins
     let acc_pins = ui! {
-        <div class="accordion">
-            <button class="accordion-header" onclick={on_runner_accordion_toggle}>
+        <div class={if open_3 { "accordion open" } else { "accordion collapsed" }}>
+            <button class="accordion-header" onclick={on_runner_accordion_3}>
                 <span>"4. Pins & Restraints"</span>
-                {if open_idx == 3 { icon_chevron_down() } else { icon_chevron_right() }}
+                {if open_3 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
-            <div class="accordion-content">
-                <div class="prop-row">
-                    <span class="prop-label">"Pinned Points"</span>
-                    <span class="prop-value">{format!("{pins_count}")}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Active Pin Mode"</span>
-                    <span class="prop-value">{if state.pin_mode_contour { "Contour" } else { "Interior" }}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Pin Stiffness"</span>
-                    <span class="prop-value">"1e5 N/m"</span>
-                </div>
-            </div>
+            {if open_3 {
+                ui! {
+                    <div class="accordion-content">
+                        <div class="prop-row">
+                            <span class="prop-label">"Pinned Points"</span>
+                            <span class="prop-value">{format!("{pins_count}")}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Active Pin Mode"</span>
+                            <span class="prop-value">{if state.pin_mode_contour { "Contour" } else { "Interior" }}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Pin Stiffness"</span>
+                            <span class="prop-value">"1e5 N/m"</span>
+                        </div>
+                    </div>
+                }
+            } else {
+                ui! { <span class="hidden" /> }
+            }}
         </div>
     };
 
     // Accordion 4: Fabric & Mechanical Properties
     let acc_fabric = ui! {
-        <div class="accordion">
-            <button class="accordion-header" onclick={on_runner_accordion_toggle}>
+        <div class={if open_4 { "accordion open" } else { "accordion collapsed" }}>
+            <button class="accordion-header" onclick={on_runner_accordion_4}>
                 <span>"5. Fabric Mechanics"</span>
-                {if open_idx == 4 { icon_chevron_down() } else { icon_chevron_right() }}
+                {if open_4 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
-            <div class="accordion-content">
-                <div class="prop-row">
-                    <span class="prop-label">"Preset"</span>
-                    <span class="prop-value">{selected_panel.map_or("Cotton", |p| p.fabric.as_str())}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Areal Density"</span>
-                    <span class="prop-value">"180 g/m²"</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Warp Stretch"</span>
-                    <span class="prop-value">"150 N/m"</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Weft Stretch"</span>
-                    <span class="prop-value">"120 N/m"</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Bending Stiffness"</span>
-                    <span class="prop-value">"0.002 N·m"</span>
-                </div>
-            </div>
+            {if open_4 {
+                ui! {
+                    <div class="accordion-content">
+                        <div class="prop-row">
+                            <span class="prop-label">"Preset"</span>
+                            <span class="prop-value">{selected_panel.map_or("Cotton", |p| p.fabric.as_str())}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Areal Density"</span>
+                            <span class="prop-value">"180 g/m²"</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Warp Stretch"</span>
+                            <span class="prop-value">"150 N/m"</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Weft Stretch"</span>
+                            <span class="prop-value">"120 N/m"</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Bending Stiffness"</span>
+                            <span class="prop-value">"0.002 N·m"</span>
+                        </div>
+                    </div>
+                }
+            } else {
+                ui! { <span class="hidden" /> }
+            }}
         </div>
     };
 
     // Accordion 5: Simulation Diagnostics
     let acc_sim = ui! {
-        <div class="accordion">
-            <button class="accordion-header" onclick={on_runner_accordion_toggle}>
+        <div class={if open_5 { "accordion open" } else { "accordion collapsed" }}>
+            <button class="accordion-header" onclick={on_runner_accordion_5}>
                 <span>"6. Simulation Diagnostics"</span>
-                {if open_idx == 5 { icon_chevron_down() } else { icon_chevron_right() }}
+                {if open_5 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
-            <div class="accordion-content">
-                <div class="prop-row">
-                    <span class="prop-label">"Solver Step Time"</span>
-                    <span class="prop-value">{format!("{:.2} ms", state.step_ms)}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"RMS Residual"</span>
-                    <span class="prop-value">{last_res}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Max Penetration"</span>
-                    <span class="prop-value">{last_pen}</span>
-                </div>
-                <div class="prop-row">
-                    <span class="prop-label">"Active Backend"</span>
-                    <span class="prop-value">{if state.gpu_sim { "GPU (VBD)" } else { "CPU (OGC)" }}</span>
-                </div>
-            </div>
+            {if open_5 {
+                ui! {
+                    <div class="accordion-content">
+                        <div class="prop-row">
+                            <span class="prop-label">"Solver Step Time"</span>
+                            <span class="prop-value">{format!("{:.2} ms", state.step_ms)}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"RMS Residual"</span>
+                            <span class="prop-value">{last_res}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Max Penetration"</span>
+                            <span class="prop-value">{last_pen}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Active Backend"</span>
+                            <span class="prop-value">{if state.gpu_sim { "GPU (VBD)" } else { "CPU (OGC)" }}</span>
+                        </div>
+                    </div>
+                }
+            } else {
+                ui! { <span class="hidden" /> }
+            }}
         </div>
     };
 
