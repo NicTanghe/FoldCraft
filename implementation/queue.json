@@ -440,6 +440,21 @@
       "owner": null,
       "vruntime": 3.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/35"
+    },
+    {
+      "id": "FC-0034",
+      "title": "Integrate modular Studio V2 CSS components and true 2D metric pattern board in css_runner to match EXO Studio V2 layout and styling",
+      "acceptance": "Replace inline stubs in css_runner with modular Studio V2 top bar, tool rails (3D & 2D), left asset & piece browser, right 5-category object browser and property accordions; render true 2D metric pattern board SVG from garment panels; update studio_v2.css to match EXO Studio V2 layout and tokens; pass CPU and desktop checks and open PR.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0033"
+      ],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/36"
     }
   ]
 }
