@@ -563,10 +563,10 @@
       "spent": 8.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-protrusion",
+      "status": "review",
+      "owner": null,
       "vruntime": 4.0,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
     },
     {
       "id": "FC-0044",

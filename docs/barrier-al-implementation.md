@@ -14,6 +14,12 @@ x/v/time, increments the worker generation, clears metrics and invalidates
 caches. Press Play or Step to continue. Selecting the active solver just closes
 the dropdown; Escape also closes it. This is runtime state, not a format change.
 
+**Current primal search:** the [coupled GPU correction](wgsl-coupled-correction.md)
+replaces the initial Jacobi update with eight inexact PCG iterations per sweep.
+The CPU reference and physical parameters are unchanged. The initial method and
+small-case observations below remain historical evidence; current matched
+garment results are in the correction document.
+
 ## Method and lifecycle
 
 The implemented independent splitting is

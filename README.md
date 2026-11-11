@@ -16,6 +16,12 @@ The dropdown also offers the experimental
 [AVBD + barrier AL backend](docs/barrier-al-implementation.md), implemented after
 saving its design and scalar study. Its fixed budget does not certify convergence.
 
+The two WGSL options now use a [coupled GPU correction](docs/wgsl-coupled-correction.md)
+for the reported default T-shirt protrusion. Matched 200-step runs and an opt-in
+garment quality regression compare against the unchanged CPU solver. Start from
+a fresh garment when checking this update; an already distorted cached state
+can retain its earlier assembly history.
+
 ## Try it
 
 Install Rust stable and run from the repository root:

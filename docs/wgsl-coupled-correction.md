@@ -137,3 +137,23 @@ default-garment distortion; they do not repair or validate that separate contact
 law. See gpu-protrusion-followup.md and its planar oracle for the open research
 gate. Friction, canonical IPC weighting/mollification and arbitrary dense-fold
 qualification are not established by this fix.
+
+## Completed validation and rejected vector fusion
+
+The separate long regression passed (264.78 s complete test time). Its repeat
+reported CPU 21.174% extension / 2.041 mm seam gap, IPC 19.954% / 2.177 mm /
+5.787 mm RMS difference, and AL 21.839% / 2.335 mm / 9.267 mm RMS difference.
+All eight intermediate/final GPU separation audits passed. The AL repeat differs
+from the standalone run, consistent with the documented finite-budget/contact
+insertion-order sensitivity; it still passed the fixed quality limits. These
+are not byte-identical or fully converged solutions.
+
+A further optimization fused CG vector updates and reductions into one
+workgroup while retaining the parallel sparse matvec. Trajectory checks passed
+on the small patch, but warm medians only improved 105.607→102.174 ms (IPC)
+and 106.238→103.060 ms (AL), roughly 3%, in one local 16-vertex probe.
+That was insufficient evidence to retain the added scheduling complexity.
+The default keeps the validated separate passes. Raw results are in
+coupled-vector-fusion-study.json; the rejected experiment is preserved in
+cg-vector-fusion-rejected.patch (apply with git apply --unidiff-zero against
+fcf14a6 for research only). No speedup is claimed for this garment-quality fix.
