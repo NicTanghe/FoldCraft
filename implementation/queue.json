@@ -466,10 +466,10 @@
       "depends_on": [
         "FC-0034"
       ],
-      "status": "active",
-      "owner": "antigravity",
+      "status": "done",
+      "owner": null,
       "vruntime": 3.25,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/38"
     }
   ]
 }
