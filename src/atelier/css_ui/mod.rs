@@ -172,7 +172,7 @@ pub fn render_studio_v2_shell(state: &StudioV2State) -> Node {
         "Play"
     };
     let backend_label = if state.transport.is_gpu {
-        "GPU (VBD)"
+        "WGSL AVBD / IPC"
     } else {
         "CPU (OGC)"
     };

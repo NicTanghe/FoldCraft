@@ -1,5 +1,7 @@
 # Turbo performance — 14 October 2026
 
+**Branch update (FC-0033):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
+
 **Historical measurements before GPU motion corrections.** [Apron validation](apron-validation.md) exposed missing inertial prediction; [the subsequent artificial-stretch pass](adaptive-initialization.md) replaced systematic free-fall prediction with adaptive initialization. The current default is 16 iterations. Results below compare historical versions and do not establish current performance or quality.
 
 **Realtime was measured in the workspace on both assembled garments**, RTX 3090 / Vulkan, two CPU threads. Mesh, eight iterations, dt 1/60 s and material/contact laws were not reduced to obtain the gain. Detection remained CPU work; this was not a fully GPU OGC port.

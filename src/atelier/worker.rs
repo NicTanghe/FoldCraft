@@ -3,7 +3,7 @@
 //! retained when the window is slow or hidden (no growing animation queue).
 use marvelous_cloth::{
     fitting::FittingScene,
-    gpu_vbd::GpuVbd,
+    gpu_avbd::GpuAvbd,
     model::State,
     vbd::{FinalDiagnostics, FinalDiagnosticsBackend, Grab, VbdMetrics, VbdSettings, VbdSolver},
 };
@@ -222,10 +222,10 @@ fn start_inner(
     let latest: Latest = Arc::new(Mutex::new(None));
     let output = latest.clone();
     let thread = std::thread::Builder::new()
-        .name("cloth-vbd".into())
+        .name("cloth-physics".into())
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let gpu = backend.map(|(device, queue)| GpuVbd::new(device, queue));
+            let gpu = backend.map(|(device, queue)| GpuAvbd::new(device, queue));
             let mut cache: Option<(u64, VbdSolver)> = None;
             let mut active: Option<Work> = None;
             let mut deadline = Instant::now();
@@ -282,6 +282,7 @@ fn start_inner(
                         return Err("GPU simulation requested without a GPU backend".to_owned());
                     }
                     if cache.as_ref().is_none_or(|(g, _)| *g != w.generation) {
+                        if let Some(gpu)=&gpu {gpu.reset();}
                         cache = Some((
                             w.generation,
                             VbdSolver::new(
@@ -309,6 +310,15 @@ fn start_inner(
                         } else {
                             FinalDiagnosticsBackend::Cpu
                         };
+                        // This OGC audit does not measure the IPC objective.
+                        // Reject the request rather than report another contact law as AVBD residual.
+                        if w.gpu {
+                            if let Ok(mut sample)=FINAL_DIAGNOSTICS.lock() { *sample=None; }
+                            if let Ok(mut error) = FINAL_DIAGNOSTICS_ERROR.lock() {
+                                *error = Some(FinalDiagnosticsFailure { request, message: "Final OGC force audit is unavailable for the WGSL AVBD/IPC objective".into() });
+                            }
+                            return Ok((w.scene.state.clone(), metrics));
+                        }
                         match solver.sample_final_diagnostics(
                             &previous,
                             &w.scene.state,

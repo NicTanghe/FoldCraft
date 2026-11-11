@@ -1,4 +1,4 @@
-//! CPU fitting run; optional GPU view/benchmark will be handled explicitly.
+//! Fitting frontend: resident WGSL AVBD / IPC by default; explicit CPU controls.
 #![recursion_limit = "256"]
 use clap::Parser;
 use marvelous_cloth::{
@@ -56,23 +56,29 @@ struct Args {
     /// Use the slow global Newton reference instead of interactive VBD + OGC.
     #[arg(long)]
     reference: bool,
-    /// VBD local iterations per physical time step.
+    /// Use the CPU VBD/OGC control (no compute adapter).
+    #[arg(long, conflicts_with_all = ["gpu_sim", "hybrid_vbd"])]
+    cpu: bool,
+    /// Solver iterations per physical time step.
     #[arg(long)]
     iterations: Option<usize>,
     /// Physical time step in seconds; independent of rendering rate.
     #[arg(long)]
     dt: Option<f64>,
-    /// Hardware compute opt-in: GPU candidate filtering + VBD, f64 contact geometry.
+    /// Compatibility flag: select the default resident WGSL AVBD / IPC solver.
     #[arg(long, conflicts_with = "reference")]
     gpu_sim: bool,
+    /// Historical hybrid VBD / OGC benchmark control.
+    #[arg(long, conflicts_with = "reference")]
+    hybrid_vbd: bool,
     /// Compare GPU energies/forces against f64 AD before each step (slow).
-    #[arg(long, requires = "gpu_sim")]
+    #[arg(long, requires = "hybrid_vbd")]
     check_gpu_gradients: bool,
     /// Compare performance with complete CPU candidate filtering (same physics).
-    #[arg(long, requires = "gpu_sim")]
+    #[arg(long, requires = "hybrid_vbd")]
     cpu_contact_filter: bool,
     /// Compare contacts and movement balls with the full f64 detector every step (slow).
-    #[arg(long, requires = "gpu_sim")]
+    #[arg(long, requires = "hybrid_vbd")]
     check_gpu_contacts: bool,
 }
 fn run_ogc(
@@ -99,7 +105,14 @@ fn run_ogc(
     settings.validate()?;
     project.simulation = Some(settings.clone());
     #[cfg(feature = "desktop")]
-    let gpu = if args.gpu_sim {
+    let avbd = if !args.cpu && !args.hybrid_vbd && args.steps > 0 {
+        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+        Some(marvelous_cloth::gpu_avbd::GpuAvbd::new(device, queue))
+    } else {
+        None
+    };
+    #[cfg(feature = "desktop")]
+    let gpu = if args.hybrid_vbd {
         use wgpu;
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -127,7 +140,7 @@ fn run_ogc(
         None
     };
     #[cfg(not(feature = "desktop"))]
-    if args.gpu_sim {
+    if args.gpu_sim || args.hybrid_vbd {
         return Err("Rebuild with desktop for --gpu-sim".into());
     }
     fs::write(
@@ -142,7 +155,9 @@ fn run_ogc(
     let mut rows = Vec::new();
     for i in 0..args.steps {
         #[cfg(feature = "desktop")]
-        let m = if let Some(gpu) = &gpu {
+        let m = if let Some(avbd) = &avbd {
+            avbd.step(&mut solver, &mut scene.state, &settings, None)?
+        } else if let Some(gpu) = &gpu {
             gpu.step(&mut solver, &mut scene.state, &settings, None)?
         } else {
             solver.step(&mut scene.state, &settings, None)?
@@ -174,11 +189,18 @@ fn run_ogc(
     )?;
     project.state = Some(scene.state.clone());
     project.save(&args.output.join("fitting-project.json"))?;
-    let report = serde_json::json!({"backend":if args.gpu_sim{"hybrid-cpu-ogc-gpu-vbd"}else{"cpu-f64-vbd-ogc"},"steps":args.steps,"settings":settings,"cpu_contact_filter":args.cpu_contact_filter,"check_gpu_contacts":args.check_gpu_contacts,"check_gpu_gradients":args.check_gpu_gradients,
+    let backend = if args.hybrid_vbd {
+        "hybrid-cpu-ogc-gpu-vbd"
+    } else if cfg!(feature = "desktop") && !args.cpu {
+        "wgsl-finite-avbd-ipc"
+    } else {
+        "cpu-f64-vbd-ogc"
+    };
+    let report = serde_json::json!({"backend":backend,"steps":args.steps,"settings":settings,"cpu_contact_filter":args.cpu_contact_filter,"check_gpu_contacts":args.check_gpu_contacts,"check_gpu_gradients":args.check_gpu_gradients,
         "vertices":scene.state.x.len(),"triangles":scene.garment.mesh.triangles.len(),"wall_ms":wall_ms,
         "mean_step_ms":if rows.is_empty(){0.}else{wall_ms/rows.len() as f64},"last":rows.last(),
         "seams":scene.garment.seams.iter().map(|s|serde_json::json!({"id":s.id,"max_gap_m":s.max_gap(&scene.state.x)})).collect::<Vec<_>>(),
-        "scope":"OGC two-sided VF/EE normal contact, self-contact, sparse directional bounds with isotropic fallback; local seam exclusions; no friction; fixed iteration budgets do not certify equilibrium"});
+        "scope":if backend=="wgsl-finite-avbd-ipc" {"Independent finite AVBD / squared-distance IPC-style VF/EE barrier; conservative Lipschitz path bounds, local sewing exclusions; no friction or convergence certificate; one snapshot readback per step"} else {"VBD/OGC control; local sewing exclusions; no friction or convergence certificate"}});
     fs::write(
         args.output.join("run.json"),
         serde_json::to_string_pretty(&report)?,
@@ -197,7 +219,7 @@ fn run_ogc(
         || args.ui_authoring_smoke
     {
         #[cfg(feature = "desktop")]
-        fitting_editor::run(
+        fitting_editor::run_with_cpu(
             project,
             scene,
             fitting_editor::DocumentFiles {
@@ -206,9 +228,7 @@ fn run_ogc(
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
             args.ui_smoke,
-            args.ui_interaction_smoke,
-            args.ui_perf_smoke,
-            args.ui_authoring_smoke,
+            args.cpu,
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]
@@ -352,7 +372,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || args.ui_authoring_smoke
     {
         #[cfg(feature = "desktop")]
-        fitting_editor::run(
+        fitting_editor::run_with_cpu(
             project,
             scene,
             fitting_editor::DocumentFiles {
@@ -361,9 +381,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 modified: args.steps > 0 || args.mesh_mm.is_some(),
             },
             args.ui_smoke,
-            args.ui_interaction_smoke,
-            args.ui_perf_smoke,
-            args.ui_authoring_smoke,
+            args.cpu,
         )
         .map_err(|e| e.to_string())?;
         #[cfg(not(feature = "desktop"))]

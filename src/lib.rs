@@ -16,12 +16,16 @@ pub mod contact;
 pub mod css_ui;
 pub mod document;
 pub mod energy;
+pub(crate) mod energy_factors;
 pub mod fabrics;
 pub mod fitting;
 pub mod garment;
 pub mod gltf_avatar;
 #[cfg(feature = "desktop")]
+pub mod gpu_avbd;
+#[cfg(feature = "desktop")]
 pub mod gpu_vbd;
+pub mod ipc;
 #[cfg(feature = "desktop")]
 pub use cssimpler;
 pub mod issue_report;

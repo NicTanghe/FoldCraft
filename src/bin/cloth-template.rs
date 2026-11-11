@@ -1,4 +1,4 @@
-//! A CPU-only frontend; never imports graphics libraries or opens a window.
+//! Headless authoring tools; simulation defaults to WGSL when desktop is built.
 use clap::{Parser, Subcommand};
 use marvelous_cloth::{
     garment::{GarmentTemplate, export, production_metrics},
@@ -51,6 +51,9 @@ enum Command {
         output: PathBuf,
         #[arg(long, default_value_t = 30)]
         steps: usize,
+        /// Historical CPU Newton control (no GPU initialization).
+        #[arg(long, alias = "reference")]
+        cpu: bool,
         #[arg(long,default_value_t=1.0/60.0)]
         dt: f64,
         #[arg(long, default_value_t = 2)]
@@ -110,6 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             template,
             output,
             steps,
+            cpu,
             dt,
             threads,
         } => {
@@ -131,6 +135,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fs::create_dir_all(&output)?;
             fs::write(output.join("initial.obj"), export::obj(&g, &state))?;
             let mut log = BufWriter::new(File::create(output.join("metrics.jsonl"))?);
+            #[cfg(feature = "desktop")]
+            if !cpu {
+                let g = std::sync::Arc::new(g);
+                let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+                let gpu = marvelous_cloth::gpu_avbd::GpuAvbd::new(device, queue);
+                let mut solver = marvelous_cloth::vbd::VbdSolver::new(g.clone(), None, &state)?;
+                let simulation = marvelous_cloth::vbd::VbdSettings {
+                    dt,
+                    ..Default::default()
+                };
+                let mut last = None;
+                for _ in 0..steps {
+                    let m = gpu.step(&mut solver, &mut state, &simulation, None)?;
+                    serde_json::to_writer(&mut log, &m)?;
+                    writeln!(log)?;
+                    last = Some(m);
+                }
+                log.flush()?;
+                export::write_artifacts(&t, &g, &state, &output)?;
+                let report = serde_json::json!({"backend":marvelous_cloth::gpu_avbd::BACKEND,"gpu_initialized":true,"steps":steps,"settings":simulation,"initial_seam_gap_m":initial_gap,"final_seam_gap_m":g.max_seam_gap(&state.x),"last_step":last,"residual":"unavailable; fixed iteration budget"});
+                fs::write(
+                    output.join("run.json"),
+                    serde_json::to_string_pretty(&report)?,
+                )?;
+                println!("{}", serde_json::to_string_pretty(&report)?);
+                return Ok(());
+            }
+            #[cfg(not(feature = "desktop"))]
+            let _ = cpu;
             let mut converged = 0;
             let mut last = None;
             for _ in 0..steps {

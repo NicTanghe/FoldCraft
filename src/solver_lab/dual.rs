@@ -2,7 +2,7 @@
 use crate::math::Scalar;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 #[derive(Clone, Copy)]
-pub(super) struct Dual<const N: usize> {
+pub(crate) struct Dual<const N: usize> {
     pub v: f64,
     pub g: [f64; N],
 }

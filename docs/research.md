@@ -1,5 +1,7 @@
 # Research and decisions — 14 October 2026
 
+**Branch update (FC-0033):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
+
 The [long-tail follow-up](contact-long-tail.md) exposes later convergence failures in all four constrained-search protocols. Passive backtracking traces identify actual EE clearance violations and unresolved swept checks, not merely an overly small OGC prebound. An opt-in search-path repair rescues four isolated failures and passes four short protocols, but a new longer trajectory fails at step 479. A final [moving-plane certificate](moving-contact-separator.md) rescues that isolated step while retaining clearance; long-run validation is absent. Neither experiment changes the editor.
 
 The [geometrically constrained residual-search experiment](constrained-contact-search.md) records the independently implemented null-space/QR method, actual LAPACK documentation consulted, independent numerical references, four passing synthetic release protocols and the unresolved scaling/dress limits. It is a CPU laboratory option, not an editor backend.

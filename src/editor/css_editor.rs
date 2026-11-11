@@ -156,6 +156,7 @@ pub struct CssEditorState {
     pub mesh: Arc<Mesh>,
     pub state: State,
     pub metrics: Option<Metrics>,
+    pub gpu_solver: Option<Arc<std::sync::Mutex<marvelous_cloth::gpu_avbd::ProjectAvbd>>>,
     pub camera: Camera,
     pub playing: bool,
     pub wire: bool,
@@ -207,6 +208,7 @@ impl CssEditorState {
             mesh: Arc::new(mesh),
             state,
             metrics: None,
+            gpu_solver: None,
             camera: Camera::default(),
             playing: false,
             wire: true,
@@ -233,6 +235,29 @@ impl CssEditorState {
     }
 
     pub fn step(&mut self) {
+        if let Some(gpu) = &self.gpu_solver {
+            let result = gpu
+                .lock()
+                .map_err(|_| "WGSL solver lock poisoned".to_string())
+                .and_then(|mut solver| solver.step(&self.active, &self.mesh, &mut self.state));
+            match result {
+                Ok(m) => {
+                    self.step_count += 1;
+                    self.step_ms = m.step_ms;
+                    self.metrics = None;
+                    self.status_message = format!(
+                        "WGSL AVBD / IPC step {}: {:.1} ms; fixed budget, residual unavailable",
+                        self.step_count, m.step_ms
+                    );
+                    self.sync_usd_points();
+                }
+                Err(error) => {
+                    self.playing = false;
+                    self.status_message = format!("Solver error: {error}");
+                }
+            }
+            return;
+        }
         match ReferenceSolver::step(
             &self.mesh,
             &mut self.state,
@@ -568,7 +593,7 @@ fn build_top_bar(state: &CssEditorState) -> Node {
                     "Reset"
                 </button>
                 <span id="sim-backend-indicator" class="cpu">
-                    "CPU Reference"
+                    {if state.gpu_solver.is_some() {"WGSL AVBD / IPC"} else {"CPU Reference"}}
                 </span>
             </div>
             <div class="top-bar-right">
@@ -932,10 +957,17 @@ fn build_status_bar(state: &CssEditorState) -> Node {
         .map_or(0.0, |m| m.max_vertex_penetration_m * 1000.0);
     let residual = state.metrics.as_ref().map_or(0.0, |m| m.residual_rms_n);
 
-    let step_info = format!(
-        "Step: {} | dt: {:.1} ms | Residual: {:.1e} | Max Pen: {:.3} mm",
-        state.step_count, state.step_ms, residual, max_pen_mm
-    );
+    let step_info = if state.gpu_solver.is_some() {
+        format!(
+            "Step: {} | computation: {:.1} ms | Residual: unavailable | Penetration audit: unavailable",
+            state.step_count, state.step_ms
+        )
+    } else {
+        format!(
+            "Step: {} | dt: {:.1} ms | Residual: {:.1e} | Max Pen: {:.3} mm",
+            state.step_count, state.step_ms, residual, max_pen_mm
+        )
+    };
     let mesh_info = format!(
         "Verts: {} | Tris: {}",
         state.mesh.uv.len(),
@@ -1140,8 +1172,22 @@ pub fn create_editor_app<'a>(
 }
 
 pub fn run(project: Project, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_cpu(project, output, false)
+}
+
+pub fn run_with_cpu(
+    project: Project,
+    output: PathBuf,
+    cpu: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let stylesheet = Box::leak(Box::new(load_studio_stylesheet()?));
-    let state = CssEditorState::new(project, output);
+    let mut state = CssEditorState::new(project, output);
+    if !cpu {
+        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+        state.gpu_solver = Some(Arc::new(std::sync::Mutex::new(
+            marvelous_cloth::gpu_avbd::ProjectAvbd::new(device, queue),
+        )));
+    }
     let app = create_editor_app(state, stylesheet);
     let config = WindowConfig::new("MARVELOUS CLOTH | FEM Workshop", 1600, 980);
     app.run(config)?;

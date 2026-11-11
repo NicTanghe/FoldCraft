@@ -19,9 +19,12 @@ mod editor;
     about = "MARVELOUS CLOTH — CPU FEM reference and native pattern editor"
 )]
 struct Args {
-    /// Run CPU only. Does not initialize a window, graphics instance or GPU adapter.
+    /// Run without a window. Uses WGSL AVBD / IPC unless --cpu is selected.
     #[arg(long)]
     headless: bool,
+    /// Explicit historical CPU Newton solver; no compute adapter.
+    #[arg(long, alias = "reference")]
+    cpu: bool,
     #[arg(long, default_value_t = 60)]
     steps: usize,
     #[arg(long, value_enum)]
@@ -38,7 +41,7 @@ struct Args {
     #[arg(long, default_value = "output")]
     output: PathBuf,
     /// Number of CPU worker threads; capped by default to avoid monopolizing the host.
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = 2)]
     threads: usize,
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,12 +81,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         p.solver.dt = dt;
     }
     let (mesh, mut state) = p.build()?;
+    let mesh = std::sync::Arc::new(mesh);
     if args.headless {
         if args.steps == 0 {
             return Err("--steps must be positive".into());
         }
         fs::create_dir_all(&args.output)?;
         let mut metrics = BufWriter::new(File::create(args.output.join("metrics.jsonl"))?);
+        #[cfg(feature = "desktop")]
+        if !args.cpu {
+            let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+            let mut solver = marvelous_cloth::gpu_avbd::ProjectAvbd::new(device, queue);
+            let start = std::time::Instant::now();
+            let mut last = None;
+            for _ in 0..args.steps {
+                let m = solver.step(&p, &mesh, &mut state)?;
+                serde_json::to_writer(&mut metrics, &m)?;
+                writeln!(metrics)?;
+                last = Some(m);
+            }
+            metrics.flush()?;
+            fs::write(args.output.join("cloth.obj"), project::obj(&mesh, &state))?;
+            p.save(&args.output.join("project.json"))?;
+            let summary = serde_json::json!({"backend":marvelous_cloth::gpu_avbd::BACKEND,"gpu_initialized":true,"steps":args.steps,"wall_ms":start.elapsed().as_secs_f64()*1000.,"last_step":last,"residual":"unavailable; fixed iteration budget"});
+            fs::write(
+                args.output.join("summary.json"),
+                serde_json::to_string_pretty(&summary)?,
+            )?;
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+            return Ok(());
+        }
         let mut converged = 0;
         let mut max_penetration: f64 = 0.0;
         let mut sum_ms = 0.0;
@@ -124,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     #[cfg(feature = "desktop")]
     {
-        editor::run(p, args.output).map_err(|e| e.to_string())?;
+        editor::run_with_cpu(p, args.output, args.cpu).map_err(|e| e.to_string())?;
         Ok(())
     }
     #[cfg(not(feature = "desktop"))]

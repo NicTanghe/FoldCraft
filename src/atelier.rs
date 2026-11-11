@@ -29,6 +29,7 @@ pub fn current_worker_result(done: Option<worker::Done>, generation: u64) -> Opt
     done.filter(|d| d.generation == generation)
 }
 
+#[allow(dead_code)]
 pub fn run(
     project: FittingProject,
     scene: FittingScene,
@@ -43,3 +44,14 @@ pub fn run(
 
 #[path = "atelier/usd_smoke.rs"]
 mod usd_smoke;
+
+/// Explicit CPU control for command-line callers; the ordinary workspace uses WGSL.
+pub fn run_with_cpu(
+    project: FittingProject,
+    scene: FittingScene,
+    files: DocumentFiles,
+    smoke: bool,
+    cpu: bool,
+) -> Result<(), String> {
+    css_runner::run_with_cpu(project, scene, files, smoke, cpu)
+}

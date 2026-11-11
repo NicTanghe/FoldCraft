@@ -189,6 +189,7 @@ pub struct CssRunnerState {
     pub status_message: String,
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
+    pub gpu: bool,
 }
 
 impl CssRunnerState {
@@ -232,6 +233,7 @@ impl CssRunnerState {
             status_message: "Ready".to_string(),
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
+            gpu: false,
         }
     }
 
@@ -244,7 +246,7 @@ impl CssRunnerState {
             scene: self.scene.clone(),
             settings: self.settings.clone(),
             grab: None,
-            gpu: false,
+            gpu: self.gpu,
             signal: worker::RepaintSignal::noop(),
             playing: self.playing,
             once,
@@ -557,8 +559,8 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                 <button id="sim-reset-btn" class="transport-btn" onclick={on_runner_reset}>
                     "Reset"
                 </button>
-                <span id="sim-backend-indicator" class="cpu">
-                    "VBD + OGC (Worker)"
+                <span id="sim-backend-indicator" class={if state.gpu {"gpu"} else {"cpu"}}>
+                    {if state.gpu {"WGSL AVBD / IPC"} else {"CPU VBD / OGC"}}
                 </span>
             </div>
             <div class="top-bar-right">
@@ -1111,15 +1113,31 @@ pub fn run(
     files: DocumentFiles,
     smoke: bool,
 ) -> Result<(), String> {
+    run_with_cpu(project, scene, files, smoke, false)
+}
+
+pub fn run_with_cpu(
+    project: FittingProject,
+    scene: FittingScene,
+    files: DocumentFiles,
+    smoke: bool,
+    cpu: bool,
+) -> Result<(), String> {
     let stylesheet =
         Box::leak(Box::new(load_studio_stylesheet().map_err(|e| {
             format!("Failed to load Studio V2 stylesheet: {e}")
         })?));
 
-    // Start background simulation worker on CPU
-    let (tx, latest) = worker::start_cpu().map_err(|e| format!("Failed to start worker: {e}"))?;
+    let (tx, latest) = if cpu {
+        worker::start_cpu()
+    } else {
+        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+        worker::start(device, queue)
+    }
+    .map_err(|e| format!("Failed to start worker: {e}"))?;
 
     let mut state = CssRunnerState::new(project, scene, files, tx, latest);
+    state.gpu = !cpu;
     state.smoke = smoke;
     let smoke_done = state.smoke_done.clone();
     let app = create_runner_app(state, stylesheet);

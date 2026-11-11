@@ -1,5 +1,7 @@
 # Offset Geometric Contact and VBD
 
+**Branch update (FC-0033):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
+
 **19 October EE investigation:** [endpoint activation diagnosis and CPU experiment](edge-transition.md). The experimental interior potential is off by default and changes the contact law; it must not be described as unchanged OGC or an accepted jitter correction. Safety bounds remain identical.
 
 **18 October CPU update:** independent edge-pair closest geometry uses four-lane f64 AVX when available, with the scalar oracle and automatic fallback. Both cached CPU candidates and hybrid primitive candidates share this path. No contact recycling, tolerance, exclusion, force law or movement-bound change. Read [CPU evidence and jitter diagnosis](cpu-contacts-and-jitter.md); the measured 9.8–10.6% detector saving is not a new GPU or full-step result.

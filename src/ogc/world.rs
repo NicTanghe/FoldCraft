@@ -213,6 +213,16 @@ pub struct OgcWorld {
     excluded_neighbors: Vec<Vec<usize>>,
 }
 impl OgcWorld {
+    #[cfg(feature = "desktop")]
+    pub(crate) fn topology_id(&self) -> u64 {
+        self.spatial_id
+    }
+
+    /// Immutable local sewing exclusions for a separate resident GPU backend.
+    #[cfg(feature = "desktop")]
+    pub(crate) fn excluded_neighbors(&self) -> &[Vec<usize>] {
+        &self.excluded_neighbors
+    }
     pub fn new(
         x: &[DVec3],
         triangles: Vec<[usize; 3]>,

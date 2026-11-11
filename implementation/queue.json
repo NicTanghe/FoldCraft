@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.102777777777778,
+  "clock": 3.5,
   "tickets": [
     {
       "id": "FC-0001",
@@ -424,6 +424,19 @@
       "owner": null,
       "vruntime": 3.125,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/34"
+    },
+    {
+      "id": "FC-0033",
+      "title": "Issue 242: GPU-resident WGSL finite AVBD and IPC contact pipeline",
+      "acceptance": "Resident WGSL prediction, finite-material AVBD, finite VF/EE IPC barrier, conservative continuous step bounds, transactional errors; default in fitting and native modes; CPU-only tests and opt-in GPU checks; document limits",
+      "points": 8.0,
+      "spent": 8.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-wgsl-avbd",
+      "vruntime": 4.0,
+      "pr": null
     }
   ]
 }
