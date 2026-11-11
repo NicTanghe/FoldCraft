@@ -1,0 +1,111 @@
+diff --git a/src/bin/cloth-fit.rs b/src/bin/cloth-fit.rs
+index 5ee7aa6..76170f7 100644
+--- a/src/bin/cloth-fit.rs
++++ b/src/bin/cloth-fit.rs
+@@ -82,0 +83,3 @@ struct Args {
++    /// Headless research control: retain separate CG vector/reduction passes.
++    #[arg(long, conflicts_with_all = ["cpu","reference","hybrid_vbd","view","ui_smoke","ui_interaction_smoke","ui_perf_smoke","ui_authoring_smoke"])]
++    separate_coupled_vectors: bool,
+@@ -119,0 +123 @@ fn run_ogc(
++        solver.fuse_coupled_vectors = !args.separate_coupled_vectors;
+@@ -166,0 +171 @@ fn run_ogc(
++        || args.separate_coupled_vectors
+@@ -227,0 +233 @@ fn run_ogc(
++        "wgsl_cg_vector_fusion":if backend.starts_with("wgsl") {Some(!args.separate_coupled_vectors && args.coupled_iterations.unwrap_or(8)>0 && scene.state.x.len()<=8192)} else {None},
+diff --git a/src/gpu_avbd.rs b/src/gpu_avbd.rs
+index 83244fb..790a98e 100644
+--- a/src/gpu_avbd.rs
++++ b/src/gpu_avbd.rs
+@@ -68,0 +69 @@ const ENTRIES: &[&str] = &[
++    "cg_step",
+@@ -122,0 +124 @@ pub struct GpuAvbd {
++    pub fuse_coupled_vectors: bool,
+@@ -219,0 +222 @@ impl GpuAvbd {
++            fuse_coupled_vectors: true,
+@@ -621,4 +624,8 @@ impl GpuAvbd {
+-                            dispatch(27, 1);
+-                            dispatch(28, n.div_ceil(64));
+-                            dispatch(29, 1);
+-                            dispatch(30, n.div_ceil(64));
++                            if self.fuse_coupled_vectors && n <= 8192 {
++                                dispatch(31, 1);
++                            } else {
++                                dispatch(27, 1);
++                                dispatch(28, n.div_ceil(64));
++                                dispatch(29, 1);
++                                dispatch(30, n.div_ceil(64));
++                            }
+diff --git a/src/gpu_avbd/coupled.wgsl b/src/gpu_avbd/coupled.wgsl
+index e5a186b..6a4efc0 100644
+--- a/src/gpu_avbd/coupled.wgsl
++++ b/src/gpu_avbd/coupled.wgsl
+@@ -123,0 +124,45 @@ fn cg_search(@builtin(global_invocation_id) id:vec3u) {
++
++// Fuse the vector updates and both reductions into one workgroup. Each lane
++// owns a strided set of vertices; no lane consumes another lane's new scratch.
++// The sparse matvec remains a separate fully parallel dispatch.
++var<workgroup> cg_alpha_value:f32;
++var<workgroup> cg_beta_value:f32;
++var<workgroup> cg_error:u32;
++@compute @workgroup_size(64)
++fn cg_step(@builtin(local_invocation_index) lane:u32) {
++    if lane==0u {cg_error=atomicLoad(&control.error);}
++    if workgroupUniformLoad(&cg_error)!=0u {return;}
++    var sum=vec2f(0);
++    for(var v=lane;v<config.counts.x;v+=64u) {
++        sum+=vec2f(dot(particles[v].cg[0].xyz,particles[v].cg[1].xyz),dot(particles[v].cg[2].xyz,particles[v].cg[3].xyz));
++    }
++    cg_sums[lane]=sum;workgroupBarrier();
++    for(var stride=32u;stride>0u;stride/=2u){if lane<stride {cg_sums[lane]+=cg_sums[lane+stride];}workgroupBarrier();}
++    if lane==0u {
++        let s=cg_sums[0];var alpha=0.0;
++        if s.x>1e-25 && s.y>1e-30 {alpha=s.x/s.y;}
++        if !(alpha>=0 && alpha<1e20) {atomicOr(&control.error,512u);alpha=0;}
++        cg_alpha_value=alpha;control.pad0=bitcast<u32>(s.x);control.pad1=bitcast<u32>(alpha);
++    }
++    let alpha=workgroupUniformLoad(&cg_alpha_value);
++    var next=0.0;
++    for(var v=lane;v<config.counts.x;v+=64u) {
++        particles[v].delta+=alpha*particles[v].cg[2];
++        let r=particles[v].cg[0].xyz-alpha*particles[v].cg[3].xyz;
++        let z=precondition(v,r);
++        if !all(abs(z)<vec3f(1e25)) {atomicOr(&control.error,1024u);}
++        particles[v].cg[0]=vec4f(r,0);particles[v].cg[1]=vec4f(z,0);
++        next+=dot(r,z);
++    }
++    cg_sums[lane]=vec2f(next,0);workgroupBarrier();
++    for(var stride=32u;stride>0u;stride/=2u){if lane<stride {cg_sums[lane]+=cg_sums[lane+stride];}workgroupBarrier();}
++    if lane==0u {
++        let old=bitcast<f32>(control.pad0);var beta=0.0;
++        if old>1e-25 {beta=max(cg_sums[0].x,0)/old;}
++        cg_beta_value=beta;control.pad2=bitcast<u32>(beta);
++    }
++    let beta=workgroupUniformLoad(&cg_beta_value);
++    for(var v=lane;v<config.counts.x;v+=64u) {
++        particles[v].cg[2]=particles[v].cg[1]+beta*particles[v].cg[2];
++    }
++}
+diff --git a/tests/gpu_avbd.rs b/tests/gpu_avbd.rs
+index e3291ee..d1918ba 100644
+--- a/tests/gpu_avbd.rs
++++ b/tests/gpu_avbd.rs
+@@ -238,3 +238,4 @@ fn barrier_al_small_matched_cost_probe() {
+-    for (name, method, balanced, skip) in [
+-        ("ipc_baseline", ContactMethod::Ipc, true, false),
+-        ("ipc", ContactMethod::Ipc, true, true),
++    for (name, method, balanced, skip, fused_cg) in [
++        ("ipc_baseline", ContactMethod::Ipc, true, false, false),
++        ("ipc_cg_unfused", ContactMethod::Ipc, true, true, false),
++        ("ipc", ContactMethod::Ipc, true, true, true),
+@@ -244,0 +246 @@ fn barrier_al_small_matched_cost_probe() {
++            true,
+@@ -247,2 +249,2 @@ fn barrier_al_small_matched_cost_probe() {
+-        ("al_fixed", ContactMethod::BarrierAl, false, true),
+-        ("al_balanced", ContactMethod::BarrierAl, true, true),
++        ("al_fixed", ContactMethod::BarrierAl, false, true, true),
++        ("al_balanced", ContactMethod::BarrierAl, true, true, true),
+@@ -254,0 +257 @@ fn barrier_al_small_matched_cost_probe() {
++        gpu.fuse_coupled_vectors = fused_cg;
+@@ -263 +266 @@ fn barrier_al_small_matched_cost_probe() {
+-            if name == "ipc_baseline" {
++            if name == "ipc_cg_unfused" {

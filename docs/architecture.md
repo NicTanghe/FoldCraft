@@ -1,5 +1,7 @@
 # Architecture and invariants
 
+**Branch update (FC-0047; formerly branch-local FC-0040):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.
+
 ## Desktop replacement requirement
 
 The target desktop UI is cssimpler only. FC-0022 tracks removal of egui/eframe from every feature and the lockfile, with direct wgpu rendering/compute and UI-independent worker, authoring and camera interfaces. The existing egui implementation described in historical sections below remains migration work until that dependency check passes. Keeping an optional legacy egui frontend does not satisfy the target.

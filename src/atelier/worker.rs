@@ -3,7 +3,7 @@
 //! retained when the window is slow or hidden (no growing animation queue).
 use marvelous_cloth::{
     fitting::FittingScene,
-    gpu_vbd::GpuVbd,
+    gpu_avbd::GpuAvbd,
     model::State,
     vbd::{FinalDiagnostics, FinalDiagnosticsBackend, Grab, VbdMetrics, VbdSettings, VbdSolver},
 };
@@ -57,12 +57,16 @@ impl std::fmt::Debug for RepaintSignal {
     }
 }
 
+#[cfg(test)]
+pub static WORKER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 pub struct Work {
     pub generation: u64,
     pub scene: FittingScene,
     pub settings: VbdSettings,
     pub grab: Option<Grab>,
     pub gpu: bool,
+    pub contact_method: marvelous_cloth::gpu_avbd::ContactMethod,
     pub signal: RepaintSignal,
     pub playing: bool,
     pub once: bool,
@@ -191,6 +195,7 @@ pub fn start(
     queue: wgpu::Queue,
 ) -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
     let (tx, latest, _thread) = start_inner(
+        true,
         Some((device, queue)),
         #[cfg(test)]
         None,
@@ -200,6 +205,19 @@ pub fn start(
 
 pub fn start_cpu() -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
     let (tx, latest, _thread) = start_inner(
+        false,
+        None,
+        #[cfg(test)]
+        None,
+    )?;
+    Ok((tx, latest))
+}
+
+/// Native CPU launch with an explicit runtime GPU selection available.
+/// Unlike start_cpu, this may initialize an adapter after a GPU step request.
+pub fn start_switchable() -> Result<(mpsc::Sender<Work>, Latest), std::io::Error> {
+    let (tx, latest, _thread) = start_inner(
+        true,
         None,
         #[cfg(test)]
         None,
@@ -215,6 +233,7 @@ struct TestHooks {
 }
 
 fn start_inner(
+    allow_gpu: bool,
     backend: Option<(wgpu::Device, wgpu::Queue)>,
     #[cfg(test)] hooks: Option<TestHooks>,
 ) -> Result<(mpsc::Sender<Work>, Latest, std::thread::JoinHandle<()>), std::io::Error> {
@@ -222,10 +241,10 @@ fn start_inner(
     let latest: Latest = Arc::new(Mutex::new(None));
     let output = latest.clone();
     let thread = std::thread::Builder::new()
-        .name("cloth-vbd".into())
+        .name("cloth-physics".into())
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let gpu = backend.map(|(device, queue)| GpuVbd::new(device, queue));
+            let mut gpu = backend.map(|(device, queue)| GpuAvbd::new(device, queue));
             let mut cache: Option<(u64, VbdSolver)> = None;
             let mut active: Option<Work> = None;
             let mut deadline = Instant::now();
@@ -278,10 +297,15 @@ fn start_inner(
                 let previous = request.map(|_| w.scene.state.clone());
                 w.once = false;
                 let result: Result<(State, VbdMetrics), String> = (|| {
+                    if w.gpu && !allow_gpu {
+                        return Err("GPU simulation requested without a GPU backend".into());
+                    }
                     if w.gpu && gpu.is_none() {
-                        return Err("GPU simulation requested without a GPU backend".to_owned());
+                        let (device, queue) = marvelous_cloth::gpu_avbd::request_device()?;
+                        gpu = Some(GpuAvbd::new(device, queue));
                     }
                     if cache.as_ref().is_none_or(|(g, _)| *g != w.generation) {
+                        if let Some(gpu)=&gpu {gpu.reset();}
                         cache = Some((
                             w.generation,
                             VbdSolver::new(
@@ -294,6 +318,7 @@ fn start_inner(
                         clear_final_diagnostics();
                     }
                     let solver = &mut cache.as_mut().unwrap().1;
+                    if let Some(gpu)=&mut gpu {gpu.contact_method=w.contact_method;}
                     let metrics = if w.gpu {
                         gpu.as_ref()
                             .ok_or_else(|| {
@@ -309,6 +334,15 @@ fn start_inner(
                         } else {
                             FinalDiagnosticsBackend::Cpu
                         };
+                        // This OGC audit does not measure the IPC objective.
+                        // Reject the request rather than report another contact law as AVBD residual.
+                        if w.gpu {
+                            if let Ok(mut sample)=FINAL_DIAGNOSTICS.lock() { *sample=None; }
+                            if let Ok(mut error) = FINAL_DIAGNOSTICS_ERROR.lock() {
+                                *error = Some(FinalDiagnosticsFailure { request, message: "Final OGC force audit is unavailable for the WGSL AVBD/IPC objective".into() });
+                            }
+                            return Ok((w.scene.state.clone(), metrics));
+                        }
                         match solver.sample_final_diagnostics(
                             &previous,
                             &w.scene.state,
@@ -379,10 +413,8 @@ fn start_inner(
 #[cfg(test)]
 mod final_diagnostics_transport_tests {
     use super::*;
-    use std::sync::Mutex;
 
     // These tests exercise the one physical worker's global mailbox.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn reset() {
         if let Ok(mut request) = FINAL_DIAGNOSTICS_REQUEST.lock() {
@@ -420,7 +452,9 @@ mod final_diagnostics_transport_tests {
     #[test]
     fn cpu_worker_keeps_generation_state_and_rejects_missing_gpu() {
         use marvelous_cloth::{fitting::FittingProject, garment::presets::GarmentKind};
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
         let dir = tempfile::tempdir().unwrap();
         let avatar = dir.path().join("avatar.obj");
@@ -441,6 +475,7 @@ mod final_diagnostics_transport_tests {
         let (release, release_rx) = mpsc::channel();
         let (published_tx, published) = mpsc::channel();
         let (tx, latest, thread) = start_inner(
+            false,
             None,
             Some(TestHooks {
                 entered: entered_tx,
@@ -466,6 +501,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu,
+            contact_method: Default::default(),
             signal: RepaintSignal::noop(),
             playing: false,
             once: true,
@@ -612,7 +648,9 @@ mod final_diagnostics_transport_tests {
     #[test]
     fn latest_mailbox_replaces_old_generation_after_inflight_step() {
         use marvelous_cloth::{fitting::FittingProject, garment::presets::GarmentKind};
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
         let dir = tempfile::tempdir().unwrap();
         let avatar = dir.path().join("avatar.obj");
@@ -640,6 +678,7 @@ mod final_diagnostics_transport_tests {
         let (release, release_rx) = mpsc::channel();
         let (published_tx, published) = mpsc::channel();
         let (tx, latest, thread) = start_inner(
+            false,
             None,
             Some(TestHooks {
                 entered: entered_tx,
@@ -659,6 +698,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu: false,
+            contact_method: Default::default(),
             signal: RepaintSignal::noop(),
             playing: false,
             once: true,
@@ -710,7 +750,9 @@ mod final_diagnostics_transport_tests {
     #[test]
     fn real_worker_diagnostics_survive_steps_and_replace_errors() {
         use marvelous_cloth::{fitting::FittingProject, garment::presets::GarmentKind};
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
         let dir = tempfile::tempdir().unwrap();
         let avatar = dir.path().join("avatar.obj");
@@ -721,6 +763,7 @@ mod final_diagnostics_transport_tests {
         let (release, release_rx) = mpsc::channel();
         let (published_tx, published) = mpsc::channel();
         let (tx, latest, thread) = start_inner(
+            false,
             None,
             Some(TestHooks {
                 entered: entered_tx,
@@ -746,6 +789,7 @@ mod final_diagnostics_transport_tests {
                     settings: settings.clone(),
                     grab: None,
                     gpu,
+                    contact_method: Default::default(),
                     signal: RepaintSignal::noop(),
                     playing: false,
                     once: true,
@@ -788,7 +832,9 @@ mod final_diagnostics_transport_tests {
 
     #[test]
     fn newer_request_has_a_new_identity_and_supersedes_a_queued_request() {
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _guard = WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         reset();
 
         let first = request_final_diagnostics(11);

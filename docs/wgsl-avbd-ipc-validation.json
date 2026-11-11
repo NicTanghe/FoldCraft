@@ -1,0 +1,74 @@
+{
+  "date": "2026-11-11",
+  "branch": "gpu_type_1",
+  "merged_main": "4d91750",
+  "merge_commit": "2d33e6f",
+  "backend": "wgsl-finite-avbd-ipc",
+  "cpu_suite": {
+    "passed": 629,
+    "failed": 0,
+    "ignored": 1
+  },
+  "desktop_library_and_binary_tests": {
+    "passed": 131,
+    "failed": 0,
+    "ignored": 3
+  },
+  "opt_in_gpu_checks": {
+    "numerical_and_lifecycle": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    "collision_and_integration": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    "native_worker_without_frames": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "material_force_max_absolute_error_n": 6.445713e-07
+  },
+  "build_locked": true,
+  "cpu_clippy_all_targets_warnings_denied": true,
+  "desktop_clippy_all_targets_warnings_denied": true,
+  "cargo_manifest_warning": "Existing unused optional rfd dependency warning; Rust/Clippy checks exit successfully",
+  "all_features_graph_has_no_egui_or_eframe": true,
+  "dependency_changes": false,
+  "cli_smoke_cases": [
+    {
+      "frontend": "fitting",
+      "backend": "wgsl-finite-avbd-ipc",
+      "accepted_steps": 2,
+      "physical_time_s": 0.03333333333333333,
+      "vertices": 466,
+      "triangles": 794,
+      "mesh_target_mm": 60,
+      "iterations": 4,
+      "maximum_seam_gap_m": 0.5180009063333274,
+      "scope": "Two startup steps; not an assembled or converged garment"
+    },
+    {
+      "frontend": "project",
+      "backend": "wgsl-finite-avbd-ipc",
+      "accepted_steps": 2,
+      "physical_time_s": 0.03333333333333333
+    },
+    {
+      "frontend": "template",
+      "backend": "wgsl-finite-avbd-ipc",
+      "accepted_steps": 2,
+      "physical_time_s": 0.03333333333333333
+    }
+  ],
+  "performance_claim": null,
+  "qualification_limits": [
+    "Independent finite-material AVBD/Jacobi and IPC-style barrier combination; not full paper reproductions",
+    "No friction, inversion barriers, canonical IPC contact deduplication or edge mollification",
+    "Dense folds, sustained pull/release and matched performance distributions not qualified",
+    "Steady-state snapshot readback remains; rejected overflow attempts add readbacks"
+  ]
+}

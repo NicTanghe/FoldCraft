@@ -1,0 +1,162 @@
+[
+  {
+    "inertia": 0.1,
+    "rho": 0.1,
+    "iterations": 27,
+    "distance": 0.7774417692933067,
+    "reference": 0.7774417761972621,
+    "primal": 7.622647846261543e-09,
+    "force": 8.012918717437145e-09,
+    "converged": true
+  },
+  {
+    "inertia": 0.1,
+    "rho": 1,
+    "iterations": 23,
+    "distance": 0.777441775185669,
+    "reference": 0.7774417761972621,
+    "primal": 9.967683789469106e-09,
+    "force": 1.1740823591122052e-09,
+    "converged": true
+  },
+  {
+    "inertia": 0.1,
+    "rho": 10,
+    "iterations": 131,
+    "distance": 0.7774418613243973,
+    "reference": 0.7774417761972621,
+    "primal": 1.059830778693538e-09,
+    "force": 9.88008588553857e-08,
+    "converged": true
+  },
+  {
+    "inertia": 0.1,
+    "rho": 100,
+    "iterations": 1248,
+    "distance": 0.7774418616374608,
+    "reference": 0.7774417761972621,
+    "primal": 1.0518697024508583e-11,
+    "force": 9.916420870559328e-08,
+    "converged": true
+  },
+  {
+    "inertia": 1,
+    "rho": 0.1,
+    "iterations": 145,
+    "distance": 0.3561698672455952,
+    "reference": 0.35616987395871824,
+    "primal": 9.299592207412388e-09,
+    "force": 2.422939016089032e-08,
+    "converged": true
+  },
+  {
+    "inertia": 1,
+    "rho": 1,
+    "iterations": 27,
+    "distance": 0.3561698694011012,
+    "reference": 0.35616987395871824,
+    "primal": 7.389741374375092e-09,
+    "force": 1.6449613782221206e-08,
+    "converged": true
+  },
+  {
+    "inertia": 1,
+    "rho": 10,
+    "iterations": 57,
+    "distance": 0.3561698977762245,
+    "reference": 0.35616987395871824,
+    "primal": 2.4068745330119157e-09,
+    "force": 8.59635106431611e-08,
+    "converged": true
+  },
+  {
+    "inertia": 1,
+    "rho": 100,
+    "iterations": 487,
+    "distance": 0.3561699011542954,
+    "reference": 0.35616987395871824,
+    "primal": 2.5628887900808195e-11,
+    "force": 9.815583812411433e-08,
+    "converged": true
+  },
+  {
+    "inertia": 10,
+    "rho": 0.1,
+    "iterations": 2124,
+    "distance": 0.046746935750681735,
+    "reference": 0.046746936561891494,
+    "primal": 8.830909822843402e-10,
+    "force": 9.966139558059695e-08,
+    "converged": true
+  },
+  {
+    "inertia": 10,
+    "rho": 1,
+    "iterations": 222,
+    "distance": 0.04674693575521793,
+    "reference": 0.046746936561891494,
+    "primal": 8.782211069480184e-10,
+    "force": 9.910410003755032e-08,
+    "converged": true
+  },
+  {
+    "inertia": 10,
+    "rho": 10,
+    "iterations": 33,
+    "distance": 0.046746936052936894,
+    "reference": 0.046746936561891494,
+    "primal": 5.584371992606307e-10,
+    "force": 6.252775630599672e-08,
+    "converged": true
+  },
+  {
+    "inertia": 10,
+    "rho": 100,
+    "iterations": 34,
+    "distance": 0.0467469360705067,
+    "reference": 0.046746936561891494,
+    "primal": 2.489843192732266e-09,
+    "force": 6.03692118517074e-08,
+    "converged": true
+  },
+  {
+    "inertia": 100,
+    "rho": 0.1,
+    "iterations": 10000,
+    "distance": 1e-12,
+    "reference": 0.0049532889433592745,
+    "primal": 0.011161397287299485,
+    "force": 249999999950.00003,
+    "converged": false
+  },
+  {
+    "inertia": 100,
+    "rho": 1,
+    "iterations": 6988,
+    "distance": 0.00495328893372687,
+    "reference": 0.0049532889433592745,
+    "primal": 9.726969230072768e-12,
+    "force": 9.907588349733487e-08,
+    "converged": true
+  },
+  {
+    "inertia": 100,
+    "rho": 10,
+    "iterations": 711,
+    "distance": 0.004953288934339316,
+    "reference": 0.0049532889433592745,
+    "primal": 9.108519494205325e-12,
+    "force": 9.277644608118862e-08,
+    "converged": true
+  },
+  {
+    "inertia": 100,
+    "rho": 100,
+    "iterations": 82,
+    "distance": 0.004953288934174225,
+    "reference": 0.0049532889433592745,
+    "primal": 9.27611720075161e-12,
+    "force": 9.447452242739018e-08,
+    "converged": true
+  }
+]

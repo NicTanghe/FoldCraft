@@ -597,6 +597,7 @@ impl AtelierCore {
                 settings: self.settings.clone(),
                 grab: self.grab.clone(),
                 gpu: self.gpu,
+                contact_method: Default::default(),
                 signal: self.signal.clone(),
             })
             .map_err(|_| "The simulation worker is unavailable".to_owned())?;

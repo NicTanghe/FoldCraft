@@ -556,7 +556,7 @@ button {
 .sidebar, .left-drawer, .left-browser-panel {
   display: flex;
   flex-direction: column;
-  width: 260px;
+  width: 240px;
   background-color: var(--surface);
   border-right: 1px solid var(--border);
   overflow: hidden;
@@ -1051,7 +1051,7 @@ button {
 .right-dock, .right-object-browser-panel {
   display: flex;
   flex-direction: column;
-  width: 320px;
+  width: 300px;
   background-color: var(--surface);
   border-left: 1px solid var(--border);
   overflow: hidden;
@@ -1449,3 +1449,19 @@ button {
   border-radius: 3px;
   color: var(--text-muted);
 }
+
+/* Solver selection is a runtime control; changing it pauses the worker. */
+.solver-picker { position: relative; }
+.solver-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 240px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    background-color: #20242c;
+    border: 1px solid #626978;
+    padding: 6px;
+}
+.solver-dropdown .menu-item { padding: 10px; text-align: left; }

@@ -16,12 +16,16 @@ pub mod contact;
 pub mod css_ui;
 pub mod document;
 pub mod energy;
+pub(crate) mod energy_factors;
 pub mod fabrics;
 pub mod fitting;
 pub mod garment;
 pub mod gltf_avatar;
 #[cfg(feature = "desktop")]
+pub mod gpu_avbd;
+#[cfg(feature = "desktop")]
 pub mod gpu_vbd;
+pub mod ipc;
 #[cfg(feature = "desktop")]
 pub use cssimpler;
 pub mod issue_report;
@@ -48,3 +52,5 @@ pub mod vbd;
 pub mod viewport_controller;
 /// Typed workspace actions and capability checks, independent of desktop UI.
 pub mod workspace_commands;
+
+pub mod barrier_al;

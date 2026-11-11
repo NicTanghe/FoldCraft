@@ -6,13 +6,13 @@ use crate::{
 use glam::DVec3;
 
 #[derive(Clone)]
-pub(super) enum Kind {
+pub(crate) enum Kind {
     Membrane(usize, usize),
     Bend(usize),
     Linear(Vec<f64>, usize, f64),
 }
 #[derive(Clone)]
-pub(super) struct Constraint {
+pub(crate) struct Constraint {
     pub ids: Vec<usize>,
     pub k: f64,
     pub kind: Kind,
@@ -59,7 +59,7 @@ impl Constraint {
         self.value(g, &p)
     }
 }
-pub(super) fn compile(g: &CompiledGarment) -> Vec<Constraint> {
+pub(crate) fn compile(g: &CompiledGarment) -> Vec<Constraint> {
     let mut out = Vec::new();
     for (i, t) in g.mesh.triangles.iter().enumerate() {
         let m = &g.materials[t.material];
