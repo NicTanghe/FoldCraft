@@ -2,6 +2,11 @@
  * MIT License - 100% original implementation for FoldCraft
  */
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
 button {
   font-family: inherit;
   font-size: inherit;
@@ -501,9 +506,11 @@ button {
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 8px 10px;
+  padding: 8px 14px 12px 10px;
   gap: 12px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
 
 .browser-section, .drawer-section {
@@ -1070,15 +1077,19 @@ button {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
 
 .accordions-container {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 6px 14px 10px 10px;
+  padding: 6px 12px 10px 10px;
   box-sizing: border-box;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
 
 .accordion, .accordion-section {
@@ -1088,6 +1099,14 @@ button {
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
+}
+
+.accordion.collapsed .accordion-header {
+  border-bottom: none;
+}
+
+.accordion.collapsed .accordion-content {
+  display: none;
 }
 
 .accordion-header, .accordion-title {
@@ -1117,6 +1136,8 @@ button {
   gap: 6px;
   background-color: var(--surface);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
 
 .prop-row, .property-row, .prop-field {
