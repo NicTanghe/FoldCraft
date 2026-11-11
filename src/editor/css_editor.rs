@@ -18,7 +18,7 @@ use cssimpler::renderer::{EngineEvent, FrameInfo, WindowConfig};
 use cssimpler::style::Stylesheet;
 use cssimpler::ui;
 
-use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, load_studio_stylesheet};
+use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, icons::*, load_studio_stylesheet};
 use marvelous_cloth::gpu_avbd::ContactMethod;
 use marvelous_cloth::mesh_resolution::preparation::PhysicsSizing;
 use marvelous_cloth::model::{Mesh, Scene, State};
@@ -826,6 +826,7 @@ pub fn build_editor_ui(state: &CssEditorState) -> Node {
                 {build_tool_rail_3d(state)}
                 {build_left_drawer(state)}
                 {build_stage(state)}
+                {build_tool_rail_2d(state)}
                 {build_right_dock(state)}
             </div>
             {build_status_bar(state)}
@@ -858,14 +859,17 @@ fn build_top_bar(state: &CssEditorState) -> Node {
                 </nav>
             </div>
             <div class="sim-transport">
-                <button id="sim-play-btn" class={play_class} onclick={on_play_pause}>
-                    {play_label}
+                <button id="sim-play-btn" class={play_class} onclick={on_play_pause} title="Toggle Simulation (Space)">
+                    {if state.playing { icon_pause() } else { icon_play() }}
+                    <span class="btn-label">{play_label}</span>
                 </button>
-                <button id="sim-step-btn" class="transport-btn" onclick={on_step}>
-                    "Step"
+                <button id="sim-step-btn" class="transport-btn" onclick={on_step} title="Step Simulation">
+                    {icon_step()}
+                    <span class="btn-label">"Step"</span>
                 </button>
-                <button id="sim-reset-btn" class="transport-btn" onclick={on_reset}>
-                    "Reset"
+                <button id="sim-reset-btn" class="transport-btn" onclick={on_reset} title="Reset Simulation">
+                    {icon_reset()}
+                    <span class="btn-label">"Reset"</span>
                 </button>
                 <div class="solver-picker">
                     <button id="sim-backend-indicator" class="backend-badge" onclick={on_solver_menu}>
@@ -882,15 +886,25 @@ fn build_top_bar(state: &CssEditorState) -> Node {
             </div>
             <div class="top-bar-right">
                 <div class="layout-switcher">
-                    <button class={split_class} onclick={on_view_split}>"Split"</button>
-                    <button class={threed_class} onclick={on_view_3d}>"3D"</button>
-                    <button class={twod_class} onclick={on_view_2d}>"2D"</button>
+                    <button class={split_class} onclick={on_view_split} title="Split View">
+                        {icon_view_split()}
+                        <span class="btn-label">"Split"</span>
+                    </button>
+                    <button class={threed_class} onclick={on_view_3d} title="3D View">
+                        {icon_view_3d()}
+                        <span class="btn-label">"3D"</span>
+                    </button>
+                    <button class={twod_class} onclick={on_view_2d} title="2D View">
+                        {icon_view_2d()}
+                        <span class="btn-label">"2D"</span>
+                    </button>
                 </div>
-                <button id="command-palette-trigger" onclick={on_palette_toggle}>
-                    "Palette (Ctrl+K)"
+                <button id="command-palette-trigger" class="btn-secondary" onclick={on_palette_toggle} title="Command Palette (Ctrl+K)">
+                    {icon_palette()}
+                    <span class="btn-label">"Palette"</span>
                 </button>
-                <button id="theme-toggle" onclick={on_theme_toggle}>
-                    "Theme"
+                <button id="theme-toggle" class="btn-secondary" onclick={on_theme_toggle} title="Toggle Dark/Light Theme">
+                    {if state.theme == Theme::Dark { icon_sun() } else { icon_moon() }}
                 </button>
             </div>
         </header>
@@ -899,11 +913,50 @@ fn build_top_bar(state: &CssEditorState) -> Node {
 
 fn build_tool_rail_3d(_state: &CssEditorState) -> Node {
     ui! {
-        <aside class="rail-3d">
-            <button class="rail-tool-btn active" title="Select / Orbit">"⤹"</button>
-            <button class="rail-tool-btn" onclick={on_cam_reset} title="Reset Camera">"⌖"</button>
-            <button class="rail-tool-btn" onclick={on_edge_select_next} title="Cycle Selected Edge">"✂"</button>
-            <button class="rail-tool-btn" onclick={on_drawer_toggle} title="Toggle Left Drawer">"☰"</button>
+        <aside id="rail-3d" class="tool-rail tool-rail-3d">
+            <button class="tool-btn active" title="Select & Arrange [Gizmo] (1)">
+                {icon_gizmo()}
+                <span class="tool-label">"Gizmo"</span>
+            </button>
+            <button class="tool-btn" onclick={on_cam_reset} title="Reset Camera View [Framing] (0)">
+                {icon_cam_reset()}
+                <span class="tool-label">"Reset"</span>
+            </button>
+            <button class="tool-btn" onclick={on_edge_select_next} title="Cycle Selected Edge (Tab)">
+                {icon_select_2d()}
+                <span class="tool-label">"Edge"</span>
+            </button>
+            <button class="tool-btn" onclick={on_drawer_toggle} title="Toggle Left Drawer (☰)">
+                {icon_sidebar_toggle()}
+                <span class="tool-label">"Drawer"</span>
+            </button>
+        </aside>
+    }
+}
+
+fn build_tool_rail_2d(_state: &CssEditorState) -> Node {
+    ui! {
+        <aside id="rail-2d" class="tool-rail tool-rail-2d">
+            <button class="tool-btn active" title="Edit Point / Transform (Z / A)">
+                {icon_edit_2d()}
+                <span class="tool-label">"Edit"</span>
+            </button>
+            <button class="tool-btn" title="Rectangle Pattern (S)">
+                {icon_rect_2d()}
+                <span class="tool-label">"Rect"</span>
+            </button>
+            <button class="tool-btn" title="Polygon Pattern (H)">
+                {icon_polygon_2d()}
+                <span class="tool-label">"Pen"</span>
+            </button>
+            <button class="tool-btn" title="Corner Rounding (C)">
+                {icon_corner_2d()}
+                <span class="tool-label">"Corner"</span>
+            </button>
+            <button class="tool-btn" title="2D Tape Measure (M)">
+                {icon_measure_2d()}
+                <span class="tool-label">"Measure"</span>
+            </button>
         </aside>
     }
 }
@@ -995,7 +1048,7 @@ fn build_3d_viewport(_state: &CssEditorState) -> Node {
 }
 
 fn build_2d_viewport(state: &CssEditorState) -> Node {
-    let svg_nodes = render_2d_pattern_svg(state);
+    let (svg_nodes, view_box) = render_2d_pattern_svg(state);
     let edge_hint = state
         .selected_edge
         .map_or("Click edge to select".to_string(), |e| {
@@ -1015,7 +1068,7 @@ fn build_2d_viewport(state: &CssEditorState) -> Node {
                 <span class="viewport-sub">{edge_hint}</span>
             </div>
             <div class="canvas-area">
-                <svg viewBox="0 0 400 400" class="svg-canvas">
+                <svg viewBox={view_box} preserveAspectRatio="xMidYMid meet" class="svg-canvas">
                     {svg_nodes}
                 </svg>
             </div>
@@ -1305,7 +1358,7 @@ fn build_command_palette_overlay(state: &CssEditorState) -> Node {
 // 2D Pattern Board SVG
 // ============================================================================
 
-fn render_2d_pattern_svg(state: &CssEditorState) -> Vec<Node> {
+fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
     let mut nodes = Vec::new();
 
     // Board background
@@ -1374,6 +1427,17 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> Vec<Node> {
         });
     }
 
+    // CAD contour vertices (corners)
+    for (i, &(cx, cy)) in corners.iter().enumerate() {
+        let is_edge_sel =
+            state.selected_edge == Some(i) || state.selected_edge == Some((i + 3) % 4);
+        let stroke_color = if is_edge_sel { "#f59e0b" } else { "#2563eb" };
+        nodes.push(ui! {
+            <circle cx={format!("{cx:.1}")} cy={format!("{cy:.1}")} r="5.0"
+                class="cad-vertex" fill="#ffffff" stroke={stroke_color} stroke-width="2.0" />
+        });
+    }
+
     // Warp grainline arrow
     let grain_rad = (state.active.material.grain_degrees as f32).to_radians();
     let cx = 200.0_f32;
@@ -1397,7 +1461,7 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> Vec<Node> {
         }
     }
 
-    nodes
+    (nodes, "0 0 400 400".to_string())
 }
 
 // ============================================================================
