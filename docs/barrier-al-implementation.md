@@ -1,6 +1,6 @@
 # Experimental resident AVBD / barrier AL
 
-FC-0039, 11 November 2026. The [design was saved first](avbd-barrier-al-design.md)
+FC-0041, 11 November 2026. The [design was saved first](avbd-barrier-al-design.md)
 in commit 94e1542. The distance-slack variant is now implemented experimentally.
 WGSL AVBD/IPC remains the launch default.
 

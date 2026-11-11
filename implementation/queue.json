@@ -517,7 +517,7 @@
       "pr": null
     },
     {
-      "id": "FC-0038",
+      "id": "FC-0040",
       "title": "Issue 242: GPU-resident WGSL finite AVBD and IPC contact pipeline",
       "acceptance": "Resident WGSL prediction, finite-material AVBD, finite VF/EE IPC barrier, conservative continuous step bounds, transactional errors; default in fitting and native modes; CPU-only tests and opt-in GPU checks; document limits",
       "points": 8.0,
@@ -530,7 +530,7 @@
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
     },
     {
-      "id": "FC-0039",
+      "id": "FC-0041",
       "title": "Selectable native solvers and experimental barrier AL contact",
       "acceptance": "Top bar switches actual solver with explicit state transfer; experimental last-column hybrid has numerical checks and measured optimization",
       "points": 8.0,

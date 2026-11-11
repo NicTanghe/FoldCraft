@@ -1,6 +1,6 @@
 # AVBD + barrier-augmented Lagrangian contact: implementation design
 
-11 November 2026 — FC-0039. **Pre-implementation design, saved in 94e1542.**
+11 November 2026 — FC-0041. **Pre-implementation design, saved in 94e1542.**
 Update: the independent distance-slack variant is now experimental;
 read [implementation and results](barrier-al-implementation.md).
 The proposal below is retained as design history.
