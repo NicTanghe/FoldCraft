@@ -608,6 +608,19 @@
       "owner": null,
       "vruntime": 3.625,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0046",
+      "title": "Write a cited Typst research report on resident WGSL solver quality and performance",
+      "acceptance": "Editable Typst paper and compiled PDF in docs; verified primary-source citations and pinned internal evidence; accurate mathematical scope, timing/quality tables and limitations; compile and visually inspect all pages without simulation changes",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.375,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
     }
   ]
 }

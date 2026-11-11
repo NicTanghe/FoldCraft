@@ -1,5 +1,7 @@
 # Resident WGSL performance follow-up
 
+An accompanying [paper-style report](reports/wgsl-residency/report.pdf) is available as [editable Typst](reports/wgsl-residency/report.typ), with a [bibliography, annotated sources and build notes](reports/wgsl-residency/sources.md).
+
 FC-0045, 11 November 2026. The owner requested performance investigation after
 the coupled correction removed the default T-shirt protrusion. CPU physics is
 unchanged. All changes below preserve the default 16 nonlinear / 8 linear
