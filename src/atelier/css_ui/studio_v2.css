@@ -184,7 +184,12 @@ button {
 }
 
 .clean-view-toggle {
-  padding: 4px 10px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
@@ -193,6 +198,11 @@ button {
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.clean-view-toggle .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .clean-view-toggle:hover {
@@ -208,10 +218,13 @@ button {
 }
 
 .backend-badge, #sim-backend-indicator {
-  padding: 2px 6px;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
   font-size: 10px;
   font-weight: 700;
-  border-radius: 3px;
+  border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -232,7 +245,7 @@ button {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .layout-switcher {
@@ -246,12 +259,22 @@ button {
 }
 
 .layout-btn {
-  padding: 2px 8px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
   font-size: 11px;
   color: var(--text-muted);
   border-radius: 3px;
   cursor: pointer;
   transition: all 0.12s ease;
+}
+
+.layout-btn .icon {
+  width: 13px;
+  height: 13px;
 }
 
 .layout-btn:hover {
@@ -265,14 +288,23 @@ button {
 }
 
 #theme-toggle {
-  padding: 4px 10px;
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   color: var(--text-muted);
   border-radius: 4px;
   border: 1px solid var(--border);
   background-color: var(--surface-raised);
   cursor: pointer;
   transition: all 0.12s ease;
+}
+
+#theme-toggle .icon {
+  width: 14px;
+  height: 14px;
 }
 
 #theme-toggle:hover {
@@ -281,7 +313,12 @@ button {
 }
 
 #command-palette-trigger {
-  padding: 4px 10px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
   font-size: 11px;
   color: var(--text-muted);
   background-color: var(--surface-raised);
@@ -289,6 +326,11 @@ button {
   border: 1px solid var(--border);
   cursor: pointer;
   transition: all 0.12s ease;
+}
+
+#command-palette-trigger .icon {
+  width: 13px;
+  height: 13px;
 }
 
 #command-palette-trigger:hover {
@@ -359,6 +401,14 @@ button {
   font-weight: 600;
 }
 
+.tool-btn.active .tool-icon,
+.rail-tool-btn.active .tool-icon,
+.tool-btn.active svg,
+.rail-tool-btn.active svg {
+  color: #ffffff;
+  stroke: #ffffff;
+}
+
 .tool-btn .tool-label {
   display: none;
 }
@@ -395,29 +445,8 @@ button {
   width: 100%;
 }
 
-.grab-readouts, .corner-readouts {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 8px;
-  color: var(--text-muted);
-  line-height: 1.1;
-  font-family: monospace;
-}
-
-.readout {
-  line-height: 1.1;
-}
-
-.pin-mode-badge, .corner-mode-badge {
-  font-size: 8px;
-  font-weight: 600;
-  padding: 1px 3px;
-  border-radius: 2px;
-  background-color: var(--surface-raised);
-  color: var(--accent);
-  border: 1px solid var(--border);
-  text-transform: uppercase;
+.grab-readouts, .corner-readouts, .pin-mode-badge, .corner-mode-badge, .corner-subcontrols {
+  display: none;
 }
 
 /* ============================================================================
@@ -899,7 +928,7 @@ button {
 .right-dock, .right-object-browser-panel {
   display: flex;
   flex-direction: column;
-  width: 300px;
+  width: 320px;
   background-color: var(--surface);
   border-left: 1px solid var(--border);
   overflow: hidden;
@@ -1026,7 +1055,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 6px 14px 10px 10px;
+  box-sizing: border-box;
   overflow-y: auto;
 }
 
