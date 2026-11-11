@@ -496,10 +496,10 @@
       "depends_on": [
         "FC-0036"
       ],
-      "status": "in_progress",
-      "owner": "Gemini",
+      "status": "done",
+      "owner": null,
       "vruntime": 3.25,
-      "pr": null
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/40"
     },
     {
       "id": "FC-0038",
@@ -511,8 +511,8 @@
       "depends_on": [
         "FC-0037"
       ],
-      "status": "queued",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "Gemini",
       "vruntime": 3.25,
       "pr": null
     }
