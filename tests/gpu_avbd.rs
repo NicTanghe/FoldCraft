@@ -315,15 +315,30 @@ fn close_contact_does_not_throttle_disconnected_free_fall() {
             nx: 2,
             ny: 2,
         };
-        p.placement.rotation_degrees = DVec3::new(90., 0., 0.);
-        p.placement.translation = DVec3::new(-0.06, if i == 0 { 0.00004 } else { 0.05 }, 0.06);
+        p.placement.rotation_degrees = if i == 0 {
+            DVec3::new(90., 0., 0.)
+        } else {
+            DVec3::new(0., 90., 0.)
+        };
+        p.placement.translation = DVec3::new(-0.06, if i == 0 { 0.00004 } else { 0.2 }, 0.06);
     }
-    let garment = Arc::new(template.compile().unwrap());
-    let settings = VbdSettings {
-        iterations: 32,
+    let mut compiled = template.compile().unwrap();
+    // Soft membrane isolates bound coupling from slow elastic Jacobi modes.
+    for m in &mut compiled.materials {
+        m.warp = 1e-5;
+        m.weft = 1e-5;
+        m.shear = 1e-5;
+    }
+    let garment = Arc::new(compiled);
+    let mut settings = VbdSettings {
+        iterations: 8,
         dt: 1. / 60.,
         ..Default::default()
     };
+    // Isolate safety bounds from repulsion: both patches accelerate tangentially
+    // to the floor. Only the lower patch needs the near-contact movement bound.
+    settings.gravity = DVec3::new(9.81, 0., 0.);
+    settings.contact.stiffness = 1e-8;
     for method in [ContactMethod::Ipc, ContactMethod::BarrierAl] {
         for local in [false, true] {
             let mut gpu = GpuAvbd::new(device.clone(), queue.clone());
