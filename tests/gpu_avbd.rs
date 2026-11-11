@@ -293,3 +293,69 @@ fn barrier_al_small_matched_cost_probe() {
     }
     println!("BAL_COST_JSON={}", serde_json::to_string(&rows).unwrap());
 }
+
+#[test]
+#[ignore = "requires explicit coordination and a hardware GPU"]
+fn close_contact_does_not_throttle_disconnected_free_fall() {
+    use glam::DVec3;
+    use marvelous_cloth::{
+        garment::GarmentTemplate,
+        gpu_avbd::GpuAvbd,
+        vbd::{VbdSettings, VbdSolver},
+    };
+    let (device, queue) = request_device().unwrap();
+    let (_, floor) = common::resting_patch(DVec3::ZERO);
+    let mut template = GarmentTemplate::two_panel_demo();
+    template.seams.clear();
+    for (i, p) in template.panels.iter_mut().enumerate() {
+        p.pins.clear();
+        p.pattern = marvelous_cloth::model::Pattern {
+            width: 0.12,
+            height: 0.12,
+            nx: 2,
+            ny: 2,
+        };
+        p.placement.rotation_degrees = DVec3::new(90., 0., 0.);
+        p.placement.translation = DVec3::new(-0.06, if i == 0 { 0.00004 } else { 0.05 }, 0.06);
+    }
+    let garment = Arc::new(template.compile().unwrap());
+    let settings = VbdSettings {
+        iterations: 32,
+        dt: 1. / 60.,
+        ..Default::default()
+    };
+    for method in [ContactMethod::Ipc, ContactMethod::BarrierAl] {
+        for local in [false, true] {
+            let mut gpu = GpuAvbd::new(device.clone(), queue.clone());
+            gpu.contact_method = method;
+            gpu.local_contact_bounds = local;
+            let mut state = garment.initial_state.clone();
+            let initial = state.clone();
+            let mut solver = VbdSolver::new(garment.clone(), Some(&floor), &state).unwrap();
+            gpu.step(&mut solver, &mut state, &settings, None).unwrap();
+            let displacement = settings.gravity * settings.dt * settings.dt
+                / (1. + settings.dt * settings.damping);
+            let error = garment.panels[1]
+                .vertices
+                .clone()
+                .map(|i| state.x[i].distance(initial.x[i] + displacement))
+                .fold(0., f64::max);
+            println!("{method:?}, local={local}: disconnected freefall error {error:e} m");
+            if local {
+                assert!(
+                    error < 2e-5,
+                    "remote contact throttled a disconnected component: {error}"
+                );
+            } else {
+                assert!(
+                    error > 1e-4,
+                    "fixture no longer demonstrates global throttling"
+                );
+            }
+            solver
+                .world
+                .validate_start(&solver.world.positions(&state.x))
+                .unwrap();
+        }
+    }
+}

@@ -541,6 +541,19 @@
       "owner": null,
       "vruntime": 4.125,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37"
+    },
+    {
+      "id": "FC-0042",
+      "title": "Fix global contact throttling in resident WGSL solvers",
+      "acceptance": "Disconnected freefall unaffected by remote close contact; conservative per-vertex bounds; both backends retain collision safety",
+      "points": 4.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-contact-fix",
+      "vruntime": 3.0,
+      "pr": null
     }
   ]
 }

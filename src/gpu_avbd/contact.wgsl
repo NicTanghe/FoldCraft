@@ -88,3 +88,38 @@ fn ccd(@builtin(global_invocation_id) id:vec3u) {
     let fraction=min(1.0,0.8*(d-clearance)/max(pair_motion(pair),1e-30));
     atomicMin(&control.alpha,bitcast<u32>(fraction));
 }
+
+// Independent displacement balls prevent a remote near-contact pair from
+// throttling the entire mesh. Both primitives move by <=0.4*(d-clearance),
+// so their relative distance remains positive along the simultaneous path.
+// Search coverage is unchanged: proposals can only get shorter here.
+@compute @workgroup_size(64)
+fn limit_contact_motion(@builtin(global_invocation_id) id:vec3u) {
+    let v=id.x;if v>=config.counts.x || atomicLoad(&control.error)!=0u {return;}
+    var bound=1e30;
+    var slot=atomicLoad(&heads[v]);var visits=0u;
+    loop {
+        if slot==0xffffffffu {break;}
+        if slot>=config.sizes.z || visits>=config.sizes.z {atomicOr(&control.error,8u);return;}
+        let pair=contacts.pairs[slot];
+        let gap=length(closest(pair,0).q)-config.gravity.w;
+        if !(gap>0) {atomicOr(&control.error,4u);return;}
+        bound=min(bound,0.4*gap);
+        var local=0u;for(var j=0u;j<4u;j++){if pair.ids[j]==v {local=j;}}
+        slot=pair.next[local];visits++;
+    }
+    if config.sphere.w>0 {
+        let start=geometry[config.extra.x+v];let end=geometry[config.extra.x+v+1u];
+        for(var i=start;i<end;i++){
+            let f=primitive(config.counts.y+geometry[i]);
+            let gap=length(triangle_closest(config.sphere.xyz,at(f.x,0),at(f.y,0),at(f.z,0)).q)-config.sphere.w-config.gravity.w;
+            if !(gap>0) {atomicOr(&control.error,4u);return;}
+            bound=min(bound,0.4*gap);
+        }
+    }
+    let delta=particles[v].delta.xyz;
+    let scale=min(1.0,bound/max(length(delta),1e-30));
+    particles[v].delta=vec4f(delta*scale,0);
+    // The gradient is frozen; scaling the direction scales its Armijo slope.
+    particles[v].energy.z*=scale;
+}

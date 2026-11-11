@@ -58,6 +58,7 @@ const ENTRIES: &[&str] = &[
     "al_audit",
     "al_probe",
     "small_line_search",
+    "limit_contact_motion",
 ];
 
 #[repr(C)]
@@ -106,6 +107,8 @@ pub struct GpuAvbd {
     pub skip_accepted_reductions: bool,
     /// Equivalent one-workgroup Armijo path for at most 64 vertices.
     pub fuse_small_line_search: bool,
+    /// Research ablation for the conservative per-vertex contact motion bounds.
+    pub local_contact_bounds: bool,
 }
 
 /// Create a compute device independently of rendering. Call only when the
@@ -199,6 +202,7 @@ impl GpuAvbd {
             balance_augmentation: true,
             skip_accepted_reductions: true,
             fuse_small_line_search: true,
+            local_contact_bounds: true,
         }
     }
     fn allocate(
@@ -581,6 +585,9 @@ impl GpuAvbd {
                         dispatch(6, r.capacity.div_ceil(64));
                     }
                     dispatch(7, n.div_ceil(64));
+                    if self.local_contact_bounds {
+                        dispatch(23, n.div_ceil(64));
+                    }
                     dispatch(
                         8,
                         r.capacity
