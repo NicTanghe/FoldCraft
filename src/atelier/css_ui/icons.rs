@@ -142,36 +142,23 @@ pub fn icon_export() -> Node {
     }
 }
 
+// Inspired by the day/night switch by Benjamin Réthoré and mobinkakei:
+// https://uiverse.io/mobinkakei/strong-lizard-79 (MIT).
 pub fn icon_day_night_switch(is_dark: bool) -> Node {
-    if is_dark {
-        ui! {
-            <div class="day-night-switch dark">
-                <div class="switch-stars">
-                    <span class="star s1"></span>
-                    <span class="star s2"></span>
-                    <span class="star s3"></span>
-                </div>
-                <div class="switch-thumb">
-                    <svg viewBox="0 0 24 24" class="switch-icon moon-icon" fill="#cbd5e1">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                    </svg>
-                </div>
+    let class = if is_dark { "day-night-switch dark" } else { "day-night-switch light" };
+    ui! {
+        <div class={class}>
+            <span class="sky-shape shape1"></span>
+            <span class="sky-shape shape2"></span>
+            <span class="sky-shape shape3"></span>
+            <span class="sky-shape shape4"></span>
+            <span class="sky-shape shape5"></span>
+            <div class="switch-thumb">
+                <span class="crater crater1"></span>
+                <span class="crater crater2"></span>
+                <span class="crater crater3"></span>
             </div>
-        }
-    } else {
-        ui! {
-            <div class="day-night-switch light">
-                <div class="switch-rays">
-                    <span class="ray r1"></span>
-                    <span class="ray r2"></span>
-                </div>
-                <div class="switch-thumb">
-                    <svg viewBox="0 0 24 24" class="switch-icon sun-icon" fill="#f59e0b" stroke="#f59e0b" stroke-width="2">
-                        <circle cx="12" cy="12" r="5" />
-                    </svg>
-                </div>
-            </div>
-        }
+        </div>
     }
 }
 
