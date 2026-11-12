@@ -637,6 +637,19 @@
       "vruntime": 4.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37",
       "notes": "Former branch-local FC-0040 (resident WGSL IPC); renumbered on integration of main e904360, whose canonical FC-0040 is the completed UI feature PR43. Historical source snapshots and reports retain their original ticket references."
+    },
+    {
+      "id": "FC-0048",
+      "title": "Animate day and night theme switch",
+      "acceptance": "Theme toggle animates a moon and sun with stars morphing into clouds in both directions, without AM/PM; preserves theme behavior.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/45"
     }
   ]
 }
