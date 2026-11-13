@@ -656,13 +656,13 @@
       "title": "Adopt cssimpler instance handlers and transition fixes",
       "acceptance": "Pin the reviewed cssimpler revision; isolate editor and runner actions per instance; preserve existing controls and theme transitions across unrelated changes; verify CPU and desktop checks without GPU execution.",
       "points": 3.0,
-      "spent": 0,
+      "spent": 3.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-cssimpler",
-      "vruntime": 3.0,
-      "pr": null
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.375,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/47"
     }
   ]
 }
