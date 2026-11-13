@@ -77,6 +77,22 @@ fn studio_v2_css_defines_thin_scrollbars_and_collapsed_accordions() {
         css.contains(".switch-thumb"),
         "studio_v2.css must define .switch-thumb"
     );
+    // The same shapes remain mounted while their positions and colors animate.
+    for class in [
+        ".crater1", ".crater2", ".crater3", ".shape1", ".shape2", ".shape3", ".shape4", ".shape5",
+    ] {
+        assert!(css.contains(class), "studio_v2.css must define {class}");
+    }
+
+    // Must NOT contain AM / PM text labels
+    assert!(
+        !css.contains("'AM'"),
+        "studio_v2.css must not contain 'AM' text label"
+    );
+    assert!(
+        !css.contains("'PM'"),
+        "studio_v2.css must not contain 'PM' text label"
+    );
 
     // Must define command palette item icon styling
     assert!(
@@ -87,6 +103,78 @@ fn studio_v2_css_defines_thin_scrollbars_and_collapsed_accordions() {
         css.contains(".palette-item .icon"),
         "studio_v2.css must define .palette-item .icon"
     );
+}
+
+#[test]
+fn day_night_switch_keeps_thumb_craters_and_sky_shapes_in_both_modes() {
+    use cssimpler::core::Node;
+    use marvelous_cloth::atelier::css_ui::icons::icon_day_night_switch;
+
+    let dark_node = icon_day_night_switch(true);
+    let light_node = icon_day_night_switch(false);
+
+    let check_switch = |node: &Node, expected_mode: &str| {
+        let Node::Element(elem) = node else {
+            panic!("switch root must be an ElementNode");
+        };
+        assert!(
+            elem.classes.iter().any(|c| c == expected_mode),
+            "switch must have {expected_mode} class"
+        );
+        assert!(
+            elem.classes.iter().any(|c| c == "day-night-switch"),
+            "switch must have day-night-switch class"
+        );
+
+        // Handler knob
+        let handler_node = elem
+            .children
+            .iter()
+            .find(|child| {
+                if let Node::Element(e) = child {
+                    e.classes.iter().any(|c| c == "switch-thumb")
+                } else {
+                    false
+                }
+            })
+            .expect("switch must contain handler knob");
+
+        let Node::Element(handler) = handler_node else {
+            panic!("handler must be Element");
+        };
+        assert_eq!(handler.children.len(), 3, "handler must contain 3 craters");
+        for i in 1..=3 {
+            let crater_class = format!("crater{i}");
+            assert!(
+                handler.children.iter().any(|child| {
+                    if let Node::Element(e) = child {
+                        e.classes.iter().any(|c| c == &crater_class)
+                    } else {
+                        false
+                    }
+                }),
+                "handler must contain {crater_class}"
+            );
+        }
+
+        // Five persistent shapes animate between clouds and stars.
+        for i in 1..=5 {
+            let star_class = format!("shape{i}");
+            assert!(
+                elem.children.iter().any(|child| {
+                    if let Node::Element(e) = child {
+                        e.classes.iter().any(|c| c == &star_class)
+                    } else {
+                        false
+                    }
+                }),
+                "switch must contain {star_class}"
+            );
+        }
+    };
+
+    check_switch(&dark_node, "dark");
+    check_switch(&light_node, "light");
 }
 
 #[test]

@@ -145,7 +145,11 @@ pub fn icon_export() -> Node {
 // Inspired by the day/night switch by Benjamin Réthoré and mobinkakei:
 // https://uiverse.io/mobinkakei/strong-lizard-79 (MIT).
 pub fn icon_day_night_switch(is_dark: bool) -> Node {
-    let class = if is_dark { "day-night-switch dark" } else { "day-night-switch light" };
+    let class = if is_dark {
+        "day-night-switch dark"
+    } else {
+        "day-night-switch light"
+    };
     ui! {
         <div class={class}>
             <span class="sky-shape shape1"></span>
