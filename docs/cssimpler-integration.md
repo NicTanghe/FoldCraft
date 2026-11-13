@@ -1,6 +1,6 @@
 # cssimpler integration
 
-Both native desktop editors use cssimpler revision `34472cb`, which includes
+Both native desktop editors use cssimpler revision `ac4c2ee`, which includes
 captured event handlers and the transition update described in cssimpler's
 `docs/reports/`. Each editor instance owns its action bitmask. Click handlers
 capture a shared reference to that instance's mask; the update loop consumes its
@@ -20,3 +20,10 @@ handler storage when the tree is built; no application performance gain is claim
 The simulation worker clock remains independent of rendering. CPU-only and
 headless desktop checks do not demonstrate native GPU viewport behavior; that
 requires a separately authorized window/GPU run.
+
+During an active layout transition, a paint-only refresh must use the transition's
+destination layout as its template. Earlier cssimpler revisions reused the
+intermediate sampled layout, so repeated simulation status updates could keep
+the theme switch from reaching either endpoint. The upstream fix covers `App`
+and `FragmentApp`, including partial refreshes; FoldCraft retains paint-only
+worker updates and does not add an animation timer.
