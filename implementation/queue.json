@@ -669,12 +669,12 @@
       "title": "Keep theme transitions advancing during simulation updates",
       "acceptance": "Preserve the tested day/night switch; both editor modes reach both theme endpoints during repeated simulation UI updates and normal idle; keep worker scheduling independent and CPU tests GPU-free.",
       "points": 2.0,
-      "spent": 0,
+      "spent": 2.0,
       "priority": "urgent",
       "depends_on": [],
       "status": "active",
       "owner": "codex-switch",
-      "vruntime": 3.0,
+      "vruntime": 3.25,
       "pr": null
     }
   ]
