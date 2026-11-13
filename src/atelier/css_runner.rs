@@ -2465,6 +2465,37 @@ mod tests {
         });
         assert!(!app.state().solver_menu_open);
 
+        // Structural controls must update even while simulation is playing.
+        app.state_mut().playing = true;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 4,
+        });
+        assert!(app.state().solver_menu_open);
+        assert!(app.find_element_bounds_by_id("#solver-dropdown").is_some());
+        app.state_mut().playing = false;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 5,
+        });
+        assert!(!app.state().solver_menu_open);
+
         // Verify layout containers
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
         let usd_bounds = app
