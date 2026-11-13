@@ -676,6 +676,19 @@
       "owner": null,
       "vruntime": 3.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/45"
+    },
+    {
+      "id": "FC-0051",
+      "title": "Implement stable Cosserat rod CPU research solver",
+      "acceptance": "Implement attributed MIT-source-based stable Cosserat position and quasi-static orientation solves with independently specified rest geometry, SI parameters, pinned points and frames, validated steps and CPU falsifiable tests; document exact scope, limits and reproducible rod example without modifying cloth solver.",
+      "points": 5.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-cosserat",
+      "vruntime": 3.0,
+      "pr": null
     }
   ]
 }
