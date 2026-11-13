@@ -153,7 +153,7 @@ pub fn icon_day_night_switch(is_dark: bool) -> Node {
             <span class="sky-shape shape3"></span>
             <span class="sky-shape shape4"></span>
             <span class="sky-shape shape5"></span>
-            <div class="switch-thumb">
+            <div id="theme-switch-thumb" class="switch-thumb">
                 <span class="crater crater1"></span>
                 <span class="crater crater2"></span>
                 <span class="crater crater3"></span>

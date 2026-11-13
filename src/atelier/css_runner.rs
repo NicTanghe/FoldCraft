@@ -2465,6 +2465,75 @@ mod tests {
         });
         assert!(!app.state().solver_menu_open);
 
+        // Repeated worker results must not prevent either theme endpoint.
+        let dark_x = other_app
+            .find_element_bounds_by_id("#theme-switch-thumb")
+            .unwrap()
+            .x;
+        app.state_mut().playing = true;
+        for i in 0..40 {
+            let state = app.state();
+            let done = worker::Done {
+                generation: state.generation,
+                had_grab: false,
+                result: Ok((
+                    state.scene.state.clone(),
+                    VbdMetrics {
+                        step_ms: i as f64 * 0.1,
+                        ..VbdMetrics::default()
+                    },
+                )),
+            };
+            *state.worker_latest.lock().unwrap() = Some(done);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 100 + i,
+            });
+        }
+        let light_x = app
+            .find_element_bounds_by_id("#theme-switch-thumb")
+            .unwrap()
+            .x;
+        assert!(
+            (dark_x - light_x - 24.0).abs() < 0.1,
+            "dark {dark_x}, light {light_x}"
+        );
+        let button = app.find_element_bounds_by_id("#theme-toggle").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        for i in 0..40 {
+            let state = app.state();
+            let done = worker::Done {
+                generation: state.generation,
+                had_grab: false,
+                result: Ok((
+                    state.scene.state.clone(),
+                    VbdMetrics {
+                        step_ms: i as f64 * 0.1,
+                        ..VbdMetrics::default()
+                    },
+                )),
+            };
+            *state.worker_latest.lock().unwrap() = Some(done);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 200 + i,
+            });
+        }
+        app.state_mut().playing = false;
+        app.state_mut().step_count = 0;
+        let final_x = app
+            .find_element_bounds_by_id("#theme-switch-thumb")
+            .unwrap()
+            .x;
+        assert!(
+            (dark_x - final_x).abs() < 0.1,
+            "dark {dark_x}, final {final_x}"
+        );
+
         // Structural controls must update even while simulation is playing.
         app.state_mut().playing = true;
         let button = app

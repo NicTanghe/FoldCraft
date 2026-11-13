@@ -1665,6 +1665,103 @@ mod tests {
         });
         assert!(!app.state().solver_menu_open);
 
+        // Check the visible endpoint as well as the transition clock. Force
+        // unrelated updates throughout the animation and compare incremental
+        // painting with a full redraw of the same final scene.
+        let dark_x = other_app
+            .find_element_bounds_by_id("#theme-switch-thumb")
+            .unwrap()
+            .x;
+        let clear = cssimpler::core::Color::rgba(0, 0, 0, 0);
+        let (width, height) = (1600, 980);
+        let mut previous = app.scene().to_vec();
+        let mut pixels = vec![0; width * height];
+        cssimpler::renderer::render_to_buffer(&previous, &mut pixels, width, height, clear);
+        app.state_mut().playing = true;
+        for i in 0..40 {
+            let state = app.state();
+            let done = RefDone {
+                generation: state.generation,
+                result: Ok((
+                    state.state.clone(),
+                    EditorMetrics::Reference(Box::new(Metrics {
+                        step_ms: i as f64 * 0.1,
+                        ..Metrics::default()
+                    })),
+                )),
+            };
+            *state.worker_latest.lock().unwrap() = Some(done);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 100 + i,
+            });
+            cssimpler::renderer::render_scene_update(
+                &previous,
+                app.scene(),
+                &mut pixels,
+                width,
+                height,
+                clear,
+            );
+            previous = app.scene().to_vec();
+        }
+        app.state_mut().playing = false;
+        app.state_mut().step_count = 0;
+        let light_x = app
+            .find_element_bounds_by_id("#theme-switch-thumb")
+            .unwrap()
+            .x;
+        assert!(
+            (dark_x - light_x - 24.0).abs() < 0.1,
+            "dark {dark_x}, light {light_x}"
+        );
+        let mut full = vec![0; width * height];
+        cssimpler::renderer::render_to_buffer(app.scene(), &mut full, width, height, clear);
+        let button = app.find_element_bounds_by_id("#theme-toggle").unwrap();
+        let x = button.x as usize;
+        let y = button.y as usize;
+        for row in y..(y + button.height as usize) {
+            assert_eq!(
+                &pixels[row * width + x..row * width + x + button.width as usize],
+                &full[row * width + x..row * width + x + button.width as usize],
+                "incremental paint differs in switch row {row}"
+            );
+        }
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.state_mut().playing = true;
+        for i in 0..40 {
+            let state = app.state();
+            let done = RefDone {
+                generation: state.generation,
+                result: Ok((
+                    state.state.clone(),
+                    EditorMetrics::Reference(Box::new(Metrics {
+                        step_ms: i as f64 * 0.1,
+                        ..Metrics::default()
+                    })),
+                )),
+            };
+            *state.worker_latest.lock().unwrap() = Some(done);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 200 + i,
+            });
+        }
+        app.state_mut().playing = false;
+        app.state_mut().step_count = 0;
+        let final_dark_x = app
+            .find_element_bounds_by_id("#theme-switch-thumb")
+            .unwrap()
+            .x;
+        assert!(
+            (dark_x - final_dark_x).abs() < 0.1,
+            "dark {dark_x}, final {final_dark_x}"
+        );
+
         // Structural controls must update even while simulation is playing.
         app.state_mut().playing = true;
         let button = app
