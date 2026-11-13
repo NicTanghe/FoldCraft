@@ -3,8 +3,6 @@
 
 use marvelous_cloth::atelier::css_runner::{
     ACT_RUN_ACC_0, ACT_RUN_ACC_1, ACT_RUN_ACC_2, ACT_RUN_ACC_3, ACT_RUN_ACC_4, ACT_RUN_ACC_5,
-    on_runner_accordion_0, on_runner_accordion_1, on_runner_accordion_2, on_runner_accordion_3,
-    on_runner_accordion_4, on_runner_accordion_5,
 };
 
 #[test]
@@ -26,17 +24,6 @@ fn accordion_actions_toggle_independent_bits() {
     ] {
         assert_eq!(act.count_ones(), 1, "action {act} must be a single bit");
     }
-}
-
-#[test]
-fn accordion_trampolines_dispatch_correct_actions() {
-    // Calling trampolines should not panic
-    on_runner_accordion_0();
-    on_runner_accordion_1();
-    on_runner_accordion_2();
-    on_runner_accordion_3();
-    on_runner_accordion_4();
-    on_runner_accordion_5();
 }
 
 #[test]
@@ -185,8 +172,7 @@ fn uiverse_day_night_switch_node_contains_handler_craters_and_stars() {
 #[test]
 fn piece_selection_actions_are_isolated_bits() {
     use marvelous_cloth::atelier::css_runner::{
-        ACT_RUN_PIECE_0, ACT_RUN_PIECE_1, ACT_RUN_PIECE_2, ACT_RUN_PIECE_3, on_runner_piece_0,
-        on_runner_piece_1, on_runner_piece_2, on_runner_piece_3,
+        ACT_RUN_PIECE_0, ACT_RUN_PIECE_1, ACT_RUN_PIECE_2, ACT_RUN_PIECE_3,
     };
 
     assert_ne!(ACT_RUN_PIECE_0, ACT_RUN_PIECE_1);
@@ -205,11 +191,6 @@ fn piece_selection_actions_are_isolated_bits() {
             "piece action {act} must be a single bit"
         );
     }
-
-    on_runner_piece_0();
-    on_runner_piece_1();
-    on_runner_piece_2();
-    on_runner_piece_3();
 }
 
 #[test]

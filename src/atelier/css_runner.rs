@@ -19,7 +19,7 @@
 
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 use cssimpler::app::{App, Invalidation, RenderMode};
 use cssimpler::core::Node;
@@ -98,184 +98,10 @@ pub const ACT_RUN_PIECE_3: u64 = 1 << 51;
 pub const ACT_RUN_SOLVER_MENU: u64 = 1 << 52;
 pub const ACT_RUN_SOLVER_GPU: u64 = 1 << 53;
 pub const ACT_RUN_SOLVER_CPU: u64 = 1 << 54;
-pub fn on_runner_solver_menu() {
-    dispatch_runner_action(ACT_RUN_SOLVER_MENU);
-}
-pub fn on_runner_solver_gpu() {
-    dispatch_runner_action(ACT_RUN_SOLVER_GPU);
-}
-pub fn on_runner_solver_cpu() {
-    dispatch_runner_action(ACT_RUN_SOLVER_CPU);
-}
 
 pub const ACT_RUN_SOLVER_AL: u64 = 1 << 55;
-pub fn on_runner_solver_al() {
-    dispatch_runner_action(ACT_RUN_SOLVER_AL);
-}
-
-static RUNNER_ACTIONS: AtomicU64 = AtomicU64::new(0);
-
-pub fn dispatch_runner_action(act: u64) {
-    RUNNER_ACTIONS.fetch_or(act, Ordering::Relaxed);
-}
 
 // Trampolines
-pub fn on_runner_play_pause() {
-    dispatch_runner_action(ACT_RUN_PLAY_PAUSE);
-}
-pub fn on_runner_step() {
-    dispatch_runner_action(ACT_RUN_STEP);
-}
-pub fn on_runner_reset() {
-    dispatch_runner_action(ACT_RUN_RESET);
-}
-pub fn on_runner_save() {
-    dispatch_runner_action(ACT_RUN_SAVE);
-}
-pub fn on_runner_export() {
-    dispatch_runner_action(ACT_RUN_EXPORT);
-}
-pub fn on_runner_clean_view() {
-    dispatch_runner_action(ACT_RUN_CLEAN_VIEW);
-}
-pub fn on_runner_palette_toggle() {
-    dispatch_runner_action(ACT_RUN_PALETTE_TOGGLE);
-}
-pub fn on_runner_theme_toggle() {
-    dispatch_runner_action(ACT_RUN_THEME_TOGGLE);
-}
-pub fn on_runner_view_split() {
-    dispatch_runner_action(ACT_RUN_VIEW_SPLIT);
-}
-pub fn on_runner_view_3d() {
-    dispatch_runner_action(ACT_RUN_VIEW_3D);
-}
-pub fn on_runner_view_2d() {
-    dispatch_runner_action(ACT_RUN_VIEW_2D);
-}
-pub fn on_runner_drawer_toggle() {
-    dispatch_runner_action(ACT_RUN_DRAWER_TOGGLE);
-}
-pub fn on_runner_tab_pattern() {
-    dispatch_runner_action(ACT_RUN_TAB_PATTERN);
-}
-pub fn on_runner_tab_sewing() {
-    dispatch_runner_action(ACT_RUN_TAB_SEWING);
-}
-pub fn on_runner_tab_form() {
-    dispatch_runner_action(ACT_RUN_TAB_FORM);
-}
-pub fn on_runner_tab_material() {
-    dispatch_runner_action(ACT_RUN_TAB_MATERIAL);
-}
-pub fn on_runner_tab_env() {
-    dispatch_runner_action(ACT_RUN_TAB_ENV);
-}
-pub fn on_runner_cam_reset() {
-    dispatch_runner_action(ACT_RUN_CAM_RESET);
-}
-pub fn on_runner_piece_next() {
-    dispatch_runner_action(ACT_RUN_PIECE_NEXT);
-}
-pub fn on_runner_tool_select() {
-    dispatch_runner_action(ACT_RUN_TOOL_SELECT);
-}
-pub fn on_runner_tool_sew() {
-    dispatch_runner_action(ACT_RUN_TOOL_SEW);
-}
-pub fn on_runner_tool_measure() {
-    dispatch_runner_action(ACT_RUN_TOOL_MEASURE);
-}
-pub fn on_runner_tool_corner() {
-    dispatch_runner_action(ACT_RUN_TOOL_CORNER);
-}
-pub fn on_runner_tool_gizmo() {
-    dispatch_runner_action(ACT_RUN_TOOL_GIZMO);
-}
-pub fn on_runner_tool_grab() {
-    dispatch_runner_action(ACT_RUN_TOOL_GRAB);
-}
-pub fn on_runner_tool_sew3d() {
-    dispatch_runner_action(ACT_RUN_TOOL_SEW3D);
-}
-pub fn on_runner_tool_pin() {
-    dispatch_runner_action(ACT_RUN_TOOL_PIN);
-}
-pub fn on_runner_tool_measure3d() {
-    dispatch_runner_action(ACT_RUN_TOOL_MEASURE3D);
-}
-pub fn on_runner_tool_avatar_diag() {
-    dispatch_runner_action(ACT_RUN_TOOL_AVATAR_DIAG);
-}
-pub fn on_runner_2d_edit() {
-    dispatch_runner_action(ACT_RUN_TOOL_EDIT2D);
-}
-pub fn on_runner_2d_rect() {
-    dispatch_runner_action(ACT_RUN_TOOL_RECT2D);
-}
-pub fn on_runner_2d_pen() {
-    dispatch_runner_action(ACT_RUN_TOOL_PEN2D);
-}
-pub fn on_runner_2d_freehand() {
-    dispatch_runner_action(ACT_RUN_TOOL_FREE2D);
-}
-pub fn on_runner_2d_sew() {
-    dispatch_runner_action(ACT_RUN_TOOL_SEW2D);
-}
-pub fn on_runner_2d_split() {
-    dispatch_runner_action(ACT_RUN_TOOL_SPLIT2D);
-}
-pub fn on_runner_2d_internal() {
-    dispatch_runner_action(ACT_RUN_TOOL_INTERNAL2D);
-}
-pub fn on_runner_2d_measure() {
-    dispatch_runner_action(ACT_RUN_TOOL_MEASURE2D);
-}
-pub fn on_runner_2d_trim() {
-    dispatch_runner_action(ACT_RUN_TOOL_TRIM2D);
-}
-pub fn on_runner_2d_corner() {
-    dispatch_runner_action(ACT_RUN_TOOL_CORNER2D);
-}
-pub fn on_runner_pin_mode_toggle() {
-    dispatch_runner_action(ACT_RUN_PIN_MODE_TOGGLE);
-}
-pub fn on_runner_corner_mode_toggle() {
-    dispatch_runner_action(ACT_RUN_CORNER_MODE_TOGGLE);
-}
-pub fn on_runner_accordion_toggle() {
-    dispatch_runner_action(ACT_RUN_ACCORDION_TOGGLE);
-}
-pub fn on_runner_accordion_0() {
-    dispatch_runner_action(ACT_RUN_ACC_0);
-}
-pub fn on_runner_accordion_1() {
-    dispatch_runner_action(ACT_RUN_ACC_1);
-}
-pub fn on_runner_accordion_2() {
-    dispatch_runner_action(ACT_RUN_ACC_2);
-}
-pub fn on_runner_accordion_3() {
-    dispatch_runner_action(ACT_RUN_ACC_3);
-}
-pub fn on_runner_accordion_4() {
-    dispatch_runner_action(ACT_RUN_ACC_4);
-}
-pub fn on_runner_accordion_5() {
-    dispatch_runner_action(ACT_RUN_ACC_5);
-}
-pub fn on_runner_piece_0() {
-    dispatch_runner_action(ACT_RUN_PIECE_0);
-}
-pub fn on_runner_piece_1() {
-    dispatch_runner_action(ACT_RUN_PIECE_1);
-}
-pub fn on_runner_piece_2() {
-    dispatch_runner_action(ACT_RUN_PIECE_2);
-}
-pub fn on_runner_piece_3() {
-    dispatch_runner_action(ACT_RUN_PIECE_3);
-}
 
 // ============================================================================
 // Object Browser Category Enum
@@ -296,6 +122,7 @@ pub enum ObjectCategory {
 // ============================================================================
 
 pub struct CssRunnerState {
+    actions: Arc<AtomicU64>,
     pub smoke: bool,
     pub smoke_done: std::rc::Rc<std::cell::Cell<bool>>,
     pub usd_scene: Option<cssimpler::renderer::gpu::usd::UsdScene>,
@@ -352,6 +179,7 @@ impl CssRunnerState {
         let initial_scene = scene.clone();
 
         Self {
+            actions: Arc::new(AtomicU64::new(0)),
             smoke: false,
             smoke_done: Default::default(),
             usd_scene: None,
@@ -575,7 +403,7 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     }
 
     // 2. Process pending UI actions
-    let actions = RUNNER_ACTIONS.swap(0, Ordering::Relaxed);
+    let actions = state.actions.swap(0, Ordering::Relaxed);
 
     if actions & ACT_RUN_SOLVER_MENU != 0 {
         state.solver_menu_open = !state.solver_menu_open;
@@ -753,14 +581,10 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
         state.selected_piece_index = 3;
     }
 
-    if state.playing {
-        if had_result {
-            Invalidation::Paint
-        } else {
-            Invalidation::Clean
-        }
-    } else if actions != 0 || had_result {
+    if actions != 0 || (had_result && !state.playing) {
         Invalidation::Structure
+    } else if had_result {
+        Invalidation::Paint
     } else {
         Invalidation::Clean
     }
@@ -827,6 +651,13 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
     }
 }
 
+fn queue_action(actions: &Arc<AtomicU64>, action: u64) -> impl Fn() + Send + Sync + 'static {
+    let actions = Arc::clone(actions);
+    move || {
+        actions.fetch_or(action, Ordering::Relaxed);
+    }
+}
+
 // ============================================================================
 // UI Generation (Studio V2 layout via cssimpler::ui!)
 // ============================================================================
@@ -887,58 +718,58 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
             <div class="top-bar-left">
                 <span class="app-title">"FoldCraft | Simulation Studio V2"</span>
                 <nav class="top-bar-menus">
-                    <button class="menu-item" onclick={on_runner_save}>"Save Project (Ctrl+S)"</button>
-                    <button class="menu-item" onclick={on_runner_export}>"Export Artifacts"</button>
+                    <button class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SAVE)}>"Save Project (Ctrl+S)"</button>
+                    <button class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_EXPORT)}>"Export Artifacts"</button>
                 </nav>
             </div>
             <div class="transport-controls">
-                <button id="sim-play-btn" class={play_class} onclick={on_runner_play_pause} title="Start/Stop simulation (Space)">
+                <button id="sim-play-btn" class={play_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PLAY_PAUSE)} title="Start/Stop simulation (Space)">
                     {if state.playing { icon_pause() } else { icon_play() }}
                     <span class="btn-label">{play_label}</span>
                 </button>
-                <button id="sim-step-btn" class="transport-btn" onclick={on_runner_step} title="Advance single solver step">
+                <button id="sim-step-btn" class="transport-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_STEP)} title="Advance single solver step">
                     {icon_step()}
                     <span class="btn-label">"Step"</span>
                 </button>
-                <button id="sim-reset-btn" class="transport-btn" onclick={on_runner_reset} title="Reset simulation state">
+                <button id="sim-reset-btn" class="transport-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_RESET)} title="Reset simulation state">
                     {icon_reset()}
                     <span class="btn-label">"Reset"</span>
                 </button>
                 <div class="solver-picker">
-                    <button id="sim-backend-indicator" class={backend_class} onclick={on_runner_solver_menu} title="Choose active solver">{format!("{backend_label} ▾")}</button>
+                    <button id="sim-backend-indicator" class={backend_class} onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_MENU)} title="Choose active solver">{format!("{backend_label} ▾")}</button>
                     {if state.solver_menu_open { ui! {
                         <div id="solver-dropdown" class="solver-dropdown">
-                            <button id="solver-wgsl-ipc" class="menu-item" onclick={on_runner_solver_gpu}>"WGSL AVBD / IPC"</button>
-                            <button id="solver-barrier-al" class="menu-item" onclick={on_runner_solver_al}>"WGSL AVBD / barrier AL (experimental)"</button>
-                            <button id="solver-cpu" class="menu-item" onclick={on_runner_solver_cpu}>"CPU VBD / OGC"</button>
+                            <button id="solver-wgsl-ipc" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_GPU)}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-barrier-al" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_AL)}>"WGSL AVBD / barrier AL (experimental)"</button>
+                            <button id="solver-cpu" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_CPU)}>"CPU VBD / OGC"</button>
                         </div>
                     }} else { ui! { <span /> } }}
                 </div>
             </div>
             <div class="top-bar-right">
                 <div class="layout-switcher">
-                    <button class={split_class} onclick={on_runner_view_split} title="Split 3D + 2D View">
+                    <button class={split_class} onclick_shared={queue_action(&state.actions, ACT_RUN_VIEW_SPLIT)} title="Split 3D + 2D View">
                         {icon_view_split()}
                         <span class="btn-label">"Split"</span>
                     </button>
-                    <button class={threed_class} onclick={on_runner_view_3d} title="Full 3D Garment View">
+                    <button class={threed_class} onclick_shared={queue_action(&state.actions, ACT_RUN_VIEW_3D)} title="Full 3D Garment View">
                         {icon_view_3d()}
                         <span class="btn-label">"3D"</span>
                     </button>
-                    <button class={twod_class} onclick={on_runner_view_2d} title="Full 2D Pattern Board">
+                    <button class={twod_class} onclick_shared={queue_action(&state.actions, ACT_RUN_VIEW_2D)} title="Full 2D Pattern Board">
                         {icon_view_2d()}
                         <span class="btn-label">"2D"</span>
                     </button>
                 </div>
-                <button id="clean-view-toggle" class={clean_class} onclick={on_runner_clean_view} title="Minimalist Presentation View">
+                <button id="clean-view-toggle" class={clean_class} onclick_shared={queue_action(&state.actions, ACT_RUN_CLEAN_VIEW)} title="Minimalist Presentation View">
                     {icon_clean_view()}
                     <span class="btn-label">"Clean View"</span>
                 </button>
-                <button id="command-palette-trigger" onclick={on_runner_palette_toggle} title="Open Command Palette (Ctrl+K)">
+                <button id="command-palette-trigger" onclick_shared={queue_action(&state.actions, ACT_RUN_PALETTE_TOGGLE)} title="Open Command Palette (Ctrl+K)">
                     {icon_palette()}
                     <span class="btn-label">"Commands"</span>
                 </button>
-                <button id="theme-toggle" onclick={on_runner_theme_toggle} title={theme_label}>
+                <button id="theme-toggle" onclick_shared={queue_action(&state.actions, ACT_RUN_THEME_TOGGLE)} title={theme_label}>
                     {icon_day_night_switch(matches!(state.theme, Theme::Dark))}
                 </button>
             </div>
@@ -980,35 +811,35 @@ fn build_runner_3d_rail(state: &CssRunnerState) -> Node {
 
     ui! {
         <aside id="rail-3d" class="tool-rail tool-rail-3d">
-            <button class={gizmo_class} onclick={on_runner_tool_gizmo} title="Select & Arrange [Gizmo] (1)">
+            <button class={gizmo_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_GIZMO)} title="Select & Arrange [Gizmo] (1)">
                 {icon_gizmo()}
                 <span class="tool-label">"Gizmo"</span>
             </button>
-            <button class={grab_class} onclick={on_runner_tool_grab} title="Grab Cloth (Pull & Drag in Simulation) (W)">
+            <button class={grab_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_GRAB)} title="Grab Cloth (Pull & Drag in Simulation) (W)">
                 {icon_grab()}
                 <span class="tool-label">"Grab"</span>
             </button>
-            <button class={sew3d_class} onclick={on_runner_tool_sew3d} title="3D Segment Sewing (N)">
+            <button class={sew3d_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_SEW3D)} title="3D Segment Sewing (N)">
                 {icon_sew_3d()}
                 <span class="tool-label">"3D Sew"</span>
             </button>
-            <button class={pin_class} onclick={on_runner_tool_pin} title="Pin Cloth [Click vertices] (P)">
+            <button class={pin_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_PIN)} title="Pin Cloth [Click vertices] (P)">
                 {icon_pin()}
                 <span class="tool-label">"Pin"</span>
             </button>
-            <button class={msr_class} onclick={on_runner_tool_measure3d} title="3D Tape Measure (T)">
+            <button class={msr_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_MEASURE3D)} title="3D Tape Measure (T)">
                 {icon_measure_3d()}
                 <span class="tool-label">"Measure"</span>
             </button>
-            <button id="avatar-diagnostics-btn" class={avatar_class} onclick={on_runner_tool_avatar_diag} title="Avatar & Dress Form Diagnostics (Shift+A)">
+            <button id="avatar-diagnostics-btn" class={avatar_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_AVATAR_DIAG)} title="Avatar & Dress Form Diagnostics (Shift+A)">
                 {icon_dress_form()}
                 <span class="tool-label">"Avatar"</span>
             </button>
-            <button class="tool-btn" onclick={on_runner_cam_reset} title="Reset Camera View [Framing] (0)">
+            <button class="tool-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_CAM_RESET)} title="Reset Camera View [Framing] (0)">
                 {icon_cam_reset()}
                 <span class="tool-label">"Reset"</span>
             </button>
-            <button class="tool-btn" onclick={on_runner_drawer_toggle} title="Toggle Asset & Piece Drawer (Tab)">
+            <button class="tool-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_DRAWER_TOGGLE)} title="Toggle Asset & Piece Drawer (Tab)">
                 {icon_sidebar_toggle()}
                 <span class="tool-label">"Drawer"</span>
             </button>
@@ -1074,43 +905,43 @@ fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
 
     ui! {
         <aside id="rail-2d" class="tool-rail tool-rail-2d">
-            <button class={edit_class} onclick={on_runner_2d_edit} title="Edit Point / Transform (Z / A)">
+            <button class={edit_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_EDIT2D)} title="Edit Point / Transform (Z / A)">
                 {icon_edit_2d()}
                 <span class="tool-label">"Edit"</span>
             </button>
-            <button class={rect_class} onclick={on_runner_2d_rect} title="Draw Rectangle Pattern (S)">
+            <button class={rect_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_RECT2D)} title="Draw Rectangle Pattern (S)">
                 {icon_rect_2d()}
                 <span class="tool-label">"Rect"</span>
             </button>
-            <button class={pen_class} onclick={on_runner_2d_pen} title="Draw Polygon Pattern (H)">
+            <button class={pen_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_PEN2D)} title="Draw Polygon Pattern (H)">
                 {icon_polygon_2d()}
                 <span class="tool-label">"Pen"</span>
             </button>
-            <button class={free_class} onclick={on_runner_2d_freehand} title="Freehand Pattern Curve (F)">
+            <button class={free_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_FREE2D)} title="Freehand Pattern Curve (F)">
                 {icon_freehand_2d()}
                 <span class="tool-label">"Free"</span>
             </button>
-            <button class={sew_class} onclick={on_runner_2d_sew} title="Sew Seams (B)">
+            <button class={sew_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_SEW2D)} title="Sew Seams (B)">
                 {icon_sew_2d()}
                 <span class="tool-label">"Sew"</span>
             </button>
-            <button class={split_class} onclick={on_runner_2d_split} title="Split / Add Point (X)">
+            <button class={split_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_SPLIT2D)} title="Split / Add Point (X)">
                 {icon_split_2d()}
                 <span class="tool-label">"Split"</span>
             </button>
-            <button class={line_class} onclick={on_runner_2d_internal} title="Internal Polygon / Line (G)">
+            <button class={line_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_INTERNAL2D)} title="Internal Polygon / Line (G)">
                 {icon_internal_2d()}
                 <span class="tool-label">"Line"</span>
             </button>
-            <button class={tape_class} onclick={on_runner_2d_measure} title="2D Tape Measure (M)">
+            <button class={tape_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_MEASURE2D)} title="2D Tape Measure (M)">
                 {icon_measure_2d()}
                 <span class="tool-label">"Tape"</span>
             </button>
-            <button class={trim_class} onclick={on_runner_2d_trim} title="Trim (T)">
+            <button class={trim_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_TRIM2D)} title="Trim (T)">
                 {icon_trim_2d()}
                 <span class="tool-label">"Trim"</span>
             </button>
-            <button class={corner_class} onclick={on_runner_2d_corner} title="Corner Rounding & Chamfer (C)">
+            <button class={corner_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_CORNER2D)} title="Corner Rounding & Chamfer (C)">
                 {icon_corner_2d()}
                 <span class="tool-label">"Corner"</span>
             </button>
@@ -1138,7 +969,7 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
         let meta_str = format!("Fabric: {} · Grain: {:.0}°", p.fabric, p.grain_degrees);
         let card_node = match idx {
             0 => ui! {
-                <div class={card_class} onclick={on_runner_piece_0}>
+                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_0)}>
                     <div class="piece-header">
                         <span class="piece-name">{label}</span>
                         <span class="piece-id">{id_str}</span>
@@ -1149,7 +980,7 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                 </div>
             },
             1 => ui! {
-                <div class={card_class} onclick={on_runner_piece_1}>
+                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_1)}>
                     <div class="piece-header">
                         <span class="piece-name">{label}</span>
                         <span class="piece-id">{id_str}</span>
@@ -1160,7 +991,7 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                 </div>
             },
             2 => ui! {
-                <div class={card_class} onclick={on_runner_piece_2}>
+                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_2)}>
                     <div class="piece-header">
                         <span class="piece-name">{label}</span>
                         <span class="piece-id">{id_str}</span>
@@ -1171,7 +1002,7 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                 </div>
             },
             _ => ui! {
-                <div class={card_class} onclick={on_runner_piece_3}>
+                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_3)}>
                     <div class="piece-header">
                         <span class="piece-name">{label}</span>
                         <span class="piece-id">{id_str}</span>
@@ -1237,8 +1068,8 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                     <div class="quick-action-group">
                         <span class="group-label">"Export"</span>
                         <div class="quick-actions-row">
-                            <button class="btn-action" onclick={on_runner_export}>"Export OBJ"</button>
-                            <button class="btn-action btn-action-accent" onclick={on_runner_export}>"True-Scale SVG"</button>
+                            <button class="btn-action" onclick_shared={queue_action(&state.actions, ACT_RUN_EXPORT)}>"Export OBJ"</button>
+                            <button class="btn-action btn-action-accent" onclick_shared={queue_action(&state.actions, ACT_RUN_EXPORT)}>"True-Scale SVG"</button>
                         </div>
                         <div class="export-accuracy-note-box">
                             <p class="export-note-text">
@@ -1255,7 +1086,7 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                     <div class="piece-cards-list">
                         {piece_cards}
                     </div>
-                    <button class="action-btn" onclick={on_runner_piece_next}>"Select Next Piece"</button>
+                    <button class="action-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_NEXT)}>"Select Next Piece"</button>
                 </div>
             </div>
         </aside>
@@ -1361,11 +1192,11 @@ fn build_runner_right_dock(state: &CssRunnerState) -> Node {
             <div id="object-browser">
                 <div class="dock-section-title">"Object Browser"</div>
                 <div class="dock-tabs">
-                    <button class={tp} onclick={on_runner_tab_pattern}>"2D Pattern"</button>
-                    <button class={ts} onclick={on_runner_tab_sewing}>"Sewing"</button>
-                    <button class={tf} onclick={on_runner_tab_form}>"3D Form"</button>
-                    <button class={tm} onclick={on_runner_tab_material}>"Material"</button>
-                    <button class={te} onclick={on_runner_tab_env}>"Environment"</button>
+                    <button class={tp} onclick_shared={queue_action(&state.actions, ACT_RUN_TAB_PATTERN)}>"2D Pattern"</button>
+                    <button class={ts} onclick_shared={queue_action(&state.actions, ACT_RUN_TAB_SEWING)}>"Sewing"</button>
+                    <button class={tf} onclick_shared={queue_action(&state.actions, ACT_RUN_TAB_FORM)}>"3D Form"</button>
+                    <button class={tm} onclick_shared={queue_action(&state.actions, ACT_RUN_TAB_MATERIAL)}>"Material"</button>
+                    <button class={te} onclick_shared={queue_action(&state.actions, ACT_RUN_TAB_ENV)}>"Environment"</button>
                 </div>
                 <div class="object-browser-content-viewport">
                     {content}
@@ -1399,25 +1230,25 @@ fn build_cat_pattern_2d(state: &CssRunnerState) -> Node {
         let grain_str = format!("{:.0}°", p.grain_degrees);
         let row_node = match idx {
             0 => ui! {
-                <div class={item_class} onclick={on_runner_piece_0} style="cursor:pointer">
+                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_0)} style="cursor:pointer">
                     <span>{label}</span>
                     <span>{grain_str}</span>
                 </div>
             },
             1 => ui! {
-                <div class={item_class} onclick={on_runner_piece_1} style="cursor:pointer">
+                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_1)} style="cursor:pointer">
                     <span>{label}</span>
                     <span>{grain_str}</span>
                 </div>
             },
             2 => ui! {
-                <div class={item_class} onclick={on_runner_piece_2} style="cursor:pointer">
+                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_2)} style="cursor:pointer">
                     <span>{label}</span>
                     <span>{grain_str}</span>
                 </div>
             },
             _ => ui! {
-                <div class={item_class} onclick={on_runner_piece_3} style="cursor:pointer">
+                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_3)} style="cursor:pointer">
                     <span>{label}</span>
                     <span>{grain_str}</span>
                 </div>
@@ -1651,7 +1482,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     // Accordion 0: Information
     let acc_info = ui! {
         <div class={if open_0 { "accordion open" } else { "accordion collapsed" }}>
-            <button class="accordion-header" onclick={on_runner_accordion_0}>
+            <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_0)}>
                 <span>"1. Piece Information"</span>
                 {if open_0 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
@@ -1693,7 +1524,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     // Accordion 1: Selected Line & Seam Allowance
     let acc_line = ui! {
         <div class={if open_1 { "accordion open" } else { "accordion collapsed" }}>
-            <button class="accordion-header" onclick={on_runner_accordion_1}>
+            <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_1)}>
                 <span>"2. Boundary & Allowance"</span>
                 {if open_1 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
@@ -1727,7 +1558,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     // Accordion 2: 3D Arrangement
     let acc_arrange = ui! {
         <div class={if open_2 { "accordion open" } else { "accordion collapsed" }}>
-            <button class="accordion-header" onclick={on_runner_accordion_2}>
+            <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_2)}>
                 <span>"3. 3D Arrangement"</span>
                 {if open_2 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
@@ -1764,7 +1595,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     // Accordion 3: Pins
     let acc_pins = ui! {
         <div class={if open_3 { "accordion open" } else { "accordion collapsed" }}>
-            <button class="accordion-header" onclick={on_runner_accordion_3}>
+            <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_3)}>
                 <span>"4. Pins & Restraints"</span>
                 {if open_3 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
@@ -1794,7 +1625,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     // Accordion 4: Fabric & Mechanical Properties
     let acc_fabric = ui! {
         <div class={if open_4 { "accordion open" } else { "accordion collapsed" }}>
-            <button class="accordion-header" onclick={on_runner_accordion_4}>
+            <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_4)}>
                 <span>"5. Fabric Mechanics"</span>
                 {if open_4 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
@@ -1832,7 +1663,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     // Accordion 5: Simulation Diagnostics
     let acc_sim = ui! {
         <div class={if open_5 { "accordion open" } else { "accordion collapsed" }}>
-            <button class="accordion-header" onclick={on_runner_accordion_5}>
+            <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_5)}>
                 <span>"6. Simulation Diagnostics"</span>
                 {if open_5 { icon_chevron_down() } else { icon_chevron_right() }}
             </button>
@@ -1916,90 +1747,90 @@ fn build_runner_command_palette(state: &CssRunnerState) -> Node {
             <div class="command-palette-modal">
                 <div class="palette-header">
                     <span class="palette-title">"Studio V2 Command Palette"</span>
-                    <button class="palette-close-btn" onclick={on_runner_palette_toggle}>"✕"</button>
+                    <button class="palette-close-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_PALETTE_TOGGLE)}>"✕"</button>
                 </div>
                 <div class="palette-input">
                     "Type a command or shortcut..."
                 </div>
                 <div class="palette-items">
-                    <button class="palette-item" onclick={on_runner_play_pause}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_PLAY_PAUSE)}>
                         <div class="item-left">
                             {if state.playing { icon_pause() } else { icon_play() }}
                             <span>"Toggle Simulation"</span>
                         </div>
                         <span class="command-shortcut">"Space"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_step}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_STEP)}>
                         <div class="item-left">
                             {icon_step()}
                             <span>"Step Simulation"</span>
                         </div>
                         <span class="command-shortcut">"S"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_reset}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_RESET)}>
                         <div class="item-left">
                             {icon_reset()}
                             <span>"Reset Simulation"</span>
                         </div>
                         <span class="command-shortcut">"R"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_save}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SAVE)}>
                         <div class="item-left">
                             {icon_save()}
                             <span>"Save Fitting Project"</span>
                         </div>
                         <span class="command-shortcut">"Ctrl+S"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_export}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_EXPORT)}>
                         <div class="item-left">
                             {icon_export()}
                             <span>"Export Artifacts (OBJ & True-Scale SVG)"</span>
                         </div>
                         <span class="command-shortcut">"Ctrl+E"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_clean_view}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_CLEAN_VIEW)}>
                         <div class="item-left">
                             {icon_clean_view()}
                             <span>"Toggle Clean View"</span>
                         </div>
                         <span class="command-shortcut">"F11"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_theme_toggle}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_THEME_TOGGLE)}>
                         <div class="item-left">
                             {if matches!(state.theme, Theme::Dark) { icon_sun() } else { icon_moon() }}
                             <span>"Toggle Dark / Light Theme"</span>
                         </div>
                         <span class="command-shortcut">"T"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_view_split}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_VIEW_SPLIT)}>
                         <div class="item-left">
                             {icon_view_split()}
                             <span>"Split 2D / 3D Layout"</span>
                         </div>
                         <span class="command-shortcut">"1"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_view_3d}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_VIEW_3D)}>
                         <div class="item-left">
                             {icon_view_3d()}
                             <span>"3D Only Viewport"</span>
                         </div>
                         <span class="command-shortcut">"2"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_view_2d}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_VIEW_2D)}>
                         <div class="item-left">
                             {icon_view_2d()}
                             <span>"2D Only Pattern Board"</span>
                         </div>
                         <span class="command-shortcut">"3"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_cam_reset}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_CAM_RESET)}>
                         <div class="item-left">
                             {icon_cam_reset()}
                             <span>"Reset 3D Camera"</span>
                         </div>
                         <span class="command-shortcut">"Home"</span>
                     </button>
-                    <button class="palette-item" onclick={on_runner_drawer_toggle}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RUN_DRAWER_TOGGLE)}>
                         <div class="item-left">
                             {icon_sidebar_toggle()}
                             <span>"Toggle Left Asset Drawer"</span>
@@ -2565,6 +2396,75 @@ mod tests {
             !collider_points.is_empty(),
             "collision geometry must be visible in USD"
         );
+        // A click belongs to the instance that built the scene, even if another
+        // instance advances first. An unrelated menu update must not reset the
+        // switch's transition clock.
+        let (other_tx, other_latest) = worker::start_cpu().expect("start second CPU worker");
+        let other_files = DocumentFiles {
+            output: dir.path().join("other"),
+            source: None,
+            modified: false,
+        };
+        let other = CssRunnerState::new(
+            app.state().project.clone(),
+            app.state().scene.clone(),
+            other_files,
+            other_tx,
+            other_latest,
+        );
+        let mut other_app = create_runner_app(other, &stylesheet);
+        other_app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        other_app.frame(FrameInfo {
+            delta: Duration::ZERO,
+            frame_index: 0,
+        });
+        let button = app.find_element_bounds_by_id("#theme-toggle").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        other_app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 1,
+        });
+        assert_eq!(other_app.state().theme, Theme::Dark);
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 1,
+        });
+        assert_eq!(app.state().theme, Theme::Light);
+        assert!(app.latest_stats().transition_active);
+        let elapsed = app.latest_stats().transition_elapsed_us;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 2,
+        });
+        assert!(app.state().solver_menu_open);
+        assert!(app.latest_stats().transition_active);
+        assert!(app.latest_stats().transition_elapsed_us > elapsed);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 3,
+        });
+        assert!(!app.state().solver_menu_open);
+
         // Verify layout containers
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
         let usd_bounds = app
