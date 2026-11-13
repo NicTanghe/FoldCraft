@@ -637,6 +637,45 @@
       "vruntime": 4.25,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/37",
       "notes": "Former branch-local FC-0040 (resident WGSL IPC); renumbered on integration of main e904360, whose canonical FC-0040 is the completed UI feature PR43. Historical source snapshots and reports retain their original ticket references."
+    },
+    {
+      "id": "FC-0048",
+      "title": "Animate day and night theme switch",
+      "acceptance": "Theme toggle animates a moon and sun with stars morphing into clouds in both directions, without AM/PM; preserves theme behavior.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/45"
+    },
+    {
+      "id": "FC-0049",
+      "title": "Adopt cssimpler instance handlers and transition fixes",
+      "acceptance": "Pin the reviewed cssimpler revision; isolate editor and runner actions per instance; preserve existing controls and theme transitions across unrelated changes; verify CPU and desktop checks without GPU execution.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.375,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/47"
+    },
+    {
+      "id": "FC-0050",
+      "title": "Keep theme transitions advancing during simulation updates",
+      "acceptance": "Preserve the tested day/night switch; both editor modes reach both theme endpoints during repeated simulation UI updates and normal idle; keep worker scheduling independent and CPU tests GPU-free.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/45"
     }
   ]
 }

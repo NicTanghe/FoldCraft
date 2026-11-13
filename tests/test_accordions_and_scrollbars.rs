@@ -77,49 +77,12 @@ fn studio_v2_css_defines_thin_scrollbars_and_collapsed_accordions() {
         css.contains(".switch-thumb"),
         "studio_v2.css must define .switch-thumb"
     );
-    assert!(
-        css.contains(".toggle__handler"),
-        "studio_v2.css must define .toggle__handler"
-    );
-
-    // Must define lunar craters and morphing stars/clouds matching Uiverse strong-lizard-79
-    assert!(css.contains(".crater"), "studio_v2.css must define .crater");
-    assert!(
-        css.contains(".crater--1"),
-        "studio_v2.css must define .crater--1"
-    );
-    assert!(
-        css.contains(".crater--2"),
-        "studio_v2.css must define .crater--2"
-    );
-    assert!(
-        css.contains(".crater--3"),
-        "studio_v2.css must define .crater--3"
-    );
-    assert!(
-        css.contains(".star--1"),
-        "studio_v2.css must define .star--1"
-    );
-    assert!(
-        css.contains(".star--2"),
-        "studio_v2.css must define .star--2"
-    );
-    assert!(
-        css.contains(".star--3"),
-        "studio_v2.css must define .star--3"
-    );
-    assert!(
-        css.contains(".star--4"),
-        "studio_v2.css must define .star--4"
-    );
-    assert!(
-        css.contains(".star--5"),
-        "studio_v2.css must define .star--5"
-    );
-    assert!(
-        css.contains(".star--6"),
-        "studio_v2.css must define .star--6"
-    );
+    // The same shapes remain mounted while their positions and colors animate.
+    for class in [
+        ".crater1", ".crater2", ".crater3", ".shape1", ".shape2", ".shape3", ".shape4", ".shape5",
+    ] {
+        assert!(css.contains(class), "studio_v2.css must define {class}");
+    }
 
     // Must NOT contain AM / PM text labels
     assert!(
@@ -143,7 +106,7 @@ fn studio_v2_css_defines_thin_scrollbars_and_collapsed_accordions() {
 }
 
 #[test]
-fn uiverse_day_night_switch_node_contains_handler_craters_and_stars() {
+fn day_night_switch_keeps_thumb_craters_and_sky_shapes_in_both_modes() {
     use cssimpler::core::Node;
     use marvelous_cloth::atelier::css_ui::icons::icon_day_night_switch;
 
@@ -169,9 +132,7 @@ fn uiverse_day_night_switch_node_contains_handler_craters_and_stars() {
             .iter()
             .find(|child| {
                 if let Node::Element(e) = child {
-                    e.classes
-                        .iter()
-                        .any(|c| c == "toggle__handler" || c == "switch-thumb")
+                    e.classes.iter().any(|c| c == "switch-thumb")
                 } else {
                     false
                 }
@@ -183,7 +144,7 @@ fn uiverse_day_night_switch_node_contains_handler_craters_and_stars() {
         };
         assert_eq!(handler.children.len(), 3, "handler must contain 3 craters");
         for i in 1..=3 {
-            let crater_class = format!("crater--{i}");
+            let crater_class = format!("crater{i}");
             assert!(
                 handler.children.iter().any(|child| {
                     if let Node::Element(e) = child {
@@ -196,9 +157,9 @@ fn uiverse_day_night_switch_node_contains_handler_craters_and_stars() {
             );
         }
 
-        // 6 stars / clouds
-        for i in 1..=6 {
-            let star_class = format!("star--{i}");
+        // Five persistent shapes animate between clouds and stars.
+        for i in 1..=5 {
+            let star_class = format!("shape{i}");
             assert!(
                 elem.children.iter().any(|child| {
                     if let Node::Element(e) = child {
