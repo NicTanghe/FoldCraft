@@ -84,19 +84,52 @@ fn studio_v2_css_defines_thin_scrollbars_and_collapsed_accordions() {
 
     // Must define lunar craters and morphing stars/clouds matching Uiverse strong-lizard-79
     assert!(css.contains(".crater"), "studio_v2.css must define .crater");
-    assert!(css.contains(".crater--1"), "studio_v2.css must define .crater--1");
-    assert!(css.contains(".crater--2"), "studio_v2.css must define .crater--2");
-    assert!(css.contains(".crater--3"), "studio_v2.css must define .crater--3");
-    assert!(css.contains(".star--1"), "studio_v2.css must define .star--1");
-    assert!(css.contains(".star--2"), "studio_v2.css must define .star--2");
-    assert!(css.contains(".star--3"), "studio_v2.css must define .star--3");
-    assert!(css.contains(".star--4"), "studio_v2.css must define .star--4");
-    assert!(css.contains(".star--5"), "studio_v2.css must define .star--5");
-    assert!(css.contains(".star--6"), "studio_v2.css must define .star--6");
+    assert!(
+        css.contains(".crater--1"),
+        "studio_v2.css must define .crater--1"
+    );
+    assert!(
+        css.contains(".crater--2"),
+        "studio_v2.css must define .crater--2"
+    );
+    assert!(
+        css.contains(".crater--3"),
+        "studio_v2.css must define .crater--3"
+    );
+    assert!(
+        css.contains(".star--1"),
+        "studio_v2.css must define .star--1"
+    );
+    assert!(
+        css.contains(".star--2"),
+        "studio_v2.css must define .star--2"
+    );
+    assert!(
+        css.contains(".star--3"),
+        "studio_v2.css must define .star--3"
+    );
+    assert!(
+        css.contains(".star--4"),
+        "studio_v2.css must define .star--4"
+    );
+    assert!(
+        css.contains(".star--5"),
+        "studio_v2.css must define .star--5"
+    );
+    assert!(
+        css.contains(".star--6"),
+        "studio_v2.css must define .star--6"
+    );
 
     // Must NOT contain AM / PM text labels
-    assert!(!css.contains("'AM'"), "studio_v2.css must not contain 'AM' text label");
-    assert!(!css.contains("'PM'"), "studio_v2.css must not contain 'PM' text label");
+    assert!(
+        !css.contains("'AM'"),
+        "studio_v2.css must not contain 'AM' text label"
+    );
+    assert!(
+        !css.contains("'PM'"),
+        "studio_v2.css must not contain 'PM' text label"
+    );
 
     // Must define command palette item icon styling
     assert!(
@@ -121,19 +154,33 @@ fn uiverse_day_night_switch_node_contains_handler_craters_and_stars() {
         let Node::Element(elem) = node else {
             panic!("switch root must be an ElementNode");
         };
-        assert!(elem.classes.iter().any(|c| c == expected_mode), "switch must have {expected_mode} class");
-        assert!(elem.classes.iter().any(|c| c == "day-night-switch"), "switch must have day-night-switch class");
+        assert!(
+            elem.classes.iter().any(|c| c == expected_mode),
+            "switch must have {expected_mode} class"
+        );
+        assert!(
+            elem.classes.iter().any(|c| c == "day-night-switch"),
+            "switch must have day-night-switch class"
+        );
 
         // Handler knob
-        let handler_node = elem.children.iter().find(|child| {
-            if let Node::Element(e) = child {
-                e.classes.iter().any(|c| c == "toggle__handler" || c == "switch-thumb")
-            } else {
-                false
-            }
-        }).expect("switch must contain handler knob");
+        let handler_node = elem
+            .children
+            .iter()
+            .find(|child| {
+                if let Node::Element(e) = child {
+                    e.classes
+                        .iter()
+                        .any(|c| c == "toggle__handler" || c == "switch-thumb")
+                } else {
+                    false
+                }
+            })
+            .expect("switch must contain handler knob");
 
-        let Node::Element(handler) = handler_node else { panic!("handler must be Element"); };
+        let Node::Element(handler) = handler_node else {
+            panic!("handler must be Element");
+        };
         assert_eq!(handler.children.len(), 3, "handler must contain 3 craters");
         for i in 1..=3 {
             let crater_class = format!("crater--{i}");
