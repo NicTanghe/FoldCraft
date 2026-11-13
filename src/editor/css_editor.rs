@@ -58,100 +58,10 @@ pub const ACT_EDGE_SELECT_NEXT: u64 = 1 << 23;
 pub const ACT_SOLVER_MENU: u64 = 1 << 24;
 pub const ACT_SOLVER_GPU: u64 = 1 << 25;
 pub const ACT_SOLVER_CPU: u64 = 1 << 26;
-pub fn on_solver_menu() {
-    dispatch_action(ACT_SOLVER_MENU);
-}
-pub fn on_solver_gpu() {
-    dispatch_action(ACT_SOLVER_GPU);
-}
-pub fn on_solver_cpu() {
-    dispatch_action(ACT_SOLVER_CPU);
-}
 
 pub const ACT_SOLVER_AL: u64 = 1 << 27;
-pub fn on_solver_al() {
-    dispatch_action(ACT_SOLVER_AL);
-}
-
-static PENDING_ACTIONS: AtomicU64 = AtomicU64::new(0);
-
-pub fn dispatch_action(act: u64) {
-    PENDING_ACTIONS.fetch_or(act, Ordering::Relaxed);
-}
 
 // Onclick trampolines
-pub fn on_play_pause() {
-    dispatch_action(ACT_PLAY_PAUSE);
-}
-pub fn on_step() {
-    dispatch_action(ACT_STEP);
-}
-pub fn on_reset() {
-    dispatch_action(ACT_RESET);
-}
-pub fn on_save() {
-    dispatch_action(ACT_SAVE);
-}
-pub fn on_export_obj() {
-    dispatch_action(ACT_EXPORT_OBJ);
-}
-pub fn on_remesh_reset() {
-    dispatch_action(ACT_REMESH_RESET);
-}
-pub fn on_uniform_reset() {
-    dispatch_action(ACT_UNIFORM_RESET);
-}
-pub fn on_scene_sphere() {
-    dispatch_action(ACT_SCENE_SPHERE);
-}
-pub fn on_scene_hang() {
-    dispatch_action(ACT_SCENE_HANG);
-}
-pub fn on_toggle_wire() {
-    dispatch_action(ACT_TOGGLE_WIRE);
-}
-pub fn on_toggle_shaded() {
-    dispatch_action(ACT_TOGGLE_SHADED);
-}
-pub fn on_toggle_collider() {
-    dispatch_action(ACT_TOGGLE_COLLIDER);
-}
-pub fn on_tab_properties() {
-    dispatch_action(ACT_TAB_PROPERTIES);
-}
-pub fn on_tab_objects() {
-    dispatch_action(ACT_TAB_OBJECTS);
-}
-pub fn on_tab_fabric() {
-    dispatch_action(ACT_TAB_FABRIC);
-}
-pub fn on_tab_simulation() {
-    dispatch_action(ACT_TAB_SIMULATION);
-}
-pub fn on_theme_toggle() {
-    dispatch_action(ACT_THEME_TOGGLE);
-}
-pub fn on_view_split() {
-    dispatch_action(ACT_VIEW_SPLIT);
-}
-pub fn on_view_3d() {
-    dispatch_action(ACT_VIEW_3D);
-}
-pub fn on_view_2d() {
-    dispatch_action(ACT_VIEW_2D);
-}
-pub fn on_palette_toggle() {
-    dispatch_action(ACT_PALETTE_TOGGLE);
-}
-pub fn on_drawer_toggle() {
-    dispatch_action(ACT_DRAWER_TOGGLE);
-}
-pub fn on_cam_reset() {
-    dispatch_action(ACT_CAM_RESET);
-}
-pub fn on_edge_select_next() {
-    dispatch_action(ACT_EDGE_SELECT_NEXT);
-}
 
 // ============================================================================
 // Editor Tab Enum
@@ -325,6 +235,7 @@ fn accept_ref(active: &mut Option<RefWork>, mut new: RefWork, deadline: &mut Ins
 
 #[derive(Clone)]
 pub struct CssEditorState {
+    actions: Arc<AtomicU64>,
     pub usd_scene: Option<cssimpler::renderer::gpu::usd::UsdScene>,
     pub active: Project,
     pub mesh: Arc<Mesh>,
@@ -393,6 +304,7 @@ impl CssEditorState {
         let (worker_tx, worker_latest) = start_editor_worker(gpu).expect("start physics worker");
 
         Self {
+            actions: Arc::new(AtomicU64::new(0)),
             usd_scene: None,
             active: project,
             mesh: Arc::new(mesh),
@@ -644,7 +556,7 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
         }
     }
 
-    let actions = PENDING_ACTIONS.swap(0, Ordering::Relaxed);
+    let actions = state.actions.swap(0, Ordering::Relaxed);
 
     if actions & ACT_SOLVER_MENU != 0 {
         state.solver_menu_open = !state.solver_menu_open;
@@ -736,14 +648,10 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
         state.selected_edge = Some(state.selected_edge.map_or(0, |e| (e + 1) % 4));
     }
 
-    if state.playing {
-        if had_result {
-            Invalidation::Paint
-        } else {
-            Invalidation::Clean
-        }
-    } else if actions != 0 || had_result {
+    if actions != 0 || (had_result && !state.playing) {
         Invalidation::Structure
+    } else if had_result {
+        Invalidation::Paint
     } else {
         Invalidation::Clean
     }
@@ -811,6 +719,13 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
     }
 }
 
+fn queue_action(actions: &Arc<AtomicU64>, action: u64) -> impl Fn() + Send + Sync + 'static {
+    let actions = Arc::clone(actions);
+    move || {
+        actions.fetch_or(action, Ordering::Relaxed);
+    }
+}
+
 // ============================================================================
 // UI Generation (Studio V2 layout via cssimpler::ui!)
 // ============================================================================
@@ -854,56 +769,56 @@ fn build_top_bar(state: &CssEditorState) -> Node {
             <div class="top-bar-left">
                 <span class="app-title">"FoldCraft | Reference Editor"</span>
                 <nav class="menu-bar">
-                    <button class="menu-item" onclick={on_save}>"Save (Ctrl+S)"</button>
-                    <button class="menu-item" onclick={on_export_obj}>"Export OBJ"</button>
+                    <button class="menu-item" onclick_shared={queue_action(&state.actions, ACT_SAVE)}>"Save (Ctrl+S)"</button>
+                    <button class="menu-item" onclick_shared={queue_action(&state.actions, ACT_EXPORT_OBJ)}>"Export OBJ"</button>
                 </nav>
             </div>
             <div class="sim-transport">
-                <button id="sim-play-btn" class={play_class} onclick={on_play_pause} title="Toggle Simulation (Space)">
+                <button id="sim-play-btn" class={play_class} onclick_shared={queue_action(&state.actions, ACT_PLAY_PAUSE)} title="Toggle Simulation (Space)">
                     {if state.playing { icon_pause() } else { icon_play() }}
                     <span class="btn-label">{play_label}</span>
                 </button>
-                <button id="sim-step-btn" class="transport-btn" onclick={on_step} title="Step Simulation">
+                <button id="sim-step-btn" class="transport-btn" onclick_shared={queue_action(&state.actions, ACT_STEP)} title="Step Simulation">
                     {icon_step()}
                     <span class="btn-label">"Step"</span>
                 </button>
-                <button id="sim-reset-btn" class="transport-btn" onclick={on_reset} title="Reset Simulation">
+                <button id="sim-reset-btn" class="transport-btn" onclick_shared={queue_action(&state.actions, ACT_RESET)} title="Reset Simulation">
                     {icon_reset()}
                     <span class="btn-label">"Reset"</span>
                 </button>
                 <div class="solver-picker">
-                    <button id="sim-backend-indicator" class="backend-badge" onclick={on_solver_menu}>
+                    <button id="sim-backend-indicator" class="backend-badge" onclick_shared={queue_action(&state.actions, ACT_SOLVER_MENU)}>
                         {if state.gpu_sim {format!("{} ▾", state.contact_method.label())} else {"CPU Reference ▾".into()}}
                     </button>
                     {if state.solver_menu_open { ui! {
                         <div id="solver-dropdown" class="solver-dropdown">
-                            <button id="solver-wgsl-ipc" class="menu-item" onclick={on_solver_gpu}>"WGSL AVBD / IPC"</button>
-                            <button id="solver-barrier-al" class="menu-item" onclick={on_solver_al}>"WGSL AVBD / barrier AL (experimental)"</button>
-                            <button id="solver-cpu" class="menu-item" onclick={on_solver_cpu}>"CPU Reference Newton"</button>
+                            <button id="solver-wgsl-ipc" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_SOLVER_GPU)}>"WGSL AVBD / IPC"</button>
+                            <button id="solver-barrier-al" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_SOLVER_AL)}>"WGSL AVBD / barrier AL (experimental)"</button>
+                            <button id="solver-cpu" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_SOLVER_CPU)}>"CPU Reference Newton"</button>
                         </div>
                     }} else { ui! { <span /> } }}
                 </div>
             </div>
             <div class="top-bar-right">
                 <div class="layout-switcher">
-                    <button class={split_class} onclick={on_view_split} title="Split View">
+                    <button class={split_class} onclick_shared={queue_action(&state.actions, ACT_VIEW_SPLIT)} title="Split View">
                         {icon_view_split()}
                         <span class="btn-label">"Split"</span>
                     </button>
-                    <button class={threed_class} onclick={on_view_3d} title="3D View">
+                    <button class={threed_class} onclick_shared={queue_action(&state.actions, ACT_VIEW_3D)} title="3D View">
                         {icon_view_3d()}
                         <span class="btn-label">"3D"</span>
                     </button>
-                    <button class={twod_class} onclick={on_view_2d} title="2D View">
+                    <button class={twod_class} onclick_shared={queue_action(&state.actions, ACT_VIEW_2D)} title="2D View">
                         {icon_view_2d()}
                         <span class="btn-label">"2D"</span>
                     </button>
                 </div>
-                <button id="command-palette-trigger" class="btn-secondary" onclick={on_palette_toggle} title="Command Palette (Ctrl+K)">
+                <button id="command-palette-trigger" class="btn-secondary" onclick_shared={queue_action(&state.actions, ACT_PALETTE_TOGGLE)} title="Command Palette (Ctrl+K)">
                     {icon_palette()}
                     <span class="btn-label">"Palette"</span>
                 </button>
-                <button id="theme-toggle" class="btn-secondary" onclick={on_theme_toggle} title="Toggle Dark/Light Theme">
+                <button id="theme-toggle" class="btn-secondary" onclick_shared={queue_action(&state.actions, ACT_THEME_TOGGLE)} title="Toggle Dark/Light Theme">
                     {icon_day_night_switch(state.theme == Theme::Dark)}
                 </button>
             </div>
@@ -911,22 +826,22 @@ fn build_top_bar(state: &CssEditorState) -> Node {
     }
 }
 
-fn build_tool_rail_3d(_state: &CssEditorState) -> Node {
+fn build_tool_rail_3d(state: &CssEditorState) -> Node {
     ui! {
         <aside id="rail-3d" class="tool-rail tool-rail-3d">
             <button class="tool-btn active" title="Select & Arrange [Gizmo] (1)">
                 {icon_gizmo()}
                 <span class="tool-label">"Gizmo"</span>
             </button>
-            <button class="tool-btn" onclick={on_cam_reset} title="Reset Camera View [Framing] (0)">
+            <button class="tool-btn" onclick_shared={queue_action(&state.actions, ACT_CAM_RESET)} title="Reset Camera View [Framing] (0)">
                 {icon_cam_reset()}
                 <span class="tool-label">"Reset"</span>
             </button>
-            <button class="tool-btn" onclick={on_edge_select_next} title="Cycle Selected Edge (Tab)">
+            <button class="tool-btn" onclick_shared={queue_action(&state.actions, ACT_EDGE_SELECT_NEXT)} title="Cycle Selected Edge (Tab)">
                 {icon_select_2d()}
                 <span class="tool-label">"Edge"</span>
             </button>
-            <button class="tool-btn" onclick={on_drawer_toggle} title="Toggle Left Drawer (☰)">
+            <button class="tool-btn" onclick_shared={queue_action(&state.actions, ACT_DRAWER_TOGGLE)} title="Toggle Left Drawer (☰)">
                 {icon_sidebar_toggle()}
                 <span class="tool-label">"Drawer"</span>
             </button>
@@ -1000,18 +915,18 @@ fn build_left_drawer(state: &CssEditorState) -> Node {
             <div class="drawer-content">
                 <div class="drawer-section">
                     <span class="section-label">"Reference Benchmark Scene"</span>
-                    <button id="scene-sphere-btn" class={sphere_class} onclick={on_scene_sphere}>
+                    <button id="scene-sphere-btn" class={sphere_class} onclick_shared={queue_action(&state.actions, ACT_SCENE_SPHERE)}>
                         "Sphere Benchmark"
                     </button>
-                    <button id="scene-hang-btn" class={hang_class} onclick={on_scene_hang}>
+                    <button id="scene-hang-btn" class={hang_class} onclick_shared={queue_action(&state.actions, ACT_SCENE_HANG)}>
                         "Hanging Pins"
                     </button>
                 </div>
                 <div class="drawer-section">
                     <span class="section-label">"Display Toggles"</span>
-                    <button class="drawer-btn" onclick={on_toggle_wire}>{wire_label}</button>
-                    <button class="drawer-btn" onclick={on_toggle_shaded}>{shaded_label}</button>
-                    <button class="drawer-btn" onclick={on_toggle_collider}>{collider_label}</button>
+                    <button class="drawer-btn" onclick_shared={queue_action(&state.actions, ACT_TOGGLE_WIRE)}>{wire_label}</button>
+                    <button class="drawer-btn" onclick_shared={queue_action(&state.actions, ACT_TOGGLE_SHADED)}>{shaded_label}</button>
+                    <button class="drawer-btn" onclick_shared={queue_action(&state.actions, ACT_TOGGLE_COLLIDER)}>{collider_label}</button>
                 </div>
                 <div class="drawer-section">
                     <span class="section-label">"Camera Orbit Hint"</span>
@@ -1094,10 +1009,10 @@ fn build_right_dock(state: &CssEditorState) -> Node {
     ui! {
         <aside id="right-dock" class="right-dock">
             <div class="dock-tabs">
-                <button class={tab_p} onclick={on_tab_properties}>"Properties"</button>
-                <button class={tab_o} onclick={on_tab_objects}>"Objects"</button>
-                <button class={tab_f} onclick={on_tab_fabric}>"Fabric"</button>
-                <button class={tab_s} onclick={on_tab_simulation}>"Simulation"</button>
+                <button class={tab_p} onclick_shared={queue_action(&state.actions, ACT_TAB_PROPERTIES)}>"Properties"</button>
+                <button class={tab_o} onclick_shared={queue_action(&state.actions, ACT_TAB_OBJECTS)}>"Objects"</button>
+                <button class={tab_f} onclick_shared={queue_action(&state.actions, ACT_TAB_FABRIC)}>"Fabric"</button>
+                <button class={tab_s} onclick_shared={queue_action(&state.actions, ACT_TAB_SIMULATION)}>"Simulation"</button>
             </div>
             <div class="dock-content">
                 {content}
@@ -1158,7 +1073,7 @@ fn build_tab_objects(state: &CssEditorState) -> Node {
                     {state.selected_edge.map_or("None".to_string(), |e| format!("Edge {}", e + 1))}
                 </span>
             </div>
-            <button class="action-btn" onclick={on_edge_select_next}>"Select Next Boundary Edge"</button>
+            <button class="action-btn" onclick_shared={queue_action(&state.actions, ACT_EDGE_SELECT_NEXT)}>"Select Next Boundary Edge"</button>
         </div>
     }
 }
@@ -1276,10 +1191,10 @@ fn build_mesh_preparation_accordion(state: &CssEditorState) -> Node {
             </div>
             {err_node}
             <div class="prep-buttons">
-                <button id="remesh-reset-btn" class="action-btn primary" onclick={on_remesh_reset}>
+                <button id="remesh-reset-btn" class="action-btn primary" onclick_shared={queue_action(&state.actions, ACT_REMESH_RESET)}>
                     "Remesh and reset"
                 </button>
-                <button id="uniform-reset-btn" class="action-btn secondary" onclick={on_uniform_reset}>
+                <button id="uniform-reset-btn" class="action-btn secondary" onclick_shared={queue_action(&state.actions, ACT_UNIFORM_RESET)}>
                     "Use uniform grid and reset"
                 </button>
             </div>
@@ -1335,69 +1250,69 @@ fn build_command_palette_overlay(state: &CssEditorState) -> Node {
             <div class="command-palette-modal">
                 <div class="palette-header">
                     <span class="palette-title">"Command Palette"</span>
-                    <button class="palette-close-btn" onclick={on_palette_toggle}>"✕"</button>
+                    <button class="palette-close-btn" onclick_shared={queue_action(&state.actions, ACT_PALETTE_TOGGLE)}>"✕"</button>
                 </div>
                 <div class="palette-items">
-                    <button class="palette-item" onclick={on_play_pause}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_PLAY_PAUSE)}>
                         <div class="item-left">
                             {if state.playing { icon_pause() } else { icon_play() }}
                             <span>"Toggle Simulation"</span>
                         </div>
                         <span class="command-shortcut">"Space"</span>
                     </button>
-                    <button class="palette-item" onclick={on_step}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_STEP)}>
                         <div class="item-left">
                             {icon_step()}
                             <span>"Step Simulation"</span>
                         </div>
                         <span class="command-shortcut">"S"</span>
                     </button>
-                    <button class="palette-item" onclick={on_reset}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_RESET)}>
                         <div class="item-left">
                             {icon_reset()}
                             <span>"Reset Simulation"</span>
                         </div>
                         <span class="command-shortcut">"R"</span>
                     </button>
-                    <button class="palette-item" onclick={on_save}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_SAVE)}>
                         <div class="item-left">
                             {icon_save()}
                             <span>"Save Project"</span>
                         </div>
                         <span class="command-shortcut">"Ctrl+S"</span>
                     </button>
-                    <button class="palette-item" onclick={on_export_obj}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_EXPORT_OBJ)}>
                         <div class="item-left">
                             {icon_export()}
                             <span>"Export OBJ"</span>
                         </div>
                         <span class="command-shortcut">"Ctrl+E"</span>
                     </button>
-                    <button class="palette-item" onclick={on_scene_sphere}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_SCENE_SPHERE)}>
                         <div class="item-left">
                             {icon_circle_2d()}
                             <span>"Scene: Sphere Benchmark"</span>
                         </div>
                     </button>
-                    <button class="palette-item" onclick={on_scene_hang}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_SCENE_HANG)}>
                         <div class="item-left">
                             {icon_pin()}
                             <span>"Scene: Hanging Pins"</span>
                         </div>
                     </button>
-                    <button class="palette-item" onclick={on_remesh_reset}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_REMESH_RESET)}>
                         <div class="item-left">
                             {icon_polygon_2d()}
                             <span>"Remesh and Reset"</span>
                         </div>
                     </button>
-                    <button class="palette-item" onclick={on_uniform_reset}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_UNIFORM_RESET)}>
                         <div class="item-left">
                             {icon_view_split()}
                             <span>"Use Uniform Grid and Reset"</span>
                         </div>
                     </button>
-                    <button class="palette-item" onclick={on_theme_toggle}>
+                    <button class="palette-item" onclick_shared={queue_action(&state.actions, ACT_THEME_TOGGLE)}>
                         <div class="item-left">
                             {if state.theme == Theme::Dark { icon_sun() } else { icon_moon() }}
                             <span>"Toggle Dark/Light Theme"</span>
@@ -1690,6 +1605,97 @@ mod tests {
             !collider_points.is_empty(),
             "collision geometry must be visible in USD"
         );
+        // A click belongs to the instance that built the scene, even if another
+        // instance advances first. An unrelated menu update must not reset the
+        // switch's transition clock.
+        let other = CssEditorState::new(
+            Project::default(),
+            PathBuf::from("target/test_editor_other"),
+        );
+        let mut other_app = create_editor_app(other, &stylesheet);
+        other_app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        other_app.frame(FrameInfo {
+            delta: Duration::ZERO,
+            frame_index: 0,
+        });
+        let button = app.find_element_bounds_by_id("#theme-toggle").unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        other_app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 1,
+        });
+        assert_eq!(other_app.state().theme, Theme::Dark);
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 1,
+        });
+        assert_eq!(app.state().theme, Theme::Light);
+        assert!(app.latest_stats().transition_active);
+        let elapsed = app.latest_stats().transition_elapsed_us;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 2,
+        });
+        assert!(app.state().solver_menu_open);
+        assert!(app.latest_stats().transition_active);
+        assert!(app.latest_stats().transition_elapsed_us > elapsed);
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 3,
+        });
+        assert!(!app.state().solver_menu_open);
+
+        // Structural controls must update even while simulation is playing.
+        app.state_mut().playing = true;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 4,
+        });
+        assert!(app.state().solver_menu_open);
+        assert!(app.find_element_bounds_by_id("#solver-dropdown").is_some());
+        app.state_mut().playing = false;
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 5,
+        });
+        assert!(!app.state().solver_menu_open);
+
         // Verify key layout containers exist
         assert!(app.find_element_bounds_by_id("#viewport-3d").is_some());
         let usd_bounds = app
