@@ -1,6 +1,6 @@
 # cssimpler integration
 
-Both native desktop editors use cssimpler revision `ac4c2ee`, which includes
+Both native desktop editors use cssimpler revision `155ae1e`, which includes
 captured event handlers and the transition update described in cssimpler's
 `docs/reports/`. Each editor instance owns its action bitmask. Click handlers
 capture a shared reference to that instance's mask; the update loop consumes its
@@ -27,3 +27,8 @@ intermediate sampled layout, so repeated simulation status updates could keep
 the theme switch from reaching either endpoint. The upstream fix covers `App`
 and `FragmentApp`, including partial refreshes; FoldCraft retains paint-only
 worker updates and does not add an animation timer.
+
+A subsequent upstream optimization reuses an existing transition plan when a
+refresh changes only content and preserves target geometry, style and identity.
+See cssimpler PR #10 and its CPU benchmark; geometry or style changes still use
+the conservative rebase path. Native frame cadence has not been measured here.
