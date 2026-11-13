@@ -663,6 +663,19 @@
       "owner": null,
       "vruntime": 3.375,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/47"
+    },
+    {
+      "id": "FC-0050",
+      "title": "Keep theme transitions advancing during simulation updates",
+      "acceptance": "Preserve the tested day/night switch; both editor modes reach both theme endpoints during repeated simulation UI updates and normal idle; keep worker scheduling independent and CPU tests GPU-free.",
+      "points": 2.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "active",
+      "owner": "codex-switch",
+      "vruntime": 3.0,
+      "pr": null
     }
   ]
 }
