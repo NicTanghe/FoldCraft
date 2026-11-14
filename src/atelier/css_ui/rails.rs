@@ -490,7 +490,7 @@ impl CornerToolParams {
             edge: edge.to_string(),
             radius_m: marvelous_cloth::authoring::mm_to_m(self.radius_mm),
             tension: match self.mode {
-                CornerMode::Radius => 0.55,
+                CornerMode::Radius => marvelous_cloth::authoring::corner_tool::CIRCLE_TENSION,
                 CornerMode::Shape => self.tension,
             },
             rule: self.rule,

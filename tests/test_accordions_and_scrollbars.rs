@@ -240,7 +240,7 @@ fn solver_selection_actions_are_independent_of_accordions_and_pieces() {
 fn board_2d_actions_are_isolated_bits_and_independent() {
     use marvelous_cloth::atelier::css_runner::{
         ACT_RUN_2D_FIT, ACT_RUN_2D_NEXT_PIECE, ACT_RUN_2D_ZOOM_IN, ACT_RUN_2D_ZOOM_OUT,
-        ACT_RUN_ACCORDION_TOGGLE, ACT_RUN_ACC_0, ACT_RUN_ACC_5, ACT_RUN_PIECE_0, ACT_RUN_PIECE_3,
+        ACT_RUN_ACC_0, ACT_RUN_ACC_5, ACT_RUN_ACCORDION_TOGGLE, ACT_RUN_PIECE_0, ACT_RUN_PIECE_3,
         ACT_RUN_SOLVER_GPU,
     };
 
@@ -259,8 +259,12 @@ fn board_2d_actions_are_isolated_bits_and_independent() {
 
     let board_2d_mask =
         ACT_RUN_2D_ZOOM_IN | ACT_RUN_2D_ZOOM_OUT | ACT_RUN_2D_FIT | ACT_RUN_2D_NEXT_PIECE;
-    let other_mask =
-        ACT_RUN_ACC_0 | ACT_RUN_ACC_5 | ACT_RUN_ACCORDION_TOGGLE | ACT_RUN_PIECE_0 | ACT_RUN_PIECE_3 | ACT_RUN_SOLVER_GPU;
+    let other_mask = ACT_RUN_ACC_0
+        | ACT_RUN_ACC_5
+        | ACT_RUN_ACCORDION_TOGGLE
+        | ACT_RUN_PIECE_0
+        | ACT_RUN_PIECE_3
+        | ACT_RUN_SOLVER_GPU;
 
     assert_eq!(
         board_2d_mask & other_mask,
@@ -315,4 +319,3 @@ fn studio_v2_css_defines_viewport_theme_colors_and_transitions() {
         "studio_v2.css must define .viewport-tool-btn"
     );
 }
-
