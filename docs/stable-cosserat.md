@@ -192,3 +192,12 @@ Stitches and rod self-contact are explicitly rejected together: the rod contact
 implementation does not yet implement the local sewing exclusions needed near
 joined boundaries. This rejection preserves the previous state. Avatar contact,
 friction and production-scale sewing convergence remain unimplemented.
+
+`PanelRodNetwork::compile` is an additional research topology that turns each
+edge of an existing compiled panel triangulation into a rod, retaining the
+panel's resolution, outline and holes. Its triangles are only interpolation
+support. This is a welded triangular truss, not generated woven yarn; it has no
+bending joints or physical calibration and must not be treated as a cloth
+backend. It starts flat from 2D material coordinates, not from a draped state.
+It does not automatically apply garment pins or seams, and provides no avatar
+contact. The general attachment binder's work limit can reject large panels.

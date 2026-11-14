@@ -18,6 +18,7 @@ pub mod presets;
 pub mod production_metrics;
 pub mod rod_attachment;
 pub mod rod_grid;
+pub mod rod_panel;
 pub mod rod_sewing;
 pub mod seam;
 pub mod shapes;
