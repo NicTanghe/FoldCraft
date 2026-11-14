@@ -81,7 +81,8 @@ against the same local inertial, stretch and contact objective before acceptance
 Pairs are recomputed exhaustively; there is no broad phase, pair cache or
 candidate limit. This small-scene implementation is expensive: a vertex update
 can traverse all segment pairs repeatedly for backtracking. Pairs sharing a
-vertex are excluded entirely, including their immediate neighborhood. Starting
+vertex or locally connected by sewing are excluded entirely, including their
+immediate neighborhoods, as detailed below. Starting
 states must be separated above the numerical clearance for all included pairs;
 initial intersections are rejected, not repaired. For the motion bound, an
 interval gap projected along the candidate normal is a lower bound in exact
@@ -151,8 +152,8 @@ rest coordinates change. The mapping cannot detect reordered topology with the
 same vertex count. No vertex indices are stored in authoring files.
 
 This is a building block, not a panel-to-yarn compiler or a solver-menu option.
-In particular, yarn crossings, seam coupling, collision and rendering remain
-unimplemented; mapping a visual surface alone cannot provide those physics.
+In particular, this mapping by itself supplies no yarn-crossing, sewing or
+collision physics and is not connected to the renderer.
 
 `GarmentRodMapping` binds the compiled vertex material coordinates of one named
 panel and retains the compiled garment for identity checks. Its output is in
@@ -188,10 +189,15 @@ seam quadrature to supplied garment-to-rod vertex weights. The coefficient is
 construct this map. Callers must rebuild the weights and stitch model when
 panel, seam or rod topology changes. This is not automatic worker/UI integration.
 
-Stitches and rod self-contact are explicitly rejected together: the rod contact
-implementation does not yet implement the local sewing exclusions needed near
-joined boundaries. This rejection preserves the previous state. Avatar contact,
-friction and production-scale sewing convergence remain unimplemented.
+Stitches can be combined with experimental rod self-contact. Segment pairs are
+excluded entirely when they share an endpoint or have endpoints appearing on
+opposite sides of the same stitch sample. These are local sewing exclusions,
+but exclude the full segment pair, not just the stitched points: separation is
+not guaranteed for excluded pairs, and long segments make the excluded region
+larger. Every other pair remains in detection. Sewing energy is included in the
+contact line search and all positional residuals. Start from a separated state
+for every nonexcluded pair. Avatar contact, friction, certified geometric
+predicates and production-scale sewing convergence remain unimplemented.
 
 `PanelRodNetwork::compile` is an additional research topology that turns each
 edge of an existing compiled panel triangulation into a rod, retaining the
@@ -201,3 +207,15 @@ bending joints or physical calibration and must not be treated as a cloth
 backend. It starts flat from 2D material coordinates, not from a draped state.
 It does not automatically apply garment pins or seams, and provides no avatar
 contact. The general attachment binder's work limit can reject large panels.
+
+`GarmentRodNetwork` is a CPU research harness that combines all compiled panel
+triangle edges into one welded rod truss, uses existing compiled seam samples
+and pin membership, and initializes rod positions and velocities from the
+compiled garment's placed 3D state. Rod rest lengths still come solely from the
+2D material coordinates. Rod rotations initialize along the placed edge
+orientations; this assumes no rod bending joints. Vertex order matches the
+compiled garment mesh, so the state positions can be used for that mesh. The
+harness takes one explicitly supplied isotropic rod material for the entire
+model; it does not convert or calibrate the garment's fabric or grain. It has
+no bending joints, avatar collision, user interaction, cached-state migration or
+UI/worker integration, and is not a complete garment backend.

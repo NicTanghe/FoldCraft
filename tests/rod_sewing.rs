@@ -66,7 +66,7 @@ fn stitch_energy_is_objective_and_matches_force_by_finite_difference() {
     assert!(((plus - minus) / (2.0 * eps) - 100.0).abs() < 1e-7);
 }
 #[test]
-fn invalid_stitches_and_unimplemented_contact_combination_are_rejected() {
+fn invalid_stitches_are_rejected() {
     assert!(
         model()
             .with_stitches(vec![RodStitch {
@@ -91,19 +91,6 @@ fn invalid_stitches_and_unimplemented_contact_combination_are_rejected() {
             }])
             .is_err()
     );
-    let model = model().with_stitches(vec![stitch()]).unwrap();
-    let mut state = model.initial_state();
-    let before = state.clone();
-    let settings = RodSettings {
-        contact: Some(RodContact {
-            activation_m: 0.1,
-            stiffness_j: 1.0,
-            clearance_m: 0.001,
-        }),
-        ..Default::default()
-    };
-    assert!(model.step(&mut state, settings).is_err());
-    assert_eq!(before, state);
 }
 
 #[test]
@@ -191,4 +178,76 @@ fn real_garment_seam_samples_pull_panel_rod_networks_together() {
         "before {initial}, after {}",
         metrics.stitch_energy_j
     );
+}
+
+#[test]
+fn sewing_contact_exclusions_are_local_and_unrelated_contacts_remain_active() {
+    let rest = vec![
+        DVec3::ZERO,
+        DVec3::X,
+        DVec3::Y,
+        DVec3::X + DVec3::Y,
+        DVec3::Y * 1.2,
+        DVec3::X + DVec3::Y * 1.2,
+    ];
+    let build = || {
+        RodModel::new(
+            rest.clone(),
+            vec![[0, 1], [2, 3], [4, 5]],
+            vec![],
+            None,
+            &[0, 1],
+            &[],
+            material(),
+        )
+        .unwrap()
+    };
+    let stitched = build().with_stitches(vec![stitch()]).unwrap();
+    let contact = RodContact {
+        activation_m: 0.3,
+        stiffness_j: 0.01,
+        clearance_m: 0.001,
+    };
+    let mut state = stitched.initial_state();
+    let initial = state.clone();
+    let contact_before = stitched.contact_energy(&state, contact).unwrap().0;
+    assert!(contact_before > 0.0, "unrelated pair must remain active");
+    let settings = RodSettings {
+        dt_s: 0.01,
+        iterations: 30,
+        gravity_m_s2: DVec3::ZERO,
+        drag_per_s: 0.0,
+        contact: Some(contact),
+        ..Default::default()
+    };
+    let metrics = stitched.step(&mut state, settings).unwrap();
+    assert!(metrics.stitch_energy_j < stitched.stitch_energy(&initial).unwrap());
+    assert!(metrics.contact_energy_j > 0.0);
+    let inertia: f64 = state
+        .positions
+        .iter()
+        .zip(&initial.positions)
+        .skip(2)
+        .map(|(new, old)| 0.5 * 0.5 / settings.dt_s.powi(2) * (*new - *old).length_squared())
+        .sum();
+    let before_objective = stitched.elastic_energy(&initial).unwrap()
+        + stitched.stitch_energy(&initial).unwrap()
+        + contact_before;
+    let after_objective =
+        metrics.elastic_energy_j + metrics.stitch_energy_j + metrics.contact_energy_j + inertia;
+    assert!(
+        after_objective <= before_objective + 1e-9,
+        "objective increased: {before_objective} -> {after_objective}"
+    );
+    assert!(state.positions.iter().all(|p| p.is_finite()));
+    let mut overlapping = initial.clone();
+    overlapping.positions[2] = overlapping.positions[0];
+    overlapping.positions[3] = overlapping.positions[1];
+    assert!(stitched.contact_energy(&overlapping, contact).is_ok());
+    assert!(build().contact_energy(&overlapping, contact).is_err());
+    overlapping.positions[4] = overlapping.positions[0];
+    overlapping.positions[5] = overlapping.positions[1];
+    let before = overlapping.clone();
+    assert!(stitched.step(&mut overlapping, settings).is_err());
+    assert_eq!(overlapping, before);
 }

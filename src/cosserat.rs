@@ -63,6 +63,7 @@ pub struct RodModel {
     incident_joints: Vec<Vec<usize>>,
     stitches: Vec<RodStitch>,
     incident_stitches: Vec<Vec<(usize, f64)>>,
+    sewing_exclusions: HashSet<(usize, usize)>,
 }
 
 /// Accepted state, including the orientation and exact-solve history. A state
@@ -291,6 +292,7 @@ impl RodModel {
         Ok(Self {
             stitches: Vec::new(),
             incident_stitches,
+            sewing_exclusions: HashSet::new(),
             rest_positions,
             inverse_masses,
             segments,
@@ -304,12 +306,13 @@ impl RodModel {
     /// model; indices refer only to this runtime topology.
     pub fn with_stitches(mut self, stitches: Vec<RodStitch>) -> Result<Self, String> {
         let mut incident = vec![Vec::new(); self.rest_positions.len()];
+        let mut exclusions = HashSet::new();
         for (index, stitch) in stitches.iter().enumerate() {
             let sum: f64 = stitch.terms.iter().map(|(_, w)| *w).sum();
             let magnitude: f64 = stitch.terms.iter().map(|(_, w)| w.abs()).sum();
             if !stitch.stiffness_n_per_m.is_finite()
                 || stitch.stiffness_n_per_m <= 0.0
-                || stitch.terms.len() < 2
+                || !(2..=64).contains(&stitch.terms.len())
                 || !sum.is_finite()
                 || !magnitude.is_finite()
                 || magnitude <= 0.0
@@ -324,8 +327,15 @@ impl RodModel {
             }
             for &(vertex, weight) in &stitch.terms {
                 incident[vertex].push((index, weight));
+                for &(other, other_weight) in &stitch.terms {
+                    if (weight > 0.0 && other_weight < 0.0) || (weight < 0.0 && other_weight > 0.0)
+                    {
+                        exclusions.insert(unordered(vertex, other));
+                    }
+                }
             }
         }
+        self.sewing_exclusions = exclusions;
         self.stitches = stitches;
         self.incident_stitches = incident;
         Ok(self)
@@ -433,9 +443,6 @@ impl RodModel {
             return Err("invalid rod timestep, iterations, gravity, or drag".into());
         }
         if let Some(contact) = settings.contact {
-            if !self.stitches.is_empty() {
-                return Err("rod stitches and contact cannot yet be combined: sewing exclusions are unimplemented".into());
-            }
             contact.validate()?;
             self.contact_stats(&state.positions, contact)?;
         }
@@ -799,7 +806,12 @@ impl RodModel {
             let a = self.segments[i].vertices;
             for segment in self.segments.iter().skip(i + 1) {
                 let b = segment.vertices;
-                if a.iter().any(|v| b.contains(v)) {
+                if a.iter().any(|v| b.contains(v))
+                    || a.iter().any(|&x| {
+                        b.iter()
+                            .any(|&y| self.sewing_exclusions.contains(&unordered(x, y)))
+                    })
+                {
                     continue;
                 }
                 let [p0, p1] = a.map(|v| positions[v]);
@@ -885,6 +897,11 @@ impl RodModel {
             let c = (state.positions[b] - state.positions[a]) / seg.rest_length
                 - state.orientations[i] * DVec3::X;
             energy += 0.5 * seg.stretch * c.length_squared();
+        }
+        for &(index, _) in &self.incident_stitches[vertex] {
+            let stitch = &self.stitches[index];
+            energy +=
+                0.5 * stitch.stiffness_n_per_m * stitch.gap(&state.positions).length_squared();
         }
         self.for_each_contact_pair(&state.positions, |a, b, sample| {
             if a.contains(&vertex) || b.contains(&vertex) {
