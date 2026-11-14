@@ -1061,7 +1061,7 @@ button {
 }
 
 .pattern-piece:hover {
-  filter: brightness(1.15);
+  opacity: 0.85;
 }
 
 .cad-vertex {
