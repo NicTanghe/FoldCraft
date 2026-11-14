@@ -794,6 +794,19 @@
       "owner": null,
       "vruntime": 3.40581511983951,
       "pr": null
+    },
+    {
+      "id": "FC-0059",
+      "title": "2D pattern board interactive pan/zoom/selection overhaul, sleek CAD styling, and slow theme color transitions with 3D/2D viewport background sync",
+      "acceptance": "2D pattern board supports interactive pan and zoom gestures and piece selection; gorgeous CAD styling with piece badges, dimensions, grainlines, seam notches and theme-matched background/grid; slow smooth transition between day/night colors across the entire studio affecting 3D and 2D viewport backdrops; all CPU tests pass.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": "antigravity",
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/50"
     }
   ]
 }

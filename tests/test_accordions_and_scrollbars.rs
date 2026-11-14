@@ -235,3 +235,84 @@ fn solver_selection_actions_are_independent_of_accordions_and_pieces() {
     assert_eq!(solvers.count_ones(), 4);
     assert_eq!(pieces.count_ones(), 4);
 }
+
+#[test]
+fn board_2d_actions_are_isolated_bits_and_independent() {
+    use marvelous_cloth::atelier::css_runner::{
+        ACT_RUN_2D_FIT, ACT_RUN_2D_NEXT_PIECE, ACT_RUN_2D_ZOOM_IN, ACT_RUN_2D_ZOOM_OUT,
+        ACT_RUN_ACCORDION_TOGGLE, ACT_RUN_ACC_0, ACT_RUN_ACC_5, ACT_RUN_PIECE_0, ACT_RUN_PIECE_3,
+        ACT_RUN_SOLVER_GPU,
+    };
+
+    assert_ne!(ACT_RUN_2D_ZOOM_IN, ACT_RUN_2D_ZOOM_OUT);
+    assert_ne!(ACT_RUN_2D_ZOOM_OUT, ACT_RUN_2D_FIT);
+    assert_ne!(ACT_RUN_2D_FIT, ACT_RUN_2D_NEXT_PIECE);
+
+    for act in [
+        ACT_RUN_2D_ZOOM_IN,
+        ACT_RUN_2D_ZOOM_OUT,
+        ACT_RUN_2D_FIT,
+        ACT_RUN_2D_NEXT_PIECE,
+    ] {
+        assert_eq!(act.count_ones(), 1, "2D action {act} must be a single bit");
+    }
+
+    let board_2d_mask =
+        ACT_RUN_2D_ZOOM_IN | ACT_RUN_2D_ZOOM_OUT | ACT_RUN_2D_FIT | ACT_RUN_2D_NEXT_PIECE;
+    let other_mask =
+        ACT_RUN_ACC_0 | ACT_RUN_ACC_5 | ACT_RUN_ACCORDION_TOGGLE | ACT_RUN_PIECE_0 | ACT_RUN_PIECE_3 | ACT_RUN_SOLVER_GPU;
+
+    assert_eq!(
+        board_2d_mask & other_mask,
+        0,
+        "2D board actions must be disjoint from accordion, piece, and solver actions"
+    );
+}
+
+#[test]
+fn studio_v2_css_defines_viewport_theme_colors_and_transitions() {
+    let css = include_str!("../src/atelier/css_ui/studio_v2.css");
+
+    // Theme color variables for 3D and 2D viewports
+    assert!(
+        css.contains("--viewport-bg-3d: #0b0d13;"),
+        "Dark theme must define dark 3D viewport background"
+    );
+    assert!(
+        css.contains("--viewport-bg-3d: #e8ecf2;"),
+        "Light theme must define light 3D viewport background"
+    );
+    assert!(
+        css.contains("--viewport-bg-2d: #0d0f17;"),
+        "Dark theme must define dark 2D viewport background"
+    );
+    assert!(
+        css.contains("--viewport-bg-2d: #f8fafc;"),
+        "Light theme must define light 2D viewport background"
+    );
+
+    // Viewport elements must use the theme variables
+    assert!(
+        css.contains("background-color: var(--viewport-bg-3d);")
+            || css.contains("background-color: var(--viewport-bg-2d);"),
+        "Viewports must reference theme background variables"
+    );
+
+    // Smooth transition rules across shell and surfaces
+    assert!(
+        css.contains("transition: background-color 0.45s")
+            || css.contains("background-color 0.45s cubic-bezier(0.4, 0, 0.2, 1)"),
+        "studio_v2.css must provide smooth color transitions for theme switches"
+    );
+
+    // 2D viewport header and interactive controls
+    assert!(
+        css.contains(".viewport-tools"),
+        "studio_v2.css must define .viewport-tools"
+    );
+    assert!(
+        css.contains(".viewport-tool-btn"),
+        "studio_v2.css must define .viewport-tool-btn"
+    );
+}
+

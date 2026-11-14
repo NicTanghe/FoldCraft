@@ -100,6 +100,11 @@ pub const ACT_RUN_SOLVER_GPU: u64 = 1 << 53;
 pub const ACT_RUN_SOLVER_CPU: u64 = 1 << 54;
 
 pub const ACT_RUN_SOLVER_AL: u64 = 1 << 55;
+pub const ACT_RUN_2D_ZOOM_IN: u64 = 1 << 56;
+pub const ACT_RUN_2D_ZOOM_OUT: u64 = 1 << 57;
+pub const ACT_RUN_2D_FIT: u64 = 1 << 58;
+pub const ACT_RUN_2D_NEXT_PIECE: u64 = 1 << 59;
+
 
 // Trampolines
 
@@ -165,6 +170,8 @@ pub struct CssRunnerState {
     pub corner_mode_radius: bool,
     pub open_accordion_idx: usize,
     pub accordion_open: [bool; 6],
+    pub board_2d_pan: (f64, f64),
+    pub board_2d_zoom: f64,
 }
 
 impl CssRunnerState {
@@ -222,6 +229,8 @@ impl CssRunnerState {
             corner_mode_radius: true,
             open_accordion_idx: 0,
             accordion_open: [true, false, true, false, false, false],
+            board_2d_pan: (0.0, 0.0),
+            board_2d_zoom: 1.0,
         }
     }
 
@@ -580,6 +589,23 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     if actions & ACT_RUN_PIECE_3 != 0 && state.project.template.panels.len() > 3 {
         state.selected_piece_index = 3;
     }
+    if actions & ACT_RUN_2D_ZOOM_IN != 0 {
+        state.board_2d_zoom = (state.board_2d_zoom * 1.25).clamp(0.25, 8.0);
+    }
+    if actions & ACT_RUN_2D_ZOOM_OUT != 0 {
+        state.board_2d_zoom = (state.board_2d_zoom / 1.25).clamp(0.25, 8.0);
+    }
+    if actions & ACT_RUN_2D_FIT != 0 {
+        state.board_2d_pan = (0.0, 0.0);
+        state.board_2d_zoom = 1.0;
+    }
+    if actions & ACT_RUN_2D_NEXT_PIECE != 0 {
+        let count = state.project.template.panels.len().max(1);
+        state.selected_piece_index = (state.selected_piece_index + 1) % count;
+        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+            state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
+        }
+    }
 
     if actions != 0 || (had_result && !state.playing) {
         Invalidation::Structure
@@ -608,6 +634,35 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                         state.save_project();
                         return true;
                     }
+                    if ch == "]" {
+                        let count = state.project.template.panels.len().max(1);
+                        state.selected_piece_index = (state.selected_piece_index + 1) % count;
+                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                            state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
+                        }
+                        return true;
+                    }
+                    if ch == "[" {
+                        let count = state.project.template.panels.len().max(1);
+                        state.selected_piece_index = (state.selected_piece_index + count - 1) % count;
+                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                            state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
+                        }
+                        return true;
+                    }
+                    if ch == "+" || ch == "=" {
+                        state.board_2d_zoom = (state.board_2d_zoom * 1.25).clamp(0.25, 8.0);
+                        return true;
+                    }
+                    if ch == "-" || ch == "_" {
+                        state.board_2d_zoom = (state.board_2d_zoom / 1.25).clamp(0.25, 8.0);
+                        return true;
+                    }
+                    if ch == "0" {
+                        state.board_2d_pan = (0.0, 0.0);
+                        state.board_2d_zoom = 1.0;
+                        return true;
+                    }
                 }
                 if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
                     && name == "Escape"
@@ -625,7 +680,23 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
             state: btn_state,
             ..
         } => {
+            let was_down = state.pointer_down;
             state.pointer_down = *btn_state == cssimpler::renderer::ButtonState::Pressed;
+            if state.pointer_down && !was_down {
+                let is_2d_side = match state.layout_mode {
+                    ViewLayoutMode::TwoDOnly => true,
+                    ViewLayoutMode::ThreeDOnly => false,
+                    ViewLayoutMode::Split => state.last_pointer_pos.0 >= 800.0,
+                };
+                if is_2d_side && state.last_pointer_pos.1 >= 50.0 {
+                    let count = state.project.template.panels.len().max(1);
+                    state.selected_piece_index = (state.selected_piece_index + 1) % count;
+                    if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                        state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
+                    }
+                    return true;
+                }
+            }
             false
         }
         EngineEvent::PointerMoved { position, .. } => {
@@ -633,8 +704,21 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
             if state.pointer_down {
                 let dx = px - state.last_pointer_pos.0;
                 let dy = py - state.last_pointer_pos.1;
-                state.camera.yaw += dx * 0.008;
-                state.camera.pitch = (state.camera.pitch + dy * 0.008).clamp(-1.45, 1.45);
+                let is_2d_side = match state.layout_mode {
+                    ViewLayoutMode::TwoDOnly => true,
+                    ViewLayoutMode::ThreeDOnly => false,
+                    ViewLayoutMode::Split => px >= 800.0,
+                };
+                if is_2d_side {
+                    let speed = 0.003 / state.board_2d_zoom.clamp(0.2, 10.0);
+                    state.board_2d_pan.0 -= dx as f64 * speed;
+                    state.board_2d_pan.1 -= dy as f64 * speed;
+                    state.last_pointer_pos = (px, py);
+                    return true;
+                } else {
+                    state.camera.yaw += dx * 0.008;
+                    state.camera.pitch = (state.camera.pitch + dy * 0.008).clamp(-1.45, 1.45);
+                }
             }
             state.last_pointer_pos = (px, py);
             false
@@ -644,7 +728,18 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                 cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
                 cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
             };
-            state.camera.distance = (state.camera.distance - dy).clamp(0.5, 15.0);
+            let is_2d_side = match state.layout_mode {
+                ViewLayoutMode::TwoDOnly => true,
+                ViewLayoutMode::ThreeDOnly => false,
+                ViewLayoutMode::Split => state.last_pointer_pos.0 >= 800.0,
+            };
+            if is_2d_side {
+                let factor = 1.0 + dy as f64 * 0.15;
+                state.board_2d_zoom = (state.board_2d_zoom * factor).clamp(0.25, 8.0);
+                return true;
+            } else {
+                state.camera.distance = (state.camera.distance - dy).clamp(0.5, 15.0);
+            }
             false
         }
         _ => false,
@@ -1121,11 +1216,41 @@ fn build_runner_3d_viewport(_state: &CssRunnerState) -> Node {
 pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
     let (svg_nodes, view_box) = render_runner_2d_svg(state);
 
+    let panels = &state.project.template.panels;
+    let selected_panel = panels.get(state.selected_piece_index);
+    let selected_name = selected_panel.map_or("None", |p| p.name.as_str());
+    let (w_mm, h_mm) = selected_panel.map_or((0.0, 0.0), |p| {
+        let (w, h) = if let Some(poly) = &p.polygon {
+            let min_x = poly.points.iter().map(|pt| pt.x).fold(f64::INFINITY, f64::min);
+            let max_x = poly.points.iter().map(|pt| pt.x).fold(f64::NEG_INFINITY, f64::max);
+            let min_y = poly.points.iter().map(|pt| pt.y).fold(f64::INFINITY, f64::min);
+            let max_y = poly.points.iter().map(|pt| pt.y).fold(f64::NEG_INFINITY, f64::max);
+            (max_x - min_x, max_y - min_y)
+        } else {
+            (p.pattern.width, p.pattern.height)
+        };
+        (w * 1000.0, h * 1000.0)
+    });
+
+    let zoom_pct = (state.board_2d_zoom * 100.0).round() as i32;
+    let sub_text = format!(
+        "Tool: {} · Zoom: {}% · Selected: {} ({:.0}×{:.0} mm)",
+        state.active_2d_tool, zoom_pct, selected_name, w_mm, h_mm
+    );
+
     ui! {
         <div id="viewport-2d" class="viewport-container">
             <div class="viewport-header">
-                <span class="viewport-title">"2D Pattern Board"</span>
-                <span class="viewport-sub">"Metric rest geometry (metres)"</span>
+                <div class="viewport-header-left">
+                    <span class="viewport-title">"2D Pattern Board"</span>
+                    <span class="viewport-sub">{sub_text}</span>
+                </div>
+                <div class="viewport-tools">
+                    <button class="viewport-tool-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_2D_ZOOM_IN)} title="Zoom In (+)">"+"</button>
+                    <button class="viewport-tool-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_2D_ZOOM_OUT)} title="Zoom Out (-)">"-"</button>
+                    <button class="viewport-tool-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_2D_FIT)} title="Fit Board (0)">"Fit"</button>
+                    <button class="viewport-tool-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_2D_NEXT_PIECE)} title="Cycle Piece (])">"Next Piece ▾"</button>
+                </div>
             </div>
             <div class="canvas-area">
                 <svg viewBox={view_box} preserveAspectRatio="xMidYMid meet" class="svg-canvas">
@@ -1859,6 +1984,8 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
 
     struct PanelGeo {
         id: String,
+        name: String,
+        fabric: String,
         points: Vec<(f64, f64)>,
         curves: Vec<PanelCurve>,
         internal_lines: Vec<Vec<(f64, f64)>>,
@@ -1982,6 +2109,8 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
 
         panel_geos.push(PanelGeo {
             id: panel.id.clone(),
+            name: panel.name.clone(),
+            fabric: panel.fabric.clone(),
             points: shifted,
             curves: shifted_curves,
             internal_lines: shifted_internal_lines,
@@ -2001,7 +2130,7 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let global_min_y = panel_geos.iter().map(|p| p.min_y).fold(0.0_f64, f64::min);
     let global_max_y = panel_geos.iter().map(|p| p.max_y).fold(0.6_f64, f64::max);
 
-    // Isotropic aspect ratio: enforce a square viewbox (vb_w == vb_h) centered on content
+    // Isotropic aspect ratio with interactive pan & zoom
     let span_x = (global_max_x - global_min_x).max(0.2);
     let span_y = (global_max_y - global_min_y).max(0.2);
     let max_span = span_x.max(span_y).max(0.4);
@@ -2010,15 +2139,30 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let margin = (max_span * 0.12).max(0.06);
     let half_span = max_span * 0.5 + margin;
 
-    let vb_min_x = center_x - half_span;
-    let vb_min_y = center_y - half_span;
-    let vb_w = half_span * 2.0;
-    let vb_h = half_span * 2.0;
+    let zoom = state.board_2d_zoom.clamp(0.2, 10.0);
+    let view_span = (half_span * 2.0) / zoom;
+    let vb_min_x = center_x + state.board_2d_pan.0 - view_span * 0.5;
+    let vb_min_y = center_y + state.board_2d_pan.1 - view_span * 0.5;
+    let vb_w = view_span;
+    let vb_h = view_span;
     let view_box = format!("{vb_min_x:.3} {vb_min_y:.3} {vb_w:.3} {vb_h:.3}");
+
+    // Theme-matched styling colors
+    let is_dark = state.theme == Theme::Dark;
+    let bg_color = if is_dark { "#0d0f17" } else { "#f8fafc" };
+    let grid_minor = if is_dark { "#161c28" } else { "#e2e8f0" };
+    let grid_major = if is_dark { "#253147" } else { "#cbd5e1" };
+    let unsel_stroke = if is_dark { "#38bdf8" } else { "#2563eb" };
+    let unsel_fill = if is_dark { "rgba(56, 189, 248, 0.08)" } else { "rgba(37, 99, 235, 0.06)" };
+    let sel_stroke = if is_dark { "#f59e0b" } else { "#d97706" };
+    let sel_fill = if is_dark { "rgba(245, 158, 11, 0.18)" } else { "rgba(217, 119, 6, 0.14)" };
+    let badge_fill = if is_dark { "rgba(15, 23, 42, 0.90)" } else { "rgba(255, 255, 255, 0.92)" };
+    let badge_border = if is_dark { "#334155" } else { "#cbd5e1" };
+    let grain_color = if is_dark { "#60a5fa" } else { "#3b82f6" };
 
     // Background rect
     nodes.push(ui! {
-        <rect x={format!("{vb_min_x:.3}")} y={format!("{vb_min_y:.3}")} width={format!("{vb_w:.3}")} height={format!("{vb_h:.3}")} fill="#0d0f15" />
+        <rect x={format!("{vb_min_x:.3}")} y={format!("{vb_min_y:.3}")} width={format!("{vb_w:.3}")} height={format!("{vb_h:.3}")} fill={bg_color} />
     });
 
     // Drafting grid (minor 0.10m / 100mm, major 0.50m / 500mm)
@@ -2027,8 +2171,8 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let mut gx = start_gx;
     while gx <= vb_min_x + vb_w {
         let is_major = (gx.abs() % 0.5).abs() < 0.01;
-        let stroke = if is_major { "#252b3b" } else { "#181d28" };
-        let sw = if is_major { vb_w * 0.002 } else { vb_w * 0.001 };
+        let stroke = if is_major { grid_major } else { grid_minor };
+        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
         let pts = format!("{gx:.3},{:.3} {gx:.3},{:.3}", vb_min_y, vb_min_y + vb_h);
         nodes.push(ui! {
             <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
@@ -2039,8 +2183,8 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let mut gy = start_gy;
     while gy <= vb_min_y + vb_h {
         let is_major = (gy.abs() % 0.5).abs() < 0.01;
-        let stroke = if is_major { "#252b3b" } else { "#181d28" };
-        let sw = if is_major { vb_w * 0.002 } else { vb_w * 0.001 };
+        let stroke = if is_major { grid_major } else { grid_minor };
+        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
         let pts = format!("{:.3},{gy:.3} {:.3},{gy:.3}", vb_min_x, vb_min_x + vb_w);
         nodes.push(ui! {
             <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
@@ -2048,18 +2192,26 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         gy += grid_step;
     }
 
+    // Origin crosshair reference
+    if vb_min_x <= 0.0 && vb_min_x + vb_w >= 0.0 {
+        nodes.push(ui! {
+            <polyline points={format!("0.0,{:.3} 0.0,{:.3}", vb_min_y, vb_min_y + vb_h)} stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={format!("{:.4}", vb_w * 0.002)} stroke-opacity="0.3" />
+        });
+    }
+    if vb_min_y <= 0.0 && vb_min_y + vb_h >= 0.0 {
+        nodes.push(ui! {
+            <polyline points={format!("{:.3},0.0 {:.3},0.0", vb_min_x, vb_min_x + vb_w)} stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={format!("{:.4}", vb_w * 0.002)} stroke-opacity="0.3" />
+        });
+    }
+
     // Panels rendering
     for p in &panel_geos {
-        let stroke_color = if p.is_selected { "#f59e0b" } else { "#3b82f6" };
-        let fill_color = if p.is_selected {
-            "rgba(245, 158, 11, 0.14)"
-        } else {
-            "rgba(59, 130, 246, 0.08)"
-        };
+        let stroke_color = if p.is_selected { sel_stroke } else { unsel_stroke };
+        let fill_color = if p.is_selected { sel_fill } else { unsel_fill };
         let stroke_w = if p.is_selected {
-            vb_w * 0.0045
+            vb_w * 0.0055
         } else {
-            vb_w * 0.0025
+            vb_w * 0.0028
         };
 
         // Construct SVG path following straight edges and cubic Bézier curves
@@ -2098,7 +2250,7 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
                 l_pts_str.push_str(&format!("{x:.4},{y:.4}"));
             }
             nodes.push(ui! {
-                <polyline points={l_pts_str} fill="none" stroke="#64748b" stroke-dasharray={format!("{:.4},{:.4}", vb_w * 0.006, vb_w * 0.004)} stroke-width={format!("{:.4}", vb_w * 0.002)} />
+                <polyline points={l_pts_str} fill="none" stroke={if is_dark { "#64748b" } else { "#94a3b8" }} stroke-dasharray={format!("{:.4},{:.4}", vb_w * 0.006, vb_w * 0.004)} stroke-width={format!("{:.4}", vb_w * 0.002)} />
             });
         }
 
@@ -2112,7 +2264,7 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
                 h_pts_str.push_str(&format!("{x:.4},{y:.4}"));
             }
             nodes.push(ui! {
-                <polygon points={h_pts_str} fill="#0d0f15" stroke={stroke_color} stroke-width={format!("{:.4}", stroke_w * 0.8)} />
+                <polygon points={h_pts_str} fill={bg_color} stroke={stroke_color} stroke-width={format!("{:.4}", stroke_w * 0.8)} />
             });
         }
 
@@ -2128,20 +2280,20 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
                 let dash = format!("{:.4},{:.4}", vb_w * 0.004, vb_w * 0.003);
 
                 nodes.push(ui! {
-                    <polyline points={stalk1} fill="none" stroke="#38bdf8" stroke-width={stalk_w.clone()} stroke-dasharray={dash.clone()} />
+                    <polyline points={stalk1} fill="none" stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={stalk_w.clone()} stroke-dasharray={dash.clone()} />
                 });
                 nodes.push(ui! {
-                    <polyline points={stalk2} fill="none" stroke="#38bdf8" stroke-width={stalk_w} stroke-dasharray={dash} />
+                    <polyline points={stalk2} fill="none" stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={stalk_w} stroke-dasharray={dash} />
                 });
 
                 // Tangent control knobs
                 let handle_r = format!("{:.4}", vb_w * 0.006);
                 let handle_sw = format!("{:.4}", vb_w * 0.0015);
                 nodes.push(ui! {
-                    <circle cx={format!("{:.4}", c.c1.0)} cy={format!("{:.4}", c.c1.1)} r={handle_r.clone()} fill="#38bdf8" stroke="#ffffff" stroke-width={handle_sw.clone()} class="bezier-handle" />
+                    <circle cx={format!("{:.4}", c.c1.0)} cy={format!("{:.4}", c.c1.1)} r={handle_r.clone()} fill={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke="#ffffff" stroke-width={handle_sw.clone()} class="bezier-handle" />
                 });
                 nodes.push(ui! {
-                    <circle cx={format!("{:.4}", c.c2.0)} cy={format!("{:.4}", c.c2.1)} r={handle_r} fill="#38bdf8" stroke="#ffffff" stroke-width={handle_sw} class="bezier-handle" />
+                    <circle cx={format!("{:.4}", c.c2.0)} cy={format!("{:.4}", c.c2.1)} r={handle_r} fill={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke="#ffffff" stroke-width={handle_sw} class="bezier-handle" />
                 });
             }
         }
@@ -2163,7 +2315,7 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
                 vb_w * 0.0015
             }
         );
-        let vertex_stroke = if p.is_selected { "#f59e0b" } else { "#2563eb" };
+        let vertex_stroke = if p.is_selected { sel_stroke } else { unsel_stroke };
 
         for (pt_x, pt_y) in &p.points {
             nodes.push(ui! {
@@ -2171,25 +2323,61 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
             });
         }
 
-        // Grainline
+        // Grainline with bidirectional arrowheads
         let rad = p.grain_deg.to_radians();
-        let grain_len = ((p.max_x - p.min_x).min(p.max_y - p.min_y) * 0.35).max(0.05);
+        let grain_len = ((p.max_x - p.min_x).min(p.max_y - p.min_y) * 0.35).max(0.06);
         let (cx, cy) = p.center;
         let gx0 = cx - grain_len * rad.sin();
         let gy0 = cy - grain_len * rad.cos();
         let gx1 = cx + grain_len * rad.sin();
         let gy1 = cy + grain_len * rad.cos();
-        let g_pts = format!("{gx0:.3},{gy0:.3} {gx1:.3},{gy1:.3}");
+        let g_pts = format!("{gx0:.4},{gy0:.4} {gx1:.4},{gy1:.4}");
         nodes.push(ui! {
-            <polyline points={g_pts} stroke="#60a5fa" stroke-width={format!("{:.4}", vb_w * 0.002)} />
+            <polyline points={g_pts} stroke={grain_color} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
         });
 
-        // Label
-        let font_size = format!("{:.3}", (vb_w * 0.024).max(0.015));
+        // Arrowheads for grainline
+        let wing = vb_w * 0.008;
+        let w_cos = rad.cos() * wing;
+        let w_sin = rad.sin() * wing;
+        let ah1 = format!(
+            "{:.4},{:.4} {gx1:.4},{gy1:.4} {:.4},{:.4}",
+            gx1 - w_sin - w_cos,
+            gy1 - w_cos + w_sin,
+            gx1 - w_sin + w_cos,
+            gy1 - w_cos - w_sin
+        );
         nodes.push(ui! {
-            <text x={format!("{cx:.3}")} y={format!("{:.3}", cy - grain_len * 0.4)} fill="#cbd5e1" font-size={font_size} font-family="sans-serif">
-                {p.id.clone()}
-            </text>
+            <polyline points={ah1} fill="none" stroke={grain_color} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
+        });
+        let ah0 = format!(
+            "{:.4},{:.4} {gx0:.4},{gy0:.4} {:.4},{:.4}",
+            gx0 + w_sin - w_cos,
+            gy0 + w_cos + w_sin,
+            gx0 + w_sin + w_cos,
+            gy0 + w_cos - w_sin
+        );
+        nodes.push(ui! {
+            <polyline points={ah0} fill="none" stroke={grain_color} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
+        });
+
+        // Center CAD Piece Badge and orientation crosshair
+        let badge_w = vb_w * 0.075;
+        let badge_h = vb_w * 0.038;
+        let bx = cx - badge_w * 0.5;
+        let by = cy - badge_h * 0.5;
+        let badge_border_color = if p.is_selected { sel_stroke } else { badge_border };
+        nodes.push(ui! {
+            <rect x={format!("{bx:.4}")} y={format!("{by:.4}")} width={format!("{badge_w:.4}")} height={format!("{badge_h:.4}")} fill={badge_fill} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.002)} rx={format!("{:.4}", vb_w * 0.005)} ry={format!("{:.4}", vb_w * 0.005)} />
+        });
+        let ch_len = badge_w * 0.28;
+        let ch_h = format!("{:.4},{cy:.4} {:.4},{cy:.4}", cx - ch_len, cx + ch_len);
+        let ch_v = format!("{cx:.4},{:.4} {cx:.4},{:.4}", cy - ch_len, cy + ch_len);
+        nodes.push(ui! {
+            <polyline points={ch_h} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.0018)} />
+        });
+        nodes.push(ui! {
+            <polyline points={ch_v} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.0018)} />
         });
     }
 
@@ -2199,11 +2387,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         let p_b = panel_geos.iter().find(|p| p.id == seam.b.panel);
         if let (Some(a), Some(b)) = (p_a, p_b) {
             let pts = format!(
-                "{:.3},{:.3} {:.3},{:.3}",
+                "{:.4},{:.4} {:.4},{:.4}",
                 a.center.0, a.center.1, b.center.0, b.center.1
             );
             nodes.push(ui! {
-                <polyline points={pts} stroke="#10b981" stroke-dasharray={format!("{:.3},{:.3}", vb_w * 0.01, vb_w * 0.008)} stroke-width={format!("{:.4}", vb_w * 0.002)} />
+                <polyline points={pts} stroke="#10b981" stroke-dasharray={format!("{:.4},{:.4}", vb_w * 0.01, vb_w * 0.008)} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
             });
         }
     }
