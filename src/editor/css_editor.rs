@@ -267,7 +267,9 @@ pub struct CssEditorState {
     pub mesh_prep_error: Option<String>,
     // Pointer / camera drag state
     pub pointer_down: bool,
+    pub dragging_3d: bool,
     pub last_pointer_pos: (f32, f32),
+    pub window_size: (f32, f32),
     pub worker_tx: mpsc::Sender<RefWork>,
     pub worker_latest: RefLatest,
     pub generation: u64,
@@ -334,7 +336,9 @@ impl CssEditorState {
             mesh_prep_transition: trans,
             mesh_prep_error: None,
             pointer_down: false,
+            dragging_3d: false,
             last_pointer_pos: (0.0, 0.0),
+            window_size: (1600.0, 980.0),
             worker_tx,
             worker_latest,
             generation: 1,
@@ -657,8 +661,32 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
     }
 }
 
+fn editor_viewport_3d_contains(state: &CssEditorState, px: f32, py: f32) -> bool {
+    let win_w = state.window_size.0.max(100.0);
+    let win_h = state.window_size.1.max(100.0);
+    let body_y = 40.0_f32 + 32.0;
+    let body_h = (win_h - 40.0 - 26.0 - 32.0).max(1.0);
+    let left_w = 48.0_f32 + if state.left_drawer_open { 240.0 } else { 0.0 };
+    let right_w = 48.0_f32 + 300.0;
+    let stage_w = (win_w - left_w - right_w).max(1.0);
+    let vp3d_w = match state.layout_mode {
+        ViewLayoutMode::TwoDOnly => return false,
+        ViewLayoutMode::ThreeDOnly => stage_w,
+        ViewLayoutMode::Split => stage_w * 0.5,
+    };
+    px >= left_w && px <= left_w + vp3d_w && py >= body_y && py <= body_y + body_h
+}
+
 pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> bool {
     match event {
+        EngineEvent::ViewportChanged(vp) => {
+            let new_size = (vp.width.max(1) as f32, vp.height.max(1) as f32);
+            if state.window_size != new_size {
+                state.window_size = new_size;
+                return true;
+            }
+            false
+        }
         EngineEvent::Key(k) => {
             if k.state == cssimpler::renderer::ButtonState::Pressed {
                 if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key {
@@ -692,15 +720,23 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
             state: btn_state,
             ..
         } => {
-            state.pointer_down = *btn_state == cssimpler::renderer::ButtonState::Pressed;
+            let pressed = *btn_state == cssimpler::renderer::ButtonState::Pressed;
+            state.pointer_down = pressed;
+            if pressed {
+                let (px, py) = state.last_pointer_pos;
+                state.dragging_3d = !state.command_palette_open
+                    && !state.solver_menu_open
+                    && editor_viewport_3d_contains(state, px, py);
+            } else {
+                state.dragging_3d = false;
+            }
             false
         }
         EngineEvent::PointerMoved { position, .. } => {
             let (px, py) = (position.x, position.y);
-            if state.pointer_down {
+            if state.pointer_down && state.dragging_3d {
                 let dx = px - state.last_pointer_pos.0;
                 let dy = py - state.last_pointer_pos.1;
-                // If dragging in 3D viewport region, orbit camera
                 state.camera.yaw += dx * 0.008;
                 state.camera.pitch = (state.camera.pitch + dy * 0.008).clamp(-1.45, 1.45);
             }
@@ -708,11 +744,14 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
             false
         }
         EngineEvent::Scroll { delta, .. } => {
-            let dy = match delta {
-                cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
-                cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
-            };
-            state.camera.distance = (state.camera.distance - dy).clamp(0.5, 12.0);
+            let (px, py) = state.last_pointer_pos;
+            if editor_viewport_3d_contains(state, px, py) {
+                let dy = match delta {
+                    cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
+                    cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
+                };
+                state.camera.distance = (state.camera.distance - dy).clamp(0.5, 12.0);
+            }
             false
         }
         _ => false,

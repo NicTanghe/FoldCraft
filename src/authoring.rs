@@ -1875,17 +1875,38 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             if !position.is_finite() {
                 return Err("Point coordinates must be finite".into());
             }
-            let p = template
-                .panels
-                .iter_mut()
-                .find(|p| p.id == panel)
-                .ok_or("Panel not found")?;
-            // Absolute coordinates are assigned directly, never reconstructed
-            // from a delta, so the typed value is stored bit-for-bit.
-            remap_anchors(p, &[anchor], |_| position)?;
-            // Re-basing the local origin keeps every untouched point at the same
-            // board and world position, exactly like a dragged contour edit.
-            normalize(p);
+            if corner_tool::connected_seam_corners(source, &panel, anchor).len() > 1 {
+                let current = *source
+                    .panels
+                    .iter()
+                    .find(|p| p.id == panel)
+                    .ok_or("Panel not found")?
+                    .polygon
+                    .as_ref()
+                    .ok_or("This panel has no editable contour")?
+                    .points
+                    .get(anchor)
+                    .ok_or("Point index out of range")?;
+                corner_tool::move_points_connected(
+                    source,
+                    &mut template,
+                    &panel,
+                    &[anchor],
+                    position - current,
+                )?;
+            } else {
+                let p = template
+                    .panels
+                    .iter_mut()
+                    .find(|p| p.id == panel)
+                    .ok_or("Panel not found")?;
+                // Absolute coordinates are assigned directly, never reconstructed
+                // from a delta, so the typed value is stored bit-for-bit.
+                remap_anchors(p, &[anchor], |_| position)?;
+                // Re-basing the local origin keeps every untouched point at the same
+                // board and world position, exactly like a dragged contour edit.
+                normalize(p);
+            }
             selected = Some(panel);
         }
         Command::MovePoints {
@@ -1893,16 +1914,7 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             points,
             delta,
         } => {
-            if !delta.is_finite() {
-                return Err("Move delta must be finite".into());
-            }
-            let p = template
-                .panels
-                .iter_mut()
-                .find(|p| p.id == panel)
-                .ok_or("Panel not found")?;
-            remap_anchors(p, &points, |point| point + delta)?;
-            normalize(p);
+            corner_tool::move_points_connected(source, &mut template, &panel, &points, delta)?;
             selected = Some(panel);
         }
         Command::MovePointGroups {
@@ -2250,38 +2262,7 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             anchor,
             curved,
         } => {
-            let p = template
-                .panels
-                .iter_mut()
-                .find(|p| p.id == panel)
-                .ok_or("Panel not found")?;
-            let polygon = p
-                .polygon
-                .as_mut()
-                .ok_or("This panel has no editable contour")?;
-            let count = polygon.points.len();
-            if anchor >= count {
-                return Err("Point index out of range".into());
-            }
-            let previous = (anchor + count - 1) % count;
-            let outgoing = polygon.edges[anchor].clone();
-            let incoming = polygon.edges[previous].clone();
-            for (name, start) in [(&outgoing, anchor), (&incoming, previous)] {
-                if curved {
-                    if !polygon.curves.contains_key(name) {
-                        let a = polygon.points[start];
-                        let b = polygon.points[(start + 1) % count];
-                        // Collinear controls at 1/3 and 2/3 trace the straight
-                        // segment exactly, so becoming a curve changes nothing.
-                        polygon
-                            .curves
-                            .insert(name.clone(), [a.lerp(b, 1. / 3.), a.lerp(b, 2. / 3.)]);
-                    }
-                } else {
-                    polygon.curves.remove(name);
-                }
-            }
-            normalize(p);
+            corner_tool::curve_point_connected(source, &mut template, &panel, anchor, curved)?;
             selected = Some(panel);
         }
         Command::TargetLength {
