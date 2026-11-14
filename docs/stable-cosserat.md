@@ -1,7 +1,9 @@
 # Stable Cosserat rods: CPU research implementation
 
-`cosserat` is an opt-in f64 rod-network solver, not a new cloth-shell backend or
-an editor mode. It implements the material and local alternating solve from
+`cosserat` is an opt-in f64 rod-network solver. The desktop solver menu offers
+an **experimental CPU Cosserat / OGC** mode for compiled garments. It is an
+approximate rod-truss alternative, not a calibrated cloth-shell backend. The
+solver implements the material and local alternating solve from
 Hsu, Wang, Wu and Yuksel, [Stable Cosserat Rods](https://graphics.cs.utah.edu/research/projects/stable-cosserat-rods/)
 (SIGGRAPH 2025), with a deliberately small-scene CPU contact experiment. It
 does **not** reproduce the published GPU yarn-cloth benchmarks.
@@ -18,7 +20,8 @@ Call `RodModel::new` with *rest* vertex positions in metres, segment endpoint
 pairs, joint pairs, optional rest material frames, pin lists and one material.
 Each joint connects two segments sharing a vertex. Segment/joint indices are
 runtime data; this API is not a garment file format. No panel, seam, saved
-project or 2D material coordinate is converted into a rod implicitly. The
+project or 2D material coordinate is converted into a rod by the low-level API
+implicitly. The garment adapter below compiles the existing material-space mesh. The
 existing fiber guides remain geometric surface attachments, not physical yarns.
 
 Each segment stores a unit quaternion rotating local +X onto its rest tangent.
@@ -212,18 +215,21 @@ contact. The general attachment binder's work limit can reject large panels.
 `GarmentRodNetwork` is a CPU research harness that combines all compiled panel
 triangle edges into one welded rod truss, uses existing compiled seam samples
 and pin membership, and initializes rod positions and velocities from the
-compiled garment's placed 3D state. Rod rest lengths still come solely from the
+compiled garment's placed or currently displayed 3D state. Rod rest lengths still come solely from the
 2D material coordinates. Near-opposite triangle edges are paired deterministically into approximate rod
 paths, and the explicit rod bending/twist rigidity applies at those joints.
 Their placement and stiffness depend on triangulation and are not a calibrated
 yarn weave or fabric bending model. Rod frames initialize from placed edge
 tangents and adjacent face normals; degenerate or opposing face normals are
 rejected. Vertex order matches the compiled garment mesh. The harness takes one
-explicitly supplied isotropic rod material for the entire model; it does not
-convert or calibrate the garment's fabric or grain. The separate fixed-avatar
-research path below is not wired to the editor. User interaction, project-cache
-integration and UI/worker integration are absent; this is not a complete garment
-backend.
+explicitly supplied isotropic rod material for the entire model. The desktop
+adapter derives one approximate material from the compiled garment: total mesh
+mass divided by unique rod-edge length for linear density; total material area
+divided by that length for equivalent width; area-weighted averages of warp,
+weft and shear multiplied by width for stretch/shear rigidity; and area-weighted
+bending multiplied by width for bend/twist rigidity. This is mesh-dependent and
+discards grain, directional response and per-panel material differences. It is
+not yarn reconstruction or a measured fabric calibration.
 
 `RodCheckpoint` serializes the full rod state (including orientations and
 fixed-point history) along with a versioned exact witness of the compiled rod
@@ -254,11 +260,22 @@ exclusions and floating-point predicates limit its guarantees. It does not
 repair intersections, determine whether a garment already lies inside a closed
 avatar, implement friction or animated avatars, or directly collide a yarn
 cross-section against the surface. The exhaustive per-vertex detections are a
-CPU research path with no production performance claim. The editor and solver
-menu do not use it.
+CPU research path with no production performance claim. The desktop worker uses
+it for the experimental solver-menu option. It keeps rod orientations and
+fixed-point history between worker steps, and transfers the displayed garment
+positions, velocities and time when selected. Switching solvers or reloading a
+project reconstructs rod frames from the current mesh; `FittingProject` v1 does
+not store rod history. The mode rejects Grab operations explicitly. It uses the
+current fixed avatar and OGC settings, sewing samples and pins, and does not
+initialize GPU compute. Large or degenerate rod networks may be rejected; the
+rod model currently limits networks to 4096 vertices. The menu badge and status
+identify the mode as experimental. CPU step duration is complete worker
+compute time, not rendering cadence. Existing VBD-specific diagnostics are
+unavailable in this mode and are not rod convergence evidence.
 
 `RodAvatarCheckpoint` additionally records an exact witness of the fixed
 avatar vertices, combined triangle topology and OGC settings. Restoration
 rejects a changed witness transactionally; rod time-step, gravity, drag and
 rod-barrier settings must still be managed by the caller. This research cache is
-not yet part of a saved fitting project or the desktop worker.
+not yet part of a saved fitting project. The desktop worker retains its own
+in-memory rod state, not this serialized checkpoint format.

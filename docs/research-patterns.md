@@ -1,6 +1,6 @@
 # Patterns, sewing and fiber mapping — review of 14 October 2026
 
-**Stable Cosserat update:** The [CPU rod-network research implementation](stable-cosserat.md) has physical segment frames and optional rod self-contact. Existing garment fiber guides remain geometric attachments; yarn-level garment topology and cloth coupling are not implemented.
+**Stable Cosserat update:** The [CPU rod-network research implementation](stable-cosserat.md) has physical segment frames and optional rod self-contact. An experimental solver-menu adapter compiles material-space panel edges, sewing and fixed-avatar OGC contact using an approximate isotropic material. Existing garment fiber guides remain geometric attachments; yarn-level garment topology and calibrated cloth coupling are not implemented.
 
 
 A targeted primary-source review to guide modules, not a reproduction of the papers or an exhaustive ranking. Existing implementations are independent and documented in [template-format.md](template-format.md).
