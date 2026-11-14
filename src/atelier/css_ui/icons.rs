@@ -142,26 +142,26 @@ pub fn icon_export() -> Node {
     }
 }
 
+// Inspired by the day/night switch by Benjamin Réthoré and mobinkakei:
+// https://uiverse.io/mobinkakei/strong-lizard-79 (MIT).
 pub fn icon_day_night_switch(is_dark: bool) -> Node {
-    let mode_class = if is_dark {
+    let class = if is_dark {
         "day-night-switch dark"
     } else {
         "day-night-switch light"
     };
-
     ui! {
-        <div class={mode_class}>
-            <div class="toggle__handler switch-thumb">
-                <div class="crater crater--1"></div>
-                <div class="crater crater--2"></div>
-                <div class="crater crater--3"></div>
+        <div class={class}>
+            <span class="sky-shape shape1"></span>
+            <span class="sky-shape shape2"></span>
+            <span class="sky-shape shape3"></span>
+            <span class="sky-shape shape4"></span>
+            <span class="sky-shape shape5"></span>
+            <div id="theme-switch-thumb" class="switch-thumb">
+                <span class="crater crater1"></span>
+                <span class="crater crater2"></span>
+                <span class="crater crater3"></span>
             </div>
-            <div class="star star--1"></div>
-            <div class="star star--2"></div>
-            <div class="star star--3"></div>
-            <div class="star star--4"></div>
-            <div class="star star--5"></div>
-            <div class="star star--6"></div>
         </div>
     }
 }

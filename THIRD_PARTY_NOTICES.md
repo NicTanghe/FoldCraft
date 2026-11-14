@@ -24,3 +24,32 @@ separate checkout of Box3D and does not vendor that project's source. Box3D
 retains its own MIT license; keep its notice when distributing a combined
 build. The pinned source and experimental limitations are recorded in
 [the solver laboratory](docs/solver-lab.md).
+
+## Stable Cosserat Rods CPU implementation
+
+`src/cosserat.rs` adapts the CPU position and orientation updates from Jerry
+Hsu's [StableCosseratRods](https://github.com/jerry060599/StableCosseratRods),
+revision `11081ed22ceb3f8824f447b64557745895676d0a`, particularly
+`KittenEngine/Cosserat/sim/lambda.cpp`, `vbd.cpp`, `iterate.cpp` and
+`initialization/init.cpp`. The original code uses the MIT license below. The
+separate YarnBall GPU repository is GPL-licensed and is not incorporated.
+
+Copyright 2025 Jerry Hsu
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

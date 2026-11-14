@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.25,
+  "clock": 3.342039609635428,
   "tickets": [
     {
       "id": "FC-0001",
@@ -595,7 +595,7 @@
       "depends_on": [],
       "status": "ready",
       "owner": null,
-      "vruntime": 3.0,
+      "vruntime": 3.127958278655143,
       "pr": null
     },
     {
@@ -640,16 +640,173 @@
     },
     {
       "id": "FC-0048",
-      "title": "2D pattern board interactive pan/zoom/selection overhaul, sleek CAD styling, and slow theme color transitions with 3D/2D viewport background sync",
-      "acceptance": "2D pattern board supports interactive pan and zoom gestures and piece selection; gorgeous CAD styling with piece badges, dimensions, grainlines, seam notches and theme-matched background/grid; slow smooth transition between day/night colors across the entire studio affecting 3D and 2D viewport backdrops; all CPU tests pass.",
+      "title": "Animate day and night theme switch",
+      "acceptance": "Theme toggle animates a moon and sun with stars morphing into clouds in both directions, without AM/PM; preserves theme behavior.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/45"
+    },
+    {
+      "id": "FC-0049",
+      "title": "Adopt cssimpler instance handlers and transition fixes",
+      "acceptance": "Pin the reviewed cssimpler revision; isolate editor and runner actions per instance; preserve existing controls and theme transitions across unrelated changes; verify CPU and desktop checks without GPU execution.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.375,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/47"
+    },
+    {
+      "id": "FC-0050",
+      "title": "Keep theme transitions advancing during simulation updates",
+      "acceptance": "Preserve the tested day/night switch; both editor modes reach both theme endpoints during repeated simulation UI updates and normal idle; keep worker scheduling independent and CPU tests GPU-free.",
+      "points": 2.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.25,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/45"
+    },
+    {
+      "id": "FC-0051",
+      "title": "Implement stable Cosserat rod CPU research solver",
+      "acceptance": "Implement attributed MIT-source-based stable Cosserat position and quasi-static orientation solves with independently specified rest geometry, SI parameters, pinned points and frames, validated steps and CPU falsifiable tests; document exact scope, limits and reproducible rod example without modifying cloth solver.",
+      "points": 5.0,
+      "spent": 5.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": null,
+      "vruntime": 3.625,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/48"
+    },
+    {
+      "id": "FC-0052",
+      "title": "Define and compile rod-based garment material topology",
+      "acceptance": "Provide explicit, documented physical rod material and topology for garment panels in rest coordinates with stable authored identity, validation, reproducible compilation and cache invalidation; preserve legacy projects and nonphysical fiber guides.",
+      "points": 5.0,
+      "spent": 4.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.5,
+      "pr": null
+    },
+    {
+      "id": "FC-0053",
+      "title": "Integrate rod garment dynamics with sewing and contact",
+      "acceptance": "Advance compiled rod garments with compatible sewing, avatar and self-contact, pins and interaction; preserve rest geometry and provide falsifiable tests and documented limitations.",
+      "points": 5.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0052"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": null
+    },
+    {
+      "id": "FC-0054",
+      "title": "Expose rod garment solver in the native solver selector",
+      "acceptance": "Select and run the validated rod garment solver from the native menu with coherent worker state, display, project transitions and user-visible errors; exercise real garment workflows in CPU tests.",
       "points": 3.0,
       "spent": 0,
       "priority": "urgent",
-      "depends_on": [],
-      "status": "active",
-      "owner": "antigravity",
+      "depends_on": [
+        "FC-0053"
+      ],
+      "status": "ready",
+      "owner": null,
       "vruntime": 3.0,
       "pr": null
+    },
+    {
+      "id": "FC-0055",
+      "title": "Compile actual garment panels to rod support and map seams",
+      "acceptance": "Experimentally compile real panel material triangulations into bounded rod networks with correct support mapping and identify seam attachment requirements; prove boundaries, holes, and physical limitations with CPU tests.",
+      "points": 4.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.35,
+      "pr": null
+    },
+    {
+      "id": "FC-0056",
+      "title": "Implement seam-aware rod contact and garment integration",
+      "acceptance": "Integrate sewing and rod self-contact with explicit local exclusions and tested objective, force, bounds and transactional state; continue garment workflow integration on the existing feature branch.",
+      "points": 5.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.4214285714285713,
+      "pr": null
+    },
+    {
+      "id": "FC-0057",
+      "title": "Add garment rod bending and restart foundation",
+      "acceptance": "Add tested rotation-objective bending joints and consistent placed-state orientation for garment rod networks, with explicit parameters and cache compatibility; preserve rest coordinates and existing formats.",
+      "points": 5.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.482034632034632,
+      "pr": null
+    },
+    {
+      "id": "FC-0058",
+      "title": "Integrate avatar contact into garment rod solves",
+      "acceptance": "Use existing safe geometric contact for garment rods and fixed avatar in implicit solves with start validation, conservative bounds, objective and CPU tests; document exclusions and limits.",
+      "points": 5.0,
+      "spent": 1.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.40581511983951,
+      "pr": null
+    },
+    {
+      "id": "FC-0059",
+      "title": "2D pattern board interactive pan/zoom/selection overhaul, sleek CAD styling, and slow theme color transitions with 3D/2D viewport background sync",
+      "acceptance": "2D pattern board supports interactive pan and zoom gestures and piece selection; gorgeous CAD styling with piece badges, dimensions, grainlines, seam notches and theme-matched background/grid; slow smooth transition between day/night colors across the entire studio affecting 3D and 2D viewport backdrops; all CPU tests pass.",
+      "points": 3.0,
+      "spent": 3.0,
+      "priority": "urgent",
+      "depends_on": [],
+      "status": "done",
+      "owner": "antigravity",
+      "vruntime": 3.0,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/50"
     }
   ]
 }
