@@ -135,3 +135,27 @@ segment endpoints, several segment pairs can contribute to the same physical
 crossing; the barrier is not deduplicated, and contact stiffness is dependent
 on segmentation. No calibrated yarn radius or yarn-level garment attachment is
 claimed.
+
+## Experimental surface attachment
+
+`garment::rod_attachment` provides an independent, runtime-only mapping from
+panel-local material points to a caller-supplied triangulation over rod points.
+The support triangles are interpolation cells; they introduce no physical
+shell elements, stiffness, sewing or collisions. Binding rejects uncovered
+points, degenerate cells and ambiguous overlapping cells at queried positions;
+points on a shared edge are accepted only when their coefficients agree. It
+does not establish that the supplied support covers the whole panel or respects
+holes and boundaries. The caller must guarantee this, use support vertices
+corresponding to rod positions, and rebuild the mapping whenever topology or
+rest coordinates change. The mapping cannot detect reordered topology with the
+same vertex count. No vertex indices are stored in authoring files.
+
+This is a building block, not a panel-to-yarn compiler or a solver-menu option.
+In particular, yarn crossings, seam coupling, collision and rendering remain
+unimplemented; mapping a visual surface alone cannot provide those physics.
+
+`GarmentRodMapping` binds the compiled vertex material coordinates of one named
+panel and retains the compiled garment for identity checks. Its output is in
+that panel's compiled vertex order. This makes an existing panel usable as the
+visible surface, but still requires an independently constructed and correctly
+ordered rod support; `evaluate` rejects a different compiled garment.
