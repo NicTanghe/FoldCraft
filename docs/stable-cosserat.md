@@ -93,8 +93,9 @@ candidate when the segment directions are numerically independent. Below its
 near-parallel threshold the interior can be missed: energy, forces and the
 reported minimum can be approximate there. Floating-point
 predicates are not certified; the tests do not prove a universal nonintersection
-guarantee. Friction, self-contact for excluded pairs, rod/shell or rod/avatar
-contacts, and collision response for existing garment meshes are absent.
+guarantee. Friction, self-contact for excluded pairs and direct rod-segment
+against triangle contact are absent. The separate experimental surface path
+below handles the garment triangle surface against a fixed avatar.
 
 ## Reproduce and validation
 
@@ -196,8 +197,8 @@ but exclude the full segment pair, not just the stitched points: separation is
 not guaranteed for excluded pairs, and long segments make the excluded region
 larger. Every other pair remains in detection. Sewing energy is included in the
 contact line search and all positional residuals. Start from a separated state
-for every nonexcluded pair. Avatar contact, friction, certified geometric
-predicates and production-scale sewing convergence remain unimplemented.
+for every nonexcluded pair. Friction, certified geometric predicates and
+production-scale sewing convergence remain unimplemented.
 
 `PanelRodNetwork::compile` is an additional research topology that turns each
 edge of an existing compiled panel triangulation into a rod, retaining the
@@ -219,9 +220,10 @@ yarn weave or fabric bending model. Rod frames initialize from placed edge
 tangents and adjacent face normals; degenerate or opposing face normals are
 rejected. Vertex order matches the compiled garment mesh. The harness takes one
 explicitly supplied isotropic rod material for the entire model; it does not
-convert or calibrate the garment's fabric or grain. Avatar collision, user
-interaction, project-cache integration and UI/worker integration are absent;
-this is not a complete garment backend.
+convert or calibrate the garment's fabric or grain. The separate fixed-avatar
+research path below is not wired to the editor. User interaction, project-cache
+integration and UI/worker integration are absent; this is not a complete garment
+backend.
 
 `RodCheckpoint` serializes the full rod state (including orientations and
 fixed-point history) along with a versioned exact witness of the compiled rod
@@ -230,3 +232,27 @@ stiffness, pins or stitches and preserves the destination state on error.
 The witness is not a hash. This is a research API, not an existing project
 format; callers must separately persist compatible solver/contact settings and
 invalidate checkpoints when those settings make resumption inappropriate.
+
+
+## Experimental fixed-avatar surface contact
+
+`GarmentRodAvatar` wraps a compiled garment rod network with a fixed triangle
+surface using the existing CPU OGC world. Garment triangles and avatar faces
+participate in vertex-face and edge-edge detection; local sewing exclusions
+follow the existing garment seam samples. Each free-vertex update refreshes
+detection, adds the OGC contact gradient to the rod/sewing objective and clips
+the candidate to the OGC region before energy-checked backtracking. The solve
+uses the rod local Hessian as a positive search preconditioner; the OGC Hessian
+is not included. Final residuals include OGC contact forces, and
+`surface_contact_energy_j` reports OGC surface energy, including garment
+self-contact as well as avatar contact. Enabling the separate rod barrier too
+adds a second self-contact energy; it is an experiment, not calibrated cloth.
+
+The avatar is fixed for the lifetime of this wrapper. OGC starts from an
+initially separated state and applies only to included pairs; seam-local
+exclusions and floating-point predicates limit its guarantees. It does not
+repair intersections, determine whether a garment already lies inside a closed
+avatar, implement friction or animated avatars, or directly collide a yarn
+cross-section against the surface. The exhaustive per-vertex detections are a
+CPU research path with no production performance claim. The editor and solver
+menu do not use it.

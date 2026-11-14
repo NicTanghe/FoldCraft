@@ -146,6 +146,8 @@ pub struct RodMetrics {
     pub position_residual_rms_n: Option<f64>,
     pub max_stretch_shear: f64,
     pub contact_energy_j: f64,
+    /// OGC surface-contact energy, J; zero without a surface world.
+    pub surface_contact_energy_j: f64,
     /// Minimum computed closest-pair distance; nearly parallel pairs use the
     /// existing floating-point closest-feature heuristic, not exact predicates.
     pub minimum_nonadjacent_distance_m: Option<f64>,
@@ -514,6 +516,25 @@ impl RodModel {
     /// nonadjacent rod segment pairs. There is no friction or angular inertia;
     /// the last accepted state survives an error.
     pub fn step(&self, state: &mut RodState, settings: RodSettings) -> Result<RodMetrics, String> {
+        self.step_impl(state, settings, None)
+    }
+
+    pub(crate) fn step_with_surface_contact(
+        &self,
+        state: &mut RodState,
+        settings: RodSettings,
+        world: &mut crate::ogc::OgcWorld,
+        surface: &crate::ogc::OgcSettings,
+    ) -> Result<RodMetrics, String> {
+        self.step_impl(state, settings, Some((world, surface)))
+    }
+
+    fn step_impl(
+        &self,
+        state: &mut RodState,
+        settings: RodSettings,
+        mut surface: Option<(&mut crate::ogc::OgcWorld, &crate::ogc::OgcSettings)>,
+    ) -> Result<RodMetrics, String> {
         let started = Instant::now();
         self.validate_state(state)?;
         if !settings.dt_s.is_finite()
@@ -530,6 +551,14 @@ impl RodModel {
             contact.validate()?;
             self.contact_stats(&state.positions, contact)?;
         }
+        if let Some((world, surface_settings)) = surface.as_mut() {
+            surface_settings.validate()?;
+            if world.moving != state.positions.len() {
+                return Err("Surface contact topology does not match rod state".into());
+            }
+            let x = world.positions(&state.positions);
+            world.validate_start(&x)?;
+        }
         let h = settings.dt_s;
         let mut next = state.clone();
         let mut bounded_updates = 0;
@@ -538,7 +567,7 @@ impl RodModel {
         for (i, p) in prediction.iter_mut().enumerate() {
             if self.inverse_masses[i] > 0.0 {
                 *p += h * state.velocities[i] + h * h * settings.gravity_m_s2;
-                if settings.contact.is_none() {
+                if settings.contact.is_none() && surface.is_none() {
                     next.positions[i] += h * state.velocities[i];
                 }
             } else {
@@ -581,6 +610,29 @@ impl RodModel {
                         Ok(())
                     })?;
                 }
+                let surface_local = if let Some((world, surface_settings)) = surface.as_mut() {
+                    let x = world.positions(&next.positions);
+                    let contacts =
+                        world.detect(&x, 2.0 * surface_settings.radius, surface_settings)?;
+                    if contacts.minimum_distance <= 1e-12 {
+                        return Err("Surface contact has zero separation".into());
+                    }
+                    for &contact_index in &contacts.incident[i] {
+                        let (_, gradient, _) = contacts.contacts[contact_index].block(
+                            &x,
+                            i,
+                            surface_settings.radius,
+                            surface_settings.stiffness,
+                        );
+                        if !gradient.is_finite() {
+                            return Err("Surface contact force is non-finite".into());
+                        }
+                        force -= gradient;
+                    }
+                    Some((contacts, x, (*surface_settings).clone()))
+                } else {
+                    None
+                };
                 let delta = if settings.contact.is_some() {
                     matrix.inverse() * force
                 } else {
@@ -589,36 +641,64 @@ impl RodModel {
                 if !delta.is_finite() {
                     return Err("rod position solve became non-finite".into());
                 }
-                if let Some(contact) = settings.contact {
+                if settings.contact.is_some() || surface_local.is_some() {
                     let mut fraction: f64 = 1.0;
                     let distance = delta.length();
-                    self.for_each_contact_pair(&next.positions, |a, b, sample| {
-                        if a.contains(&i) || b.contains(&i) {
-                            if sample.safe_distance <= contact.clearance_m {
-                                return Err("rod segment separation cannot be established above numerical clearance".into());
+                    if let Some(contact) = settings.contact {
+                        self.for_each_contact_pair(&next.positions, |a, b, sample| {
+                            if a.contains(&i) || b.contains(&i) {
+                                if sample.safe_distance <= contact.clearance_m {
+                                    return Err("rod segment separation cannot be established above numerical clearance".into());
+                                }
+                                if distance > 0.0 {
+                                    fraction = fraction.min(0.8 * (sample.safe_distance - contact.clearance_m) / distance);
+                                }
                             }
-                            if distance > 0.0 {
-                                fraction = fraction.min(0.8 * (sample.safe_distance - contact.clearance_m) / distance);
-                            }
+                            Ok(())
+                        })?;
+                    }
+                    let original = next.positions[i];
+                    let mut bounded_delta = delta * fraction.clamp(0.0, 1.0);
+                    if let Some((contacts, _, _)) = &surface_local {
+                        let (candidate, clipped) =
+                            contacts.truncate_step(i, original, original + bounded_delta);
+                        bounded_delta = candidate - original;
+                        if clipped {
+                            bounded_updates += 1;
                         }
-                        Ok(())
-                    })?;
+                    }
                     if fraction < 1.0 {
                         bounded_updates += 1;
                     }
-                    fraction = fraction.clamp(0.0, 1.0);
-                    let original = next.positions[i];
-                    let before = self.local_objective(i, &next, &prediction, h, contact)?;
+                    let mut base_surface = 0.0;
+                    if let Some((contacts, x, surface_settings)) = &surface_local {
+                        base_surface = contacts.value(x, surface_settings);
+                    }
+                    let before =
+                        self.local_objective(i, &next, &prediction, h, settings.contact)?
+                            + base_surface;
                     let mut accepted = false;
+                    let mut scale = 1.0;
                     for _ in 0..32 {
-                        next.positions[i] = original + fraction * delta;
-                        match self.local_objective(i, &next, &prediction, h, contact) {
-                            Ok(after) if after <= before + 1e-12 * before.abs().max(1e-12) => {
+                        next.positions[i] = original + scale * bounded_delta;
+                        let surface_value =
+                            if let Some((contacts, x, surface_settings)) = &surface_local {
+                                let mut candidate_x = x.clone();
+                                candidate_x[i] = next.positions[i];
+                                contacts.value(&candidate_x, surface_settings)
+                            } else {
+                                0.0
+                            };
+                        match self.local_objective(i, &next, &prediction, h, settings.contact) {
+                            Ok(after)
+                                if after + surface_value
+                                    <= before + 1e-12 * before.abs().max(1e-12) =>
+                            {
                                 accepted = true;
                                 break;
                             }
                             _ => {
-                                fraction *= 0.5;
+                                scale *= 0.5;
                             }
                         }
                     }
@@ -749,6 +829,29 @@ impl RodModel {
             } else {
                 (0.0, None)
             };
+        let mut surface_contact_energy_j = 0.0;
+        if let Some((world, surface_settings)) = surface.as_mut() {
+            let x = world.positions(&next.positions);
+            let contacts = world.detect(&x, 2.0 * surface_settings.radius, surface_settings)?;
+            if contacts.minimum_distance <= 1e-12 {
+                return Err("Surface contact has zero separation".into());
+            }
+            surface_contact_energy_j = contacts.value(&x, surface_settings);
+            for (vertex, residual) in residuals.iter_mut().enumerate() {
+                for &index in &contacts.incident[vertex] {
+                    let (_, gradient, _) = contacts.contacts[index].block(
+                        &x,
+                        vertex,
+                        surface_settings.radius,
+                        surface_settings.stiffness,
+                    );
+                    *residual += gradient;
+                }
+            }
+            if !surface_contact_energy_j.is_finite() {
+                return Err("Surface contact energy is non-finite".into());
+            }
+        }
         for (i, r) in residuals.into_iter().enumerate() {
             if self.inverse_masses[i] > 0.0 {
                 residual_sum += r.length_squared();
@@ -769,6 +872,7 @@ impl RodModel {
             position_residual_rms_n: residual,
             max_stretch_shear: max_strain,
             contact_energy_j,
+            surface_contact_energy_j,
             minimum_nonadjacent_distance_m,
             bounded_updates,
             rejected_line_searches,
@@ -971,7 +1075,7 @@ impl RodModel {
         state: &RodState,
         prediction: &[DVec3],
         h: f64,
-        contact: RodContact,
+        contact: Option<RodContact>,
     ) -> Result<f64, String> {
         let mut energy = 0.5 * (state.positions[vertex] - prediction[vertex]).length_squared()
             / (self.inverse_masses[vertex] * h * h);
@@ -987,12 +1091,14 @@ impl RodModel {
             energy +=
                 0.5 * stitch.stiffness_n_per_m * stitch.gap(&state.positions).length_squared();
         }
-        self.for_each_contact_pair(&state.positions, |a, b, sample| {
-            if a.contains(&vertex) || b.contains(&vertex) {
-                energy += contact.barrier(sample.distance)?.0;
-            }
-            Ok(())
-        })?;
+        if let Some(contact) = contact {
+            self.for_each_contact_pair(&state.positions, |a, b, sample| {
+                if a.contains(&vertex) || b.contains(&vertex) {
+                    energy += contact.barrier(sample.distance)?.0;
+                }
+                Ok(())
+            })?;
+        }
         if energy.is_finite() {
             Ok(energy)
         } else {

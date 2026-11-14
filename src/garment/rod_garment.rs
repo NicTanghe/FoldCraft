@@ -2,8 +2,8 @@
 //!
 //! This welded triangular network uses one explicitly supplied rod material;
 //! it is not a calibrated fabric or a woven yarn model. It uses heuristic
-//! bending joints and has no avatar contact, grab support, production broad
-//! phase, or UI adapter.
+//! bending joints. A separate research wrapper adds fixed-avatar surface
+//! contact; grab support, production performance and UI integration are absent.
 use super::{CompiledGarment, rod_sewing::compile_rod_stitches};
 use crate::cosserat::{RodMaterial, RodModel, RodState};
 use glam::{DMat3, DQuat, DVec3};
@@ -203,6 +203,10 @@ impl GarmentRodNetwork {
         }
         self.model.elastic_energy(&state)?;
         Ok(state)
+    }
+
+    pub(crate) fn garment(&self) -> &CompiledGarment {
+        &self.garment
     }
 
     pub fn bending_joint_count(&self) -> usize {
