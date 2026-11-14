@@ -309,6 +309,69 @@ pub fn update_viewport_topology(
     Ok(())
 }
 
+/// Update per-panel USD mesh topology, vertex positions, and UVs after authoring edits.
+#[cfg(feature = "desktop")]
+pub fn update_panel_viewport_mesh(
+    scene: &cssimpler::renderer::gpu::usd::UsdScene,
+    garment: &CompiledGarment,
+    state: &State,
+) -> Result<(), String> {
+    use cssimpler::renderer::gpu::openusd::gf;
+    if state.x.len() != garment.mesh.uv.len() {
+        return Err("USD mesh sync requires matching state and UV vertex counts".into());
+    }
+    if state
+        .x
+        .iter()
+        .any(|p| p.to_array().into_iter().any(|v| !finite_float(v)))
+        || garment
+            .mesh
+            .uv
+            .iter()
+            .any(|p| p.to_array().into_iter().any(|v| !finite_float(v)))
+    {
+        return Err("USD display positions and UVs must be finite f32 values".into());
+    }
+    let stage = scene.stage();
+    for panel in &garment.panels {
+        let path = viewport_panel_path(&panel.id);
+        let points: Vec<_> = state.x[panel.vertices.clone()]
+            .iter()
+            .map(|p| gf::vec3f(p.x as f32, p.y as f32, p.z as f32))
+            .collect();
+        let counts = vec![3_i32; panel.triangles.len()];
+        let indices: Vec<i32> = garment.mesh.triangles[panel.triangles.clone()]
+            .iter()
+            .flat_map(|t| t.vertices.map(|v| (v - panel.vertices.start) as i32))
+            .collect();
+        let uvs: Vec<_> = garment.mesh.uv[panel.vertices.clone()]
+            .iter()
+            .map(|uv| gf::vec2f(uv.x as f32, uv.y as f32))
+            .collect();
+        stage
+            .attribute(format!("{path}.points"))
+            .map_err(|e| e.to_string())?
+            .set(points)
+            .map_err(|e| e.to_string())?;
+        stage
+            .attribute(format!("{path}.faceVertexCounts"))
+            .map_err(|e| e.to_string())?
+            .set(counts)
+            .map_err(|e| e.to_string())?;
+        stage
+            .attribute(format!("{path}.faceVertexIndices"))
+            .map_err(|e| e.to_string())?
+            .set(indices)
+            .map_err(|e| e.to_string())?;
+        stage
+            .attribute(format!("{path}.primvars:st"))
+            .map_err(|e| e.to_string())?
+            .set(uvs)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Add a static collision surface to a display stage without changing physics.
 pub fn append_viewport_surface(mut usda: String, surface: &crate::avatar::SurfaceMesh) -> String {
     // Put the display-only mesh alongside World so garment panel identity is unchanged.

@@ -630,3 +630,114 @@ fn synchronized_cutout_rejects_invalid_inputs_without_mutation() {
     assert!(authoring::apply(&t, Command::SynchronizedCutout(bad_seam)).is_err());
     assert_eq!(before, serde_json::to_vec(&t).unwrap());
 }
+
+#[test]
+fn obtuse_and_concave_corners_round_with_matching_preview() {
+    use marvelous_cloth::authoring::{
+        CornerRule,
+        corner_tool::{CIRCLE_TENSION, preview_fillet, validate_fillet_preview},
+    };
+
+    // Concave & obtuse non-orthogonal polygon
+    let t = authoring::apply(
+        &fixture(),
+        Command::Polygon {
+            points: vec![
+                DVec2::new(0.0, 0.0),
+                DVec2::new(0.40, 0.0),
+                DVec2::new(0.28, 0.22), // concave inward notch (turn < 0)
+                DVec2::new(0.45, 0.50), // obtuse turn (> 90 deg)
+                DVec2::new(0.05, 0.45),
+            ],
+            tangents: vec![],
+            meshing: MeshingSettings {
+                target_edge_m: 0.08,
+                ..Default::default()
+            },
+            fabric: "woven-demo".into(),
+            replace: true,
+        },
+    )
+    .unwrap()
+    .template;
+
+    for corner_idx in [2_usize, 3] {
+        let panel = &t.panels[0];
+        let poly = panel.polygon.as_ref().unwrap();
+        let edge_name = poly.edges[corner_idx].clone();
+        let radius_m = 0.015;
+        let prev =
+            validate_fillet_preview(&t, &panel.id, &edge_name, radius_m, CIRCLE_TENSION).unwrap();
+        assert!(prev.max_radius_m > radius_m);
+
+        let edit = authoring::apply(
+            &t,
+            Command::RoundCornerShape {
+                panel: panel.id.clone(),
+                edge: edge_name.clone(),
+                radius_m,
+                tension: CIRCLE_TENSION,
+                rule: CornerRule::Smooth,
+            },
+        )
+        .unwrap();
+        let edited_poly = edit.template.panels[0].polygon.as_ref().unwrap();
+        assert!(edited_poly.points[corner_idx].distance(prev.start) < 1e-12);
+        assert!(edited_poly.points[corner_idx + 1].distance(prev.end) < 1e-12);
+        let controls = edited_poly.curves[&edited_poly.edges[corner_idx]];
+        assert!(controls[0].distance(prev.control_1) < 1e-12);
+        assert!(controls[1].distance(prev.control_2) < 1e-12);
+        edit.template.compile().unwrap();
+    }
+
+    // Straight preview helper agrees
+    assert!(
+        preview_fillet(
+            &t.panels[0],
+            &t.panels[0].polygon.as_ref().unwrap().edges[2],
+            0.015,
+            CIRCLE_TENSION
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn tshirt_unsewn_neckline_corners_round_while_sewn_corner_blocks() {
+    use marvelous_cloth::authoring::{
+        CornerRule,
+        corner_tool::{CIRCLE_TENSION, validate_fillet_preview},
+    };
+    use marvelous_cloth::garment::presets::{self, GarmentKind};
+
+    let t = presets::basic(GarmentKind::Tshirt, 0);
+    // "neck-bottom" meets unsewn "neck-left" -> concave corner should round cleanly
+    assert!(validate_fillet_preview(&t, "front", "neck-bottom", 0.008, CIRCLE_TENSION).is_ok());
+    let edit = authoring::apply(
+        &t,
+        Command::RoundCornerShape {
+            panel: "front".into(),
+            edge: "neck-bottom".into(),
+            radius_m: 0.008,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    let poly = edit.template.panels[0].polygon.as_ref().unwrap();
+    assert!(poly.curves.keys().any(|k| k.starts_with("corner_round_")));
+    edit.template.compile().unwrap();
+
+    // "shoulder-right" IS sewn on "front" -> must still refuse rounding
+    let blocked = authoring::apply(
+        &t,
+        Command::RoundCornerShape {
+            panel: "front".into(),
+            edge: "shoulder-right".into(),
+            radius_m: 0.008,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    );
+    assert!(blocked.is_err());
+}

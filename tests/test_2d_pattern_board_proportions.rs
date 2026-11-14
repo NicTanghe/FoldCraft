@@ -96,3 +96,71 @@ fn test_2d_viewport_svg_preserves_aspect_ratio_and_renders_bezier_handles() {
     );
     assert!(found_piece, "Pattern pieces must be rendered");
 }
+
+#[test]
+fn test_2d_svg_renders_mm_curves_and_bezier_handles_after_corner_round() {
+    use marvelous_cloth::atelier::css_runner::render_runner_2d_svg;
+    use marvelous_cloth::authoring::{self, Command, CornerRule, corner_tool::CIRCLE_TENSION};
+
+    let dir = tempfile::tempdir().unwrap();
+    let avatar = dir.path().join("avatar.obj");
+    std::fs::write(&avatar, "v 10 0 -10\nv 11 0 -10\nv 10 1 -10\nf 1 2 3\n").unwrap();
+    let mut project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+    project.template = authoring::apply(
+        &project.template,
+        Command::RoundCornerShape {
+            panel: "front".into(),
+            edge: "neck-bottom".into(),
+            radius_m: 0.008,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .expect("round unsewn neckline corner")
+    .template;
+
+    let (worker_tx, _worker_rx) = mpsc::channel();
+    let worker_latest = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let scene = project.compile().expect("compile scene");
+    let files = DocumentFiles {
+        output: PathBuf::from("output/test"),
+        source: None,
+        modified: false,
+    };
+    let mut state = CssRunnerState::new(project, scene, files, worker_tx, worker_latest);
+    state.active_2d_tool = "Corner".into();
+
+    let (nodes, view_box) = render_runner_2d_svg(&state);
+    let vb: Vec<f64> = view_box
+        .split_whitespace()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    assert_eq!(vb.len(), 4);
+    assert!((vb[2] - vb[3]).abs() < 1e-3, "square viewBox: {view_box}");
+    assert!(
+        vb[2] >= 400.0,
+        "2D SVG user space must be in millimetres so cubic curves tessellate smoothly: {view_box}"
+    );
+
+    fn count_class(nodes: &[Node], target: &str) -> usize {
+        let mut total = 0;
+        for n in nodes {
+            if let Node::Element(elem) = n {
+                if elem.classes.iter().any(|c| c == target) {
+                    total += 1;
+                }
+                total += count_class(&elem.children, target);
+            }
+        }
+        total
+    }
+
+    assert!(
+        count_class(&nodes, "bezier-handle") >= 2,
+        "rounded corner must render Bézier handle indicators"
+    );
+    assert!(
+        count_class(&nodes, "cad-vertex") >= 10,
+        "corner vertices must be rendered on pattern contours"
+    );
+}
