@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.25,
+  "clock": 3.28081511983951,
   "tickets": [
     {
       "id": "FC-0001",
@@ -595,7 +595,7 @@
       "depends_on": [],
       "status": "ready",
       "owner": null,
-      "vruntime": 3.045454545454546,
+      "vruntime": 3.0820399113082044,
       "pr": null
     },
     {
@@ -763,6 +763,21 @@
       "status": "ready",
       "owner": null,
       "vruntime": 3.4214285714285713,
+      "pr": null
+    },
+    {
+      "id": "FC-0057",
+      "title": "Add garment rod bending and restart foundation",
+      "acceptance": "Add tested rotation-objective bending joints and consistent placed-state orientation for garment rod networks, with explicit parameters and cache compatibility; preserve rest coordinates and existing formats.",
+      "points": 5.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.482034632034632,
       "pr": null
     }
   ]
