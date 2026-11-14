@@ -682,11 +682,56 @@
       "title": "Implement stable Cosserat rod CPU research solver",
       "acceptance": "Implement attributed MIT-source-based stable Cosserat position and quasi-static orientation solves with independently specified rest geometry, SI parameters, pinned points and frames, validated steps and CPU falsifiable tests; document exact scope, limits and reproducible rod example without modifying cloth solver.",
       "points": 5.0,
-      "spent": 0,
+      "spent": 5.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "active",
-      "owner": "codex-cosserat",
+      "status": "review",
+      "owner": null,
+      "vruntime": 3.625,
+      "pr": "https://github.com/NicTanghe/FoldCraft/pull/48"
+    },
+    {
+      "id": "FC-0052",
+      "title": "Define and compile rod-based garment material topology",
+      "acceptance": "Provide explicit, documented physical rod material and topology for garment panels in rest coordinates with stable authored identity, validation, reproducible compilation and cache invalidation; preserve legacy projects and nonphysical fiber guides.",
+      "points": 5.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": null
+    },
+    {
+      "id": "FC-0053",
+      "title": "Integrate rod garment dynamics with sewing and contact",
+      "acceptance": "Advance compiled rod garments with compatible sewing, avatar and self-contact, pins and interaction; preserve rest geometry and provide falsifiable tests and documented limitations.",
+      "points": 5.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0052"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.0,
+      "pr": null
+    },
+    {
+      "id": "FC-0054",
+      "title": "Expose rod garment solver in the native solver selector",
+      "acceptance": "Select and run the validated rod garment solver from the native menu with coherent worker state, display, project transitions and user-visible errors; exercise real garment workflows in CPU tests.",
+      "points": 3.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0053"
+      ],
+      "status": "ready",
+      "owner": null,
       "vruntime": 3.0,
       "pr": null
     }
