@@ -685,7 +685,7 @@
       "spent": 5.0,
       "priority": "urgent",
       "depends_on": [],
-      "status": "review",
+      "status": "done",
       "owner": null,
       "vruntime": 3.625,
       "pr": "https://github.com/NicTanghe/FoldCraft/pull/48"
@@ -700,8 +700,8 @@
       "depends_on": [
         "FC-0051"
       ],
-      "status": "ready",
-      "owner": null,
+      "status": "active",
+      "owner": "codex-yarn-mapping",
       "vruntime": 3.0,
       "pr": null
     },
