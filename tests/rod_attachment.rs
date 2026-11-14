@@ -155,6 +155,15 @@ fn binds_a_real_garment_panel_and_rejects_stale_compilations() {
         assert!((*actual - *expected).length() < 1e-10);
     }
     assert!(mapping.matches(&garment, &panel.id));
+    let weights = mapping.global_weights(&garment, 100).unwrap();
+    assert_eq!(weights.len(), uv.len());
+    assert!(
+        weights
+            .iter()
+            .all(|row| (row.iter().map(|(_, w)| w).sum::<f64>() - 1.0).abs() < 1e-12)
+    );
+    assert!(weights.iter().flatten().all(|(i, _)| *i >= 100));
+    assert!(mapping.global_weights(&garment, usize::MAX).is_err());
     let recompiled = Arc::new(template.compile().unwrap());
     assert!(!mapping.matches(&recompiled, &panel.id));
     assert!(mapping.evaluate(&recompiled, &positions).is_err());

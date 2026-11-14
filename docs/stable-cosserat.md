@@ -169,3 +169,26 @@ fabric model. Its support triangles only interpolate positions. It accepts
 explicit rod parameters, grid resolution and runtime pin indices, uses a flat
 2D rest shape, and does not clip to arbitrary panels, make seams, initialize
 from a draped garment, handle avatar collisions or integrate with the UI.
+
+## Experimental sewing terms
+
+`RodModel::with_stitches` adds quadratic stitches to the same implicit
+positional objective as inertia and rod stretch. A `RodStitch` has sorted,
+unique runtime vertex indices and coefficients summing to zero; its gap is the
+weighted position sum and its energy is `0.5 * k * |gap|²`, with `k` in N/m.
+Stitch forces and their local Hessian are included in the position solve, and
+the final positional residual includes stitches. `stitch_energy_j` is reported
+separately from rod elastic energy. No projection is applied after the solve;
+finite penalties and finite iterations do not guarantee zero gap.
+
+`garment::rod_sewing::compile_rod_stitches` transfers the existing garment
+seam quadrature to supplied garment-to-rod vertex weights. The coefficient is
+`seam.stiffness * sample.weight_m`, consistent with the current cloth solver.
+`GarmentRodMapping::global_weights` exposes the panel attachment weights to
+construct this map. Callers must rebuild the weights and stitch model when
+panel, seam or rod topology changes. This is not automatic worker/UI integration.
+
+Stitches and rod self-contact are explicitly rejected together: the rod contact
+implementation does not yet implement the local sewing exclusions needed near
+joined boundaries. This rejection preserves the previous state. Avatar contact,
+friction and production-scale sewing convergence remain unimplemented.

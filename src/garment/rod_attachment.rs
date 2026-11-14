@@ -192,6 +192,33 @@ impl GarmentRodMapping {
         self.panel == panel && std::sync::Arc::ptr_eq(&self.garment, garment)
     }
 
+    /// Export each panel vertex's interpolation weights for sewing assembly.
+    /// `rod_offset` is the panel support's starting index in the global network.
+    pub fn global_weights(
+        &self,
+        garment: &std::sync::Arc<super::CompiledGarment>,
+        rod_offset: usize,
+    ) -> Result<Vec<Vec<(usize, f64)>>, String> {
+        if !self.matches(garment, &self.panel) {
+            return Err("Rod mapping belongs to a different compiled garment".into());
+        }
+        self.surface
+            .attachments
+            .iter()
+            .map(|(ids, weights)| {
+                ids.iter()
+                    .zip(weights)
+                    .filter(|(_, weight)| **weight != 0.0)
+                    .map(|(id, weight)| {
+                        id.checked_add(rod_offset)
+                            .map(|global| (global, *weight))
+                            .ok_or_else(|| "Rod attachment index overflow".into())
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
     /// Positions are returned in the compiled panel's vertex order.
     pub fn evaluate(
         &self,

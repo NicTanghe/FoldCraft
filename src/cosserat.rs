@@ -37,6 +37,20 @@ struct Joint {
     stiffness: f64,
 }
 
+/// A quadratic positional stitch. Coefficients describe the difference between
+/// two material attachments and must sum to zero; stiffness is in N/m.
+#[derive(Clone, Debug)]
+pub struct RodStitch {
+    pub terms: Vec<(usize, f64)>,
+    pub stiffness_n_per_m: f64,
+}
+
+impl RodStitch {
+    fn gap(&self, positions: &[DVec3]) -> DVec3 {
+        self.terms.iter().map(|(i, w)| positions[*i] * *w).sum()
+    }
+}
+
 /// Compiled rod network. Vertex and segment indices are runtime-only and must
 /// not be stored as persistent garment identifiers.
 #[derive(Clone, Debug)]
@@ -47,6 +61,8 @@ pub struct RodModel {
     joints: Vec<Joint>,
     incident_segments: Vec<Vec<usize>>,
     incident_joints: Vec<Vec<usize>>,
+    stitches: Vec<RodStitch>,
+    incident_stitches: Vec<Vec<(usize, f64)>>,
 }
 
 /// Accepted state, including the orientation and exact-solve history. A state
@@ -112,6 +128,8 @@ pub struct RodMetrics {
     /// Complete elapsed CPU time for the accepted call, milliseconds.
     pub step_ms: f64,
     pub elastic_energy_j: f64,
+    /// Quadratic sewing energy, J, separate from rod elastic energy.
+    pub stitch_energy_j: f64,
     /// Final unconstrained positional residual, RMS over free scalar DOFs, N.
     pub position_residual_rms_n: Option<f64>,
     pub max_stretch_shear: f64,
@@ -269,7 +287,10 @@ impl RodModel {
                 incident_joints[b].push(i);
             }
         }
+        let incident_stitches = vec![Vec::new(); rest_positions.len()];
         Ok(Self {
+            stitches: Vec::new(),
+            incident_stitches,
             rest_positions,
             inverse_masses,
             segments,
@@ -277,6 +298,52 @@ impl RodModel {
             incident_segments,
             incident_joints,
         })
+    }
+
+    /// Return a model with validated stitches. Changes require rebuilding the
+    /// model; indices refer only to this runtime topology.
+    pub fn with_stitches(mut self, stitches: Vec<RodStitch>) -> Result<Self, String> {
+        let mut incident = vec![Vec::new(); self.rest_positions.len()];
+        for (index, stitch) in stitches.iter().enumerate() {
+            let sum: f64 = stitch.terms.iter().map(|(_, w)| *w).sum();
+            let magnitude: f64 = stitch.terms.iter().map(|(_, w)| w.abs()).sum();
+            if !stitch.stiffness_n_per_m.is_finite()
+                || stitch.stiffness_n_per_m <= 0.0
+                || stitch.terms.len() < 2
+                || !sum.is_finite()
+                || !magnitude.is_finite()
+                || magnitude <= 0.0
+                || sum.abs() > 1e-10 * magnitude
+                || stitch.terms.windows(2).any(|w| w[0].0 >= w[1].0)
+                || stitch
+                    .terms
+                    .iter()
+                    .any(|(i, w)| *i >= incident.len() || !w.is_finite() || *w == 0.0)
+            {
+                return Err("invalid rod stitch coefficients or stiffness".into());
+            }
+            for &(vertex, weight) in &stitch.terms {
+                incident[vertex].push((index, weight));
+            }
+        }
+        self.stitches = stitches;
+        self.incident_stitches = incident;
+        Ok(self)
+    }
+
+    /// Energy in the positional stitches, in joules.
+    pub fn stitch_energy(&self, state: &RodState) -> Result<f64, String> {
+        self.validate_state(state)?;
+        let energy: f64 = self
+            .stitches
+            .iter()
+            .map(|s| 0.5 * s.stiffness_n_per_m * s.gap(&state.positions).length_squared())
+            .sum();
+        if energy.is_finite() {
+            Ok(energy)
+        } else {
+            Err("rod stitch energy overflow".into())
+        }
     }
 
     pub fn initial_state(&self) -> RodState {
@@ -366,6 +433,9 @@ impl RodModel {
             return Err("invalid rod timestep, iterations, gravity, or drag".into());
         }
         if let Some(contact) = settings.contact {
+            if !self.stitches.is_empty() {
+                return Err("rod stitches and contact cannot yet be combined: sewing exclusions are unimplemented".into());
+            }
             contact.validate()?;
             self.contact_stats(&state.positions, contact)?;
         }
@@ -401,6 +471,11 @@ impl RodModel {
                     let direction = if i == a { 1.0 } else { -1.0 };
                     force += direction * seg.stretch / seg.rest_length * c;
                     hessian += seg.stretch / (seg.rest_length * seg.rest_length);
+                }
+                for &(index, weight) in &self.incident_stitches[i] {
+                    let stitch = &self.stitches[index];
+                    force -= stitch.stiffness_n_per_m * weight * stitch.gap(&next.positions);
+                    hessian += stitch.stiffness_n_per_m * weight * weight;
                 }
                 let mut matrix = DMat3::from_diagonal(DVec3::splat(hessian));
                 if let Some(contact) = settings.contact {
@@ -542,6 +617,7 @@ impl RodModel {
         next.time_s += h;
         self.validate_state(&next)?;
         let energy = self.elastic_energy(&next)?;
+        let stitch_energy_j = self.stitch_energy(&next)?;
         let mut max_strain: f64 = 0.0;
         let mut residual_sum = 0.0;
         let mut free = 0;
@@ -560,6 +636,12 @@ impl RodModel {
             let f = seg.stretch / seg.rest_length * c;
             residuals[a] -= f;
             residuals[b] += f;
+        }
+        for stitch in &self.stitches {
+            let force = stitch.stiffness_n_per_m * stitch.gap(&next.positions);
+            for &(vertex, weight) in &stitch.terms {
+                residuals[vertex] += weight * force;
+            }
         }
         let (contact_energy_j, minimum_nonadjacent_distance_m) =
             if let Some(contact) = settings.contact {
@@ -592,6 +674,7 @@ impl RodModel {
             dt_s: h,
             step_ms: started.elapsed().as_secs_f64() * 1000.0,
             elastic_energy_j: energy,
+            stitch_energy_j,
             position_residual_rms_n: residual,
             max_stretch_shear: max_strain,
             contact_energy_j,
