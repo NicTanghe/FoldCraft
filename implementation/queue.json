@@ -695,14 +695,14 @@
       "title": "Define and compile rod-based garment material topology",
       "acceptance": "Provide explicit, documented physical rod material and topology for garment panels in rest coordinates with stable authored identity, validation, reproducible compilation and cache invalidation; preserve legacy projects and nonphysical fiber guides.",
       "points": 5.0,
-      "spent": 0,
+      "spent": 1.0,
       "priority": "urgent",
       "depends_on": [
         "FC-0051"
       ],
       "status": "active",
       "owner": "codex-yarn-mapping",
-      "vruntime": 3.0,
+      "vruntime": 3.125,
       "pr": null
     },
     {
