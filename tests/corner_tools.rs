@@ -1030,3 +1030,277 @@ fn mirrored_and_sewn_template_operations_never_fail_with_one_member_error() {
     .unwrap();
     adjusted.template.compile().unwrap();
 }
+
+#[test]
+fn mixed_mirror_and_seam_corner_drag_bezier_and_round_propagate_coherently() {
+    use marvelous_cloth::authoring::CornerRule;
+    use marvelous_cloth::authoring::corner_tool::{
+        CIRCLE_TENSION, preview_adjust_handle, preview_move_corner,
+    };
+    use marvelous_cloth::garment::seam::{BoundaryRef, Side};
+
+    // Topology:
+    //   p0 <--(Mirror X)--> p1
+    //   p0 edge[1] ("right") <--(Seam)--> p2 edge[3] ("left")
+    let base = fixture();
+    let mirrored = authoring::apply(
+        &base,
+        Command::LinkedMirror {
+            panel: base.panels[0].id.clone(),
+            axis: MirrorAxis::X,
+        },
+    )
+    .unwrap()
+    .template;
+    let p0_id = mirrored.panels[0].id.clone();
+    let p1_id = mirrored.panels[1].id.clone();
+    let e0_right = mirrored.panels[0].polygon.as_ref().unwrap().edges[1].clone();
+
+    let with_third = authoring::apply(
+        &mirrored,
+        Command::Duplicate {
+            panel: p0_id.clone(),
+        },
+    )
+    .unwrap()
+    .template;
+    let p2_id = with_third.panels[2].id.clone();
+    let e2_left = with_third.panels[2].polygon.as_ref().unwrap().edges[3].clone();
+
+    let t = authoring::apply(
+        &with_third,
+        Command::Sew {
+            a: BoundaryRef {
+                reversed: false,
+                panel: p0_id.clone(),
+                side: Side::Right,
+                edge: Some(e0_right.clone()),
+                range: [0.0, 1.0],
+            },
+            b: BoundaryRef {
+                reversed: false,
+                panel: p2_id.clone(),
+                side: Side::Left,
+                edge: Some(e2_left.clone()),
+                range: [0.0, 1.0],
+            },
+            reverse: false,
+            ease: false,
+        },
+    )
+    .unwrap()
+    .template;
+
+    // 1. Live preview_move_corner & Command::Anchor on corner 2 (end of edge[1]) of p0
+    //    must move p0[2], mirror-linked p1[1], and sewn p2[0] while keeping seam lengths equal.
+    let p0_pt2 = t.panels[0].polygon.as_ref().unwrap().points[2];
+    let p1_pt1_before = t.panels[1].polygon.as_ref().unwrap().points[1];
+    let p2_len_before =
+        authoring::edge_length(t.panels[2].polygon.as_ref().unwrap(), &e2_left).unwrap();
+    let target_pt = p0_pt2 + DVec2::new(0.025, 0.015);
+
+    let mut preview = t.clone();
+    preview_move_corner(&t, &mut preview, &p0_id, 2, target_pt).unwrap();
+    assert!(preview.panels[1].polygon.as_ref().unwrap().points[1].distance(p1_pt1_before) > 0.01);
+    let p2_prev_len =
+        authoring::edge_length(preview.panels[2].polygon.as_ref().unwrap(), &e2_left).unwrap();
+    assert!((p2_prev_len - p2_len_before).abs() > 0.01);
+
+    let anchored = authoring::apply(
+        &t,
+        Command::Anchor {
+            panel: p0_id.clone(),
+            anchor: 2,
+            position: target_pt,
+        },
+    )
+    .unwrap();
+    let p0_after = anchored.template.panels[0].polygon.as_ref().unwrap();
+    let p1_after = anchored.template.panels[1].polygon.as_ref().unwrap();
+    let p2_after = anchored.template.panels[2].polygon.as_ref().unwrap();
+    assert!(p1_after.points[1].distance(p1_pt1_before) > 0.01);
+    let len0 = authoring::edge_length(p0_after, &e0_right).unwrap();
+    let len2 = authoring::edge_length(p2_after, &e2_left).unwrap();
+    assert!((len2 - p2_len_before).abs() > 0.01);
+    assert!(
+        (len0 - len2).abs() < 1e-9,
+        "sewn edges must stay equal length after mixed mirror+seam move: p0={len0} p2={len2}"
+    );
+    anchored.template.compile().unwrap();
+
+    // 2. Command::Anchor initiated from mirror partner p1[1] must also propagate to p0 and p2
+    let p1_target = p1_pt1_before + DVec2::new(-0.02, 0.01);
+    let from_partner = authoring::apply(
+        &t,
+        Command::Anchor {
+            panel: p1_id.clone(),
+            anchor: 1,
+            position: p1_target,
+        },
+    )
+    .unwrap();
+    let p0_from_p1 = from_partner.template.panels[0].polygon.as_ref().unwrap();
+    let p2_from_p1 = from_partner.template.panels[2].polygon.as_ref().unwrap();
+    assert!(p0_from_p1.points[2].distance(p0_pt2) > 0.01);
+    let len0_p1 = authoring::edge_length(p0_from_p1, &e0_right).unwrap();
+    let len2_p1 = authoring::edge_length(p2_from_p1, &e2_left).unwrap();
+    assert!((len2_p1 - p2_len_before).abs() > 0.005);
+    assert!((len0_p1 - len2_p1).abs() < 1e-9);
+    from_partner.template.compile().unwrap();
+
+    // 3. Command::Nudge on p0[2] must propagate across mirror + seam
+    let nudged = authoring::apply(
+        &t,
+        Command::Nudge {
+            panel: p0_id.clone(),
+            points: vec![2],
+            delta_mm: DVec2::new(15.0, 10.0),
+        },
+    )
+    .unwrap();
+    assert!(
+        nudged.template.panels[1].polygon.as_ref().unwrap().points[1].distance(p1_pt1_before)
+            > 0.01
+    );
+    let nudge_len0 = authoring::edge_length(
+        nudged.template.panels[0].polygon.as_ref().unwrap(),
+        &e0_right,
+    )
+    .unwrap();
+    let nudge_len2 = authoring::edge_length(
+        nudged.template.panels[2].polygon.as_ref().unwrap(),
+        &e2_left,
+    )
+    .unwrap();
+    assert!((nudge_len2 - p2_len_before).abs() > 0.005);
+    assert!((nudge_len0 - nudge_len2).abs() < 1e-9);
+    nudged.template.compile().unwrap();
+
+    // 4. CurvePoint + Outward AdjustCornerHandle + live preview_adjust_handle across mirror + seam
+    let curved = authoring::apply(
+        &t,
+        Command::CurvePoint {
+            panel: p0_id.clone(),
+            anchor: 2,
+            curved: true,
+        },
+    )
+    .unwrap()
+    .template;
+    assert!(
+        curved.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .contains_key(&e0_right)
+    );
+    assert!(
+        curved.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .contains_key(&e0_right)
+    );
+    assert!(
+        curved.panels[2]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .contains_key(&e2_left)
+    );
+
+    let p0_h0_before = curved.panels[0].polygon.as_ref().unwrap().curves[&e0_right][0];
+    let p1_h1_before = curved.panels[1].polygon.as_ref().unwrap().curves[&e0_right][1];
+    let p2_h0_before = curved.panels[2].polygon.as_ref().unwrap().curves[&e2_left][0];
+    // Pull outward (+X, beyond original box width) on mirrored+sewn curve handle
+    let outward_h0 = p0_h0_before + DVec2::new(0.035, 0.015);
+
+    let mut bezier_preview = curved.clone();
+    preview_adjust_handle(
+        &curved,
+        &mut bezier_preview,
+        &p0_id,
+        &e0_right,
+        0,
+        outward_h0,
+        CornerRule::Smooth,
+    )
+    .unwrap();
+    assert!(
+        bezier_preview.panels[1].polygon.as_ref().unwrap().curves[&e0_right][1]
+            .distance(p1_h1_before)
+            > 0.01
+    );
+    assert!(
+        bezier_preview.panels[2].polygon.as_ref().unwrap().curves[&e2_left][0]
+            .distance(p2_h0_before)
+            > 0.01
+    );
+
+    let adjusted = authoring::apply(
+        &curved,
+        Command::AdjustCornerHandle {
+            panel: p0_id.clone(),
+            edge: e0_right.clone(),
+            handle_index: 0,
+            position: outward_h0,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    assert!(
+        adjusted.template.panels[1].polygon.as_ref().unwrap().curves[&e0_right][1]
+            .distance(p1_h1_before)
+            > 0.01
+    );
+    assert!(
+        adjusted.template.panels[2].polygon.as_ref().unwrap().curves[&e2_left][0]
+            .distance(p2_h0_before)
+            > 0.01
+    );
+    adjusted.template.compile().unwrap();
+
+    // 5. RoundCornerShape on corner 2 (edge "top") of p0 rounds p0, mirror-linked p1, and sewn p2
+    let e0_top = t.panels[0].polygon.as_ref().unwrap().edges[2].clone();
+    let rounded = authoring::apply(
+        &t,
+        Command::RoundCornerShape {
+            panel: p0_id.clone(),
+            edge: e0_top,
+            radius_m: 0.015,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    for pidx in 0..3 {
+        assert!(
+            rounded.template.panels[pidx]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .keys()
+                .any(|k| k.starts_with("corner_round_")),
+            "panel {pidx} must receive rounded corner curve"
+        );
+    }
+    rounded.template.compile().unwrap();
+
+    // Atomic Undo/Redo restores exact template for all 3 panels & seams
+    let mut history = History::default();
+    history.record(t.clone());
+    let undone = history.restore(&rounded.template, false).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&undone.template).unwrap(),
+        serde_json::to_vec(&t).unwrap()
+    );
+    let redone = history.restore(&undone.template, true).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&redone.template).unwrap(),
+        serde_json::to_vec(&rounded.template).unwrap()
+    );
+}

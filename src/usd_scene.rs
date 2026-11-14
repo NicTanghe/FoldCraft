@@ -440,3 +440,85 @@ pub fn viewport_sphere(sphere: &crate::contact::Sphere) -> crate::avatar::Surfac
         triangles,
     }
 }
+
+#[cfg(feature = "desktop")]
+pub const VIEWPORT_CAMERA_PATH: &str = "/World/ViewportCamera";
+
+#[cfg(feature = "desktop")]
+pub fn default_scene_camera(
+    positions: &[glam::DVec3],
+    surface: Option<&crate::avatar::SurfaceMesh>,
+) -> crate::render::Camera {
+    let mut min = glam::DVec3::splat(f64::INFINITY);
+    let mut max = glam::DVec3::splat(f64::NEG_INFINITY);
+    let mut any = false;
+    let mut include = |pts: &[glam::DVec3]| {
+        for &p in pts {
+            if p.is_finite() {
+                min = min.min(p);
+                max = max.max(p);
+                any = true;
+            }
+        }
+    };
+    include(positions);
+    if let Some(surface) = surface {
+        include(&surface.vertices);
+    }
+    if !any {
+        return crate::render::Camera::default();
+    }
+    let center = ((min + max) * 0.5).as_vec3();
+    let extent = (max - min).length().max(0.01) as f32;
+    let distance = (extent * 1.6).clamp(0.5, 15.0);
+    crate::render::Camera::new(0.5, 0.25, distance, center)
+}
+
+#[cfg(feature = "desktop")]
+pub fn init_viewport_camera(
+    scene: &cssimpler::renderer::gpu::usd::UsdScene,
+    camera: &crate::render::Camera,
+) -> Result<(), String> {
+    use cssimpler::renderer::gpu::openusd::sdf;
+    use cssimpler::renderer::gpu::openusd_schemas::geom::{self, CameraSchema};
+    let stage = scene.stage();
+    let path = sdf::Path::new(VIEWPORT_CAMERA_PATH).map_err(|e| e.to_string())?;
+    let cam = geom::Camera::define(stage, &path).map_err(|e| e.to_string())?;
+    cam.create_focal_length_attr()
+        .map_err(|e| e.to_string())?
+        .set(35.0_f32)
+        .map_err(|e| e.to_string())?;
+    cam.create_vertical_aperture_attr()
+        .map_err(|e| e.to_string())?
+        .set(24.0_f32)
+        .map_err(|e| e.to_string())?;
+    cam.create_horizontal_aperture_attr()
+        .map_err(|e| e.to_string())?
+        .set(36.0_f32)
+        .map_err(|e| e.to_string())?;
+    update_viewport_camera(scene, camera)
+}
+
+#[cfg(feature = "desktop")]
+pub fn update_viewport_camera(
+    scene: &cssimpler::renderer::gpu::usd::UsdScene,
+    camera: &crate::render::Camera,
+) -> Result<(), String> {
+    use cssimpler::renderer::gpu::openusd::{gf, sdf};
+    use cssimpler::renderer::gpu::openusd_schemas::geom::{self, CameraSchema, XformableExt};
+    let stage = scene.stage();
+    let path = sdf::Path::new(VIEWPORT_CAMERA_PATH).map_err(|e| e.to_string())?;
+    let cam = geom::Camera::get(stage, &path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("USD camera not found: {VIEWPORT_CAMERA_PATH}"))?;
+    let world =
+        glam::camera::rh::view::look_at_mat4(camera.eye(), camera.target, camera.up()).inverse();
+    let dist = camera.distance.max(0.01);
+    cam.create_clipping_range_attr()
+        .map_err(|e| e.to_string())?
+        .set(gf::vec2f((dist * 0.001).max(0.0001), dist * 1000.0))
+        .map_err(|e| e.to_string())?;
+    cam.set_transform(gf::Matrix4d(world.to_cols_array().map(f64::from)))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}

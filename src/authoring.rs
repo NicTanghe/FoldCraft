@@ -1875,7 +1875,10 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             if !position.is_finite() {
                 return Err("Point coordinates must be finite".into());
             }
-            if corner_tool::connected_seam_corners(source, &panel, anchor).len() > 1 {
+            let any_sewn = corner_tool::connected_corners(source, &panel, anchor)
+                .iter()
+                .any(|c| corner_tool::connected_seam_corners(source, &c.panel, c.point).len() > 1);
+            if any_sewn {
                 let current = *source
                     .panels
                     .iter()
@@ -1960,13 +1963,7 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             // Metric steps convert once, by division, so 1 mm and 10 mm are the
             // exact f64 0.001 and 0.01.
             let delta = delta_mm / 1000.0;
-            let p = template
-                .panels
-                .iter_mut()
-                .find(|p| p.id == panel)
-                .ok_or("Panel not found")?;
-            remap_anchors(p, &points, |point| point + delta)?;
-            normalize(p);
+            corner_tool::move_points_connected(source, &mut template, &panel, &points, delta)?;
             selected = Some(panel);
         }
         Command::SplitBoundary { panel, edge, at_m } => {

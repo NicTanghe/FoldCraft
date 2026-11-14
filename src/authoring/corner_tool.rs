@@ -501,6 +501,13 @@ fn mirror_partner<'a>(template: &'a GarmentTemplate, panel: &str) -> Option<&'a 
     None
 }
 
+fn reflect_vec(axis: MirrorAxis, v: DVec2) -> DVec2 {
+    match axis {
+        MirrorAxis::X => DVec2::new(-v.x, v.y),
+        MirrorAxis::Y => DVec2::new(v.x, -v.y),
+    }
+}
+
 /// Map a tangent/offset vector at `(src_a0 -> src_a1)` into `(dst_b0 -> dst_b1)`'s
 /// orthonormal seam frame `(along_seam, inward_normal)`.
 fn map_edge_vector(
@@ -622,7 +629,7 @@ pub fn validate_fillet_preview(
         return Err("Invalid contour".into());
     }
 
-    let seam_corners = connected_seam_corners(source, panel, edge_pos);
+    let seam_corners = connected_corners(source, panel, edge_pos);
     let mut corner_previews = Vec::with_capacity(seam_corners.len());
     let mut min_max_radius = f64::INFINITY;
     let mut mirror_checked = std::collections::BTreeSet::new();
@@ -765,7 +772,7 @@ pub(super) fn round_shape(
         .and_then(|p| p.polygon.as_ref())
         .and_then(|poly| poly.edges.iter().position(|e| e == edge))
         .ok_or("Boundary not found")?;
-    let seam_corners = connected_seam_corners(source, panel, edge_pos);
+    let seam_corners = connected_corners(source, panel, edge_pos);
 
     // Preserve every derived board origin before any panel's width can change.
     for (i, p) in template.panels.iter_mut().enumerate() {
@@ -1151,23 +1158,108 @@ fn propagate_edge_curve_across_seams(
     let src_n = src_poly.points.len();
     let src_a0 = src_poly.points[src_idx];
     let src_a1 = src_poly.points[(src_idx + 1) % src_n];
-    let v0 = seed_ctrl[0] - src_a0;
-    let v1 = seed_ctrl[1] - src_a1;
+    let seed_v0 = seed_ctrl[0] - src_a0;
+    let seed_v1 = seed_ctrl[1] - src_a1;
 
-    let partners = connected_seam_edges(source, seed_panel, seed_edge);
-    for partner in partners.into_iter().skip(1) {
-        if let Some(m_partner) = mirror_partner(source, &partner.panel)
+    let mut visited = std::collections::BTreeSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    let mut updates: Vec<(String, String, DVec2, DVec2)> = Vec::new();
+    visited.insert((seed_panel.to_owned(), seed_edge.to_owned()));
+    queue.push_back((
+        seed_panel.to_owned(),
+        seed_edge.to_owned(),
+        seed_v0,
+        seed_v1,
+    ));
+
+    while let Some((cur_panel, cur_edge, cur_v0, cur_v1)) = queue.pop_front() {
+        let Some(cp) = source.panels.iter().find(|p| p.id == cur_panel) else {
+            continue;
+        };
+        let Some(cpoly) = cp.polygon.as_ref() else {
+            continue;
+        };
+        let Some((cn, ce_idx)) = panel_edge_count_and_idx(cp, &cur_edge) else {
+            continue;
+        };
+        let a0 = cpoly.points[ce_idx];
+        let a1 = cpoly.points[(ce_idx + 1) % cn];
+
+        for seam in &source.seams {
+            if !seam.a_tail.is_empty()
+                || !seam.b_tail.is_empty()
+                || !is_full_range(seam.a.range)
+                || !is_full_range(seam.b.range)
+            {
+                continue;
+            }
+            let (Some(ea), Some(eb)) = (seam.a.edge.as_deref(), seam.b.edge.as_deref()) else {
+                continue;
+            };
+            let seam_same_dir = !(seam.a.reversed ^ seam.b.reversed ^ seam.reverse_b);
+            let partner = if seam.a.panel == cur_panel && ea == cur_edge {
+                Some((seam.b.panel.as_str(), eb))
+            } else if seam.b.panel == cur_panel && eb == cur_edge {
+                Some((seam.a.panel.as_str(), ea))
+            } else {
+                None
+            };
+            if let Some((p_panel, p_edge)) = partner
+                && visited.insert((p_panel.to_owned(), p_edge.to_owned()))
+                && let Some(pp) = source.panels.iter().find(|p| p.id == p_panel)
+                && let Some(ppoly) = pp.polygon.as_ref()
+                && let Some((pn, pe_idx)) = panel_edge_count_and_idx(pp, p_edge)
+            {
+                let b0 = ppoly.points[pe_idx];
+                let b1 = ppoly.points[(pe_idx + 1) % pn];
+                let mv0 = map_edge_vector(a0, a1, b0, b1, seam_same_dir, cur_v0)
+                    .ok_or("Degenerate partner boundary")?;
+                let mv1 = map_edge_vector(a0, a1, b0, b1, seam_same_dir, cur_v1)
+                    .ok_or("Degenerate partner boundary")?;
+                let (pv0, pv1) = if seam_same_dir {
+                    (mv0, mv1)
+                } else {
+                    (mv1, mv0)
+                };
+                updates.push((p_panel.to_owned(), p_edge.to_owned(), pv0, pv1));
+                queue.push_back((p_panel.to_owned(), p_edge.to_owned(), pv0, pv1));
+            }
+        }
+
+        for link in &source.mirror_links {
+            let partner = if link.a == cur_panel {
+                Some(link.b.as_str())
+            } else if link.b == cur_panel {
+                Some(link.a.as_str())
+            } else {
+                None
+            };
+            if let Some(p_panel) = partner
+                && visited.insert((p_panel.to_owned(), cur_edge.clone()))
+                && let Some(pp) = source.panels.iter().find(|p| p.id == p_panel)
+                && panel_edge_count_and_idx(pp, &cur_edge).is_some()
+            {
+                let pv0 = reflect_vec(link.axis, cur_v1);
+                let pv1 = reflect_vec(link.axis, cur_v0);
+                updates.push((p_panel.to_owned(), cur_edge.clone(), pv0, pv1));
+                queue.push_back((p_panel.to_owned(), cur_edge.clone(), pv0, pv1));
+            }
+        }
+    }
+
+    for (pid, ename, v0, v1) in updates {
+        if let Some(m_partner) = mirror_partner(source, &pid)
             && edited_rep_panels.contains(m_partner)
-            && !edited_rep_panels.contains(&partner.panel)
+            && !edited_rep_panels.contains(&pid)
         {
             // Leave mirror-linked partner untouched so linked::synchronize mirrors its partner.
             continue;
         }
-        edited_rep_panels.insert(partner.panel.clone());
+        edited_rep_panels.insert(pid.clone());
         let tp = template
             .panels
             .iter_mut()
-            .find(|p| p.id == partner.panel)
+            .find(|p| p.id == pid)
             .ok_or("Panel not found")?;
         let poly = tp
             .polygon
@@ -1176,21 +1268,12 @@ fn propagate_edge_curve_across_seams(
         let e_idx = poly
             .edges
             .iter()
-            .position(|e| e == &partner.edge)
+            .position(|e| e == &ename)
             .ok_or("Boundary not found")?;
         let n = poly.points.len();
         let b0 = poly.points[e_idx];
         let b1 = poly.points[(e_idx + 1) % n];
-        let mv0 = map_edge_vector(src_a0, src_a1, b0, b1, partner.same_direction, v0)
-            .ok_or("Degenerate partner boundary")?;
-        let mv1 = map_edge_vector(src_a0, src_a1, b0, b1, partner.same_direction, v1)
-            .ok_or("Degenerate partner boundary")?;
-        let new_ctrl = if partner.same_direction {
-            [b0 + mv0, b1 + mv1]
-        } else {
-            [b0 + mv1, b1 + mv0]
-        };
-        poly.curves.insert(partner.edge, new_ctrl);
+        poly.curves.insert(ename, [b0 + v0, b1 + v1]);
     }
     Ok(())
 }
@@ -1267,7 +1350,7 @@ fn adjust_handle_inner(
         apply_single_handle_edit(poly, spec.edge, spec.handle_index, spec.position, spec.rule)?
     };
 
-    // Propagate primary edge curve (and rule-adjusted neighbor edge if modified) across seams
+    // Propagate primary edge curve (and rule-adjusted neighbor edge if modified) across seams and mirrors
     propagate_edge_curve_across_seams(
         source,
         template,
@@ -1288,7 +1371,7 @@ fn adjust_handle_inner(
     }
 
     // Also enforce CornerRule on partner corners whose unsewn neighbor edge meets the adjusted seam
-    let partner_edges = connected_seam_edges(source, spec.panel, spec.edge);
+    let partner_edges = connected_edges(source, spec.panel, spec.edge);
     for partner in partner_edges.into_iter().skip(1) {
         if !edited_rep_panels.contains(&partner.panel) {
             continue;
@@ -1378,7 +1461,9 @@ pub fn preview_adjust_handle(
             rule,
             check_mirror_frame: false,
         },
-    )
+    )?;
+    let _ = linked::synchronize(source, template);
+    Ok(())
 }
 
 /// Adjust a Bézier control handle at a corner and enforce the chosen continuity rule.
@@ -1400,68 +1485,22 @@ pub(super) fn adjust_handle(
             handle_index,
             position,
             rule,
-            check_mirror_frame: true,
+            check_mirror_frame: false,
         },
     )
 }
 
-/// Synchronized corner move across all seam-connected corners, shared by
-/// `Command::Anchor` and live 2D corner dragging.
-pub fn preview_move_corner(
+fn propagate_corner_deltas(
     source: &GarmentTemplate,
-    template: &mut GarmentTemplate,
-    panel: &str,
-    anchor: usize,
-    position: DVec2,
-) -> Result<(), String> {
-    if !position.is_finite() {
-        return Err("Point coordinates must be finite".into());
-    }
-    let old_pt = {
-        let p = source
-            .panels
-            .iter()
-            .find(|p| p.id == panel)
-            .ok_or("Panel not found")?;
-        let poly = p
-            .polygon
-            .as_ref()
-            .ok_or("This panel has no editable contour")?;
-        if anchor >= poly.points.len() {
-            return Err("Point index out of range".into());
-        }
-        poly.points[anchor]
-    };
-    let seed_delta = position - old_pt;
-
-    // Fast path for isolated/unsewn corner: bit-for-bit exact assignment via remap_anchors
-    let seam_corners = connected_seam_corners(source, panel, anchor);
-    if seam_corners.len() <= 1 {
-        let p = template
-            .panels
-            .iter_mut()
-            .find(|p| p.id == panel)
-            .ok_or("Panel not found")?;
-        remap_anchors(p, &[anchor], |_| position)?;
-        normalize(p);
-        return Ok(());
-    }
-
-    // Preserve board origins when multi-panel normalized origins might shift
-    for (i, p) in template.panels.iter_mut().enumerate() {
-        p.layout_2d = Some(layout(source, i));
-    }
-
-    // BFS propagation of corner delta in seam frames so connected sewn edge lengths stay equal.
-    let mut corner_deltas: std::collections::BTreeMap<CornerRef, DVec2> =
-        std::collections::BTreeMap::new();
-    let seed_ref = CornerRef {
-        panel: panel.to_owned(),
-        point: anchor,
-    };
-    corner_deltas.insert(seed_ref.clone(), seed_delta);
+    seeds: impl IntoIterator<Item = (CornerRef, DVec2)>,
+) -> std::collections::BTreeMap<CornerRef, DVec2> {
+    let mut corner_deltas = std::collections::BTreeMap::new();
     let mut queue = std::collections::VecDeque::new();
-    queue.push_back(seed_ref.clone());
+    for (seed_ref, delta) in seeds {
+        if corner_deltas.insert(seed_ref.clone(), delta).is_none() {
+            queue.push_back(seed_ref);
+        }
+    }
 
     while let Some(cur) = queue.pop_front() {
         let cur_delta = corner_deltas[&cur];
@@ -1472,6 +1511,9 @@ pub fn preview_move_corner(
             continue;
         };
         let cn = cpoly.points.len();
+        if cn < 3 || cpoly.edges.len() != cn || cur.point >= cn {
+            continue;
+        }
         let prev_idx = (cur.point + cn - 1) % cn;
         let incident_edges = [
             cpoly.edges[prev_idx].clone(),
@@ -1519,7 +1561,90 @@ pub fn preview_move_corner(
                 }
             }
         }
+
+        for link in &source.mirror_links {
+            let partner = if link.a == cur.panel {
+                Some(link.b.as_str())
+            } else if link.b == cur.panel {
+                Some(link.a.as_str())
+            } else {
+                None
+            };
+            if let Some(m_panel) = partner
+                && let Some(mp) = source.panels.iter().find(|p| p.id == m_panel)
+                && let Some(mpoly) = mp.polygon.as_ref()
+                && mpoly.points.len() == cn
+            {
+                let target = CornerRef {
+                    panel: m_panel.to_owned(),
+                    point: cn - 1 - cur.point,
+                };
+                if !corner_deltas.contains_key(&target) {
+                    corner_deltas.insert(target.clone(), reflect_vec(link.axis, cur_delta));
+                    queue.push_back(target);
+                }
+            }
+        }
     }
+
+    corner_deltas
+}
+
+/// Synchronized corner move across all seam- and mirror-connected corners, shared by
+/// `Command::Anchor` and live 2D corner dragging.
+pub fn preview_move_corner(
+    source: &GarmentTemplate,
+    template: &mut GarmentTemplate,
+    panel: &str,
+    anchor: usize,
+    position: DVec2,
+) -> Result<(), String> {
+    if !position.is_finite() {
+        return Err("Point coordinates must be finite".into());
+    }
+    let old_pt = {
+        let p = source
+            .panels
+            .iter()
+            .find(|p| p.id == panel)
+            .ok_or("Panel not found")?;
+        let poly = p
+            .polygon
+            .as_ref()
+            .ok_or("This panel has no editable contour")?;
+        if anchor >= poly.points.len() {
+            return Err("Point index out of range".into());
+        }
+        poly.points[anchor]
+    };
+    let seed_delta = position - old_pt;
+
+    // Fast path for isolated/pure-mirror corner without seams: bit-for-bit exact assignment
+    let any_sewn = connected_corners(source, panel, anchor)
+        .iter()
+        .any(|c| connected_seam_corners(source, &c.panel, c.point).len() > 1);
+    if !any_sewn {
+        let p = template
+            .panels
+            .iter_mut()
+            .find(|p| p.id == panel)
+            .ok_or("Panel not found")?;
+        remap_anchors(p, &[anchor], |_| position)?;
+        normalize(p);
+        let _ = linked::synchronize(source, template);
+        return Ok(());
+    }
+
+    // Preserve board origins when multi-panel normalized origins might shift
+    for (i, p) in template.panels.iter_mut().enumerate() {
+        p.layout_2d = Some(layout(source, i));
+    }
+
+    let seed_ref = CornerRef {
+        panel: panel.to_owned(),
+        point: anchor,
+    };
+    let corner_deltas = propagate_corner_deltas(source, [(seed_ref, seed_delta)]);
 
     // Group by panel, skipping mirror-link siblings of already-edited representatives
     let mut edited_reps = std::collections::BTreeSet::new();
@@ -1562,6 +1687,7 @@ pub fn preview_move_corner(
         }
         normalize(p);
     }
+    let _ = linked::synchronize(source, template);
     Ok(())
 }
 
@@ -1587,7 +1713,7 @@ pub(super) fn curve_point_connected(
         }
     }
 
-    let seam_corners = connected_seam_corners(source, panel, anchor);
+    let seam_corners = connected_corners(source, panel, anchor);
     if seam_corners.len() > 1 {
         for (i, p) in template.panels.iter_mut().enumerate() {
             p.layout_2d = Some(layout(source, i));
@@ -1610,7 +1736,7 @@ pub(super) fn curve_point_connected(
         let prev = (c.point + n - 1) % n;
         for edge_idx in [c.point, prev] {
             let ename = &poly.edges[edge_idx];
-            for ce in connected_seam_edges(source, &c.panel, ename) {
+            for ce in connected_edges(source, &c.panel, ename) {
                 if visited_edges.insert((ce.panel.clone(), ce.edge.clone())) {
                     edges_to_toggle.push((ce.panel, ce.edge));
                 }
@@ -1675,24 +1801,6 @@ pub(super) fn move_points_connected(
     if !delta.is_finite() {
         return Err("Move delta must be finite".into());
     }
-    let any_sewn = points
-        .iter()
-        .any(|&pt| connected_seam_corners(source, panel, pt).len() > 1);
-    if !any_sewn {
-        let p = template
-            .panels
-            .iter_mut()
-            .find(|p| p.id == panel)
-            .ok_or("Panel not found")?;
-        remap_anchors(p, points, |point| point + delta)?;
-        normalize(p);
-        return Ok(());
-    }
-
-    for (i, p) in template.panels.iter_mut().enumerate() {
-        p.layout_2d = Some(layout(source, i));
-    }
-
     let count = source
         .panels
         .iter()
@@ -1713,75 +1821,38 @@ pub(super) fn move_points_connected(
         return Err("Point index out of range".into());
     }
 
-    let mut corner_deltas: std::collections::BTreeMap<CornerRef, DVec2> =
-        std::collections::BTreeMap::new();
-    let mut queue = std::collections::VecDeque::new();
-    for pt in unique {
-        let seed_ref = CornerRef {
-            panel: panel.to_owned(),
-            point: pt,
-        };
-        corner_deltas.insert(seed_ref.clone(), delta);
-        queue.push_back(seed_ref);
+    let any_sewn = unique.iter().any(|&pt| {
+        connected_corners(source, panel, pt)
+            .iter()
+            .any(|c| connected_seam_corners(source, &c.panel, c.point).len() > 1)
+    });
+    if !any_sewn {
+        let p = template
+            .panels
+            .iter_mut()
+            .find(|p| p.id == panel)
+            .ok_or("Panel not found")?;
+        remap_anchors(p, &unique, |point| point + delta)?;
+        normalize(p);
+        return Ok(());
     }
 
-    while let Some(cur) = queue.pop_front() {
-        let cur_delta = corner_deltas[&cur];
-        let Some(cp) = source.panels.iter().find(|p| p.id == cur.panel) else {
-            continue;
-        };
-        let Some(cpoly) = cp.polygon.as_ref() else {
-            continue;
-        };
-        let cn = cpoly.points.len();
-        let prev_idx = (cur.point + cn - 1) % cn;
-        let incident_edges = [
-            cpoly.edges[prev_idx].clone(),
-            cpoly.edges[cur.point].clone(),
-        ];
-
-        for cur_edge in incident_edges {
-            let e_idx = cpoly.edges.iter().position(|e| e == &cur_edge).unwrap();
-            let a0 = cpoly.points[e_idx];
-            let a1 = cpoly.points[(e_idx + 1) % cn];
-            for partner in connected_seam_edges(source, &cur.panel, &cur_edge)
-                .into_iter()
-                .skip(1)
-            {
-                let Some(pp) = source.panels.iter().find(|p| p.id == partner.panel) else {
-                    continue;
-                };
-                let Some(ppoly) = pp.polygon.as_ref() else {
-                    continue;
-                };
-                let pn = ppoly.points.len();
-                let Some(pe_idx) = ppoly.edges.iter().position(|e| e == &partner.edge) else {
-                    continue;
-                };
-                let b0 = ppoly.points[pe_idx];
-                let b1 = ppoly.points[(pe_idx + 1) % pn];
-                let at_edge_start = cur.point == e_idx;
-                let partner_pt = if at_edge_start ^ (!partner.same_direction) {
-                    pe_idx
-                } else {
-                    (pe_idx + 1) % pn
-                };
-                let target = CornerRef {
-                    panel: partner.panel.clone(),
-                    point: partner_pt,
-                };
-                if corner_deltas.contains_key(&target) {
-                    continue;
-                }
-                if let Some(mapped_delta) =
-                    map_edge_vector(a0, a1, b0, b1, partner.same_direction, cur_delta)
-                {
-                    corner_deltas.insert(target.clone(), mapped_delta);
-                    queue.push_back(target);
-                }
-            }
-        }
+    for (i, p) in template.panels.iter_mut().enumerate() {
+        p.layout_2d = Some(layout(source, i));
     }
+
+    let corner_deltas = propagate_corner_deltas(
+        source,
+        unique.into_iter().map(|pt| {
+            (
+                CornerRef {
+                    panel: panel.to_owned(),
+                    point: pt,
+                },
+                delta,
+            )
+        }),
+    );
 
     let mut edited_reps = std::collections::BTreeSet::new();
     edited_reps.insert(panel.to_owned());
