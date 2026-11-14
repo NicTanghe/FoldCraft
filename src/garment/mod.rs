@@ -17,6 +17,7 @@ pub mod polygon;
 pub mod presets;
 pub mod production_metrics;
 pub mod rod_attachment;
+pub mod rod_grid;
 pub mod seam;
 pub mod shapes;
 pub mod svg_import;

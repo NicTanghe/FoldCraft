@@ -159,3 +159,13 @@ panel and retains the compiled garment for identity checks. Its output is in
 that panel's compiled vertex order. This makes an existing panel usable as the
 visible surface, but still requires an independently constructed and correctly
 ordered rod support; `evaluate` rejects a different compiled garment.
+
+`RectRodGrid` is a first, explicitly experimental rectangular material-space
+lattice generator. It places rod nodes on a regular grid, joins perpendicular
+rods at shared vertices and adds bending joints along each grid line. It is a
+welded lattice, **not woven yarn**: without diagonal members or crossing-angle
+stiffness it has an unresisted in-plane shear mode and is not a calibrated
+fabric model. Its support triangles only interpolate positions. It accepts
+explicit rod parameters, grid resolution and runtime pin indices, uses a flat
+2D rest shape, and does not clip to arbitrary panels, make seams, initialize
+from a draped garment, handle avatar collisions or integrate with the UI.
