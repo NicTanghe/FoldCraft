@@ -139,7 +139,9 @@ fn sewn_two_panel_garment_steps_with_avatar_and_rod_contact() {
     let network = GarmentRodNetwork::compile(garment, material()).unwrap();
     let mut state = network.initial_state().unwrap();
     let before = network.model.stitch_energy(&state).unwrap();
-    let mut solver = GarmentRodAvatar::new(network, &plane(), &state, contact()).unwrap();
+    let mut avatar_contact = contact();
+    avatar_contact.radius = 0.05;
+    let mut solver = GarmentRodAvatar::new(network, &plane(), &state, avatar_contact).unwrap();
     let settings = RodSettings {
         dt_s: 0.0001,
         iterations: 1,
@@ -154,6 +156,7 @@ fn sewn_two_panel_garment_steps_with_avatar_and_rod_contact() {
     };
     let metrics = solver.step(&mut state, settings).unwrap();
     assert!(metrics.stitch_energy_j < before);
+    assert!(metrics.surface_contact_energy_j > 0.0);
     assert!(state.positions.iter().all(|p| p.z > 0.0));
 }
 
