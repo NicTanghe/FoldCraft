@@ -1332,9 +1332,16 @@ fn build_command_palette_overlay(state: &CssEditorState) -> Node {
 fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
     let mut nodes = Vec::new();
 
+    let is_dark = state.theme == Theme::Dark;
+    let bg_color = if is_dark { "#0d0f17" } else { "#f8fafc" };
+    let grid_color = if is_dark { "#1e2636" } else { "#e2e8f0" };
+    let tri_fill = if is_dark { "rgba(148, 163, 184, 0.10)" } else { "rgba(100, 116, 139, 0.08)" };
+    let tri_stroke = if is_dark { "#334155" } else { "#cbd5e1" };
+    let unsel_edge_color = if is_dark { "#f0f3f8" } else { "#1e293b" };
+
     // Board background
     nodes.push(ui! {
-        <rect width="400" height="400" fill="#181b22" />
+        <rect width="400" height="400" fill={bg_color} />
     });
 
     // Drafting grid lines
@@ -1342,14 +1349,14 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
     let mut gx = grid_step;
     while gx < 400.0 {
         nodes.push(ui! {
-            <polyline points={format!("{gx:.1},0 {gx:.1},400")} stroke="#262a34" stroke-width="0.8" />
+            <polyline points={format!("{gx:.1},0 {gx:.1},400")} stroke={grid_color} stroke-width="0.8" />
         });
         gx += grid_step;
     }
     let mut gy = grid_step;
     while gy < 400.0 {
         nodes.push(ui! {
-            <polyline points={format!("0,{gy:.1} 400,{gy:.1}")} stroke="#262a34" stroke-width="0.8" />
+            <polyline points={format!("0,{gy:.1} 400,{gy:.1}")} stroke={grid_color} stroke-width="0.8" />
         });
         gy += grid_step;
     }
@@ -1373,7 +1380,7 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
         let points = format!("{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}");
 
         nodes.push(ui! {
-            <polygon points={points} fill="rgba(148, 163, 184, 0.12)" stroke="#64748b" stroke-width="0.6" />
+            <polygon points={points} fill={tri_fill} stroke={tri_stroke} stroke-width="0.6" />
         });
     }
 
@@ -1389,7 +1396,7 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
         let (x_start, y_start) = corners[i];
         let (x_end, y_end) = corners[(i + 1) % 4];
         let is_selected = state.selected_edge == Some(i);
-        let stroke_color = if is_selected { "#f59e0b" } else { "#f0f3f8" };
+        let stroke_color = if is_selected { "#f59e0b" } else { unsel_edge_color };
         let stroke_w = if is_selected { "3.0" } else { "1.5" };
 
         let pts = format!("{x_start:.1},{y_start:.1} {x_end:.1},{y_end:.1}");

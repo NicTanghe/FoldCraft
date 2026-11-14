@@ -37,6 +37,9 @@ button {
   --warn: #f59e0b;
   --danger: #ef4444;
   --success: #10b981;
+  --viewport-bg-3d: #0b0d13;
+  --viewport-bg-2d: #0d0f17;
+  --viewport-header-bg: rgba(22, 25, 34, 0.88);
 }
 
 .theme-dark {
@@ -55,6 +58,9 @@ button {
   --warn: #f59e0b;
   --danger: #ef4444;
   --success: #10b981;
+  --viewport-bg-3d: #0b0d13;
+  --viewport-bg-2d: #0d0f17;
+  --viewport-header-bg: rgba(22, 25, 34, 0.88);
 }
 
 .theme-light {
@@ -73,9 +79,12 @@ button {
   --warn: #d97706;
   --danger: #dc2626;
   --success: #059669;
+  --viewport-bg-3d: #e8ecf2;
+  --viewport-bg-2d: #f8fafc;
+  --viewport-header-bg: rgba(241, 245, 249, 0.88);
 }
 
-/* App Shell Container */
+/* App Shell Container with smooth Day/Night theme transitions */
 .studio-shell {
   display: flex;
   flex-direction: column;
@@ -85,6 +94,39 @@ button {
   color: var(--text);
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  transition: background-color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.top-bar,
+.tool-rail,
+.tool-btn,
+.sidebar,
+.left-drawer,
+.right-dock,
+.status-bar,
+.viewport-header,
+.viewport-container,
+.canvas-area,
+.viewport,
+#viewport-stage,
+.stage,
+.dock-tabs,
+.dock-tab,
+.accordion-header,
+.accordion-content,
+.piece-card,
+.palette-item,
+#command-palette,
+.menu-item,
+.transport-btn,
+.layout-btn,
+.clean-view-toggle,
+.solver-dropdown,
+.svg-canvas {
+  transition: background-color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================================================
@@ -867,29 +909,33 @@ button {
   flex-direction: row;
   flex: 1;
   position: relative;
-  background-color: #0b0d13;
+  background-color: var(--viewport-bg-3d);
   overflow: hidden;
   min-width: 0;
   min-height: 0;
 }
 
-#viewport-3d, #viewport-2d, .viewport-container {
+#viewport-3d, .stage-3d-only #viewport-3d {
   display: flex;
   flex-direction: column;
   flex: 1;
   position: relative;
-  background-color: transparent;
+  background-color: var(--viewport-bg-3d);
   overflow: hidden;
   min-width: 0;
   min-height: 0;
 }
 
-#viewport-2d {
-  border-left: 1px solid var(--border);
-}
-
-.stage-3d-only #viewport-3d {
+#viewport-2d, .stage-2d-only #viewport-2d {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  position: relative;
+  background-color: var(--viewport-bg-2d);
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
 }
 
 .stage-3d-only #viewport-2d {
@@ -901,21 +947,27 @@ button {
 }
 
 .stage-2d-only #viewport-2d {
-  flex: 1;
   border-left: none;
 }
 
 .viewport-header {
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  background-color: rgba(22, 25, 34, 0.85);
+  background-color: var(--viewport-header-bg);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   z-index: 2;
+}
+
+.viewport-header-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
 }
 
 .viewport-title {
@@ -929,6 +981,31 @@ button {
 .viewport-sub {
   font-size: 10px;
   color: var(--text-muted);
+}
+
+.viewport-tools {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+
+.viewport-tool-btn {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.viewport-tool-btn:hover {
+  background-color: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
 }
 
 .viewport-hud {
@@ -966,6 +1043,7 @@ button {
   height: 100%;
   min-width: 100px;
   min-height: 100px;
+  background-color: var(--viewport-bg-3d);
 }
 
 .svg-canvas, .pattern-preview-svg {
@@ -975,6 +1053,15 @@ button {
   max-height: 100%;
   aspect-ratio: 1 / 1;
   display: block;
+}
+
+.pattern-piece {
+  cursor: pointer;
+  transition: fill 0.2s ease, stroke 0.2s ease;
+}
+
+.pattern-piece:hover {
+  opacity: 0.85;
 }
 
 .cad-vertex {
