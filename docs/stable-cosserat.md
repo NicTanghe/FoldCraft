@@ -256,3 +256,9 @@ avatar, implement friction or animated avatars, or directly collide a yarn
 cross-section against the surface. The exhaustive per-vertex detections are a
 CPU research path with no production performance claim. The editor and solver
 menu do not use it.
+
+`RodAvatarCheckpoint` additionally records an exact witness of the fixed
+avatar vertices, combined triangle topology and OGC settings. Restoration
+rejects a changed witness transactionally; rod time-step, gravity, drag and
+rod-barrier settings must still be managed by the caller. This research cache is
+not yet part of a saved fitting project or the desktop worker.

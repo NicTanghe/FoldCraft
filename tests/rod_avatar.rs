@@ -156,3 +156,42 @@ fn sewn_two_panel_garment_steps_with_avatar_and_rod_contact() {
     assert!(metrics.stitch_energy_j < before);
     assert!(state.positions.iter().all(|p| p.z > 0.0));
 }
+
+#[test]
+fn avatar_checkpoint_resumes_and_rejects_surface_changes() {
+    use marvelous_cloth::garment::rod_avatar::RodAvatarCheckpoint;
+    let garment = garment(0.015);
+    let network = GarmentRodNetwork::compile(garment.clone(), material()).unwrap();
+    let mut state = network.initial_state().unwrap();
+    let mut solver = GarmentRodAvatar::new(network, &plane(), &state, contact()).unwrap();
+    let settings = RodSettings {
+        dt_s: 0.005,
+        iterations: 2,
+        gravity_m_s2: DVec3::new(0.0, 0.0, -1.0),
+        drag_per_s: 0.0,
+        ..Default::default()
+    };
+    solver.step(&mut state, settings).unwrap();
+    let bytes = serde_json::to_vec(&solver.checkpoint(&state).unwrap()).unwrap();
+    let checkpoint: RodAvatarCheckpoint = serde_json::from_slice(&bytes).unwrap();
+    let network2 = GarmentRodNetwork::compile(garment.clone(), material()).unwrap();
+    let mut resumed = network2.initial_state().unwrap();
+    let mut solver2 = GarmentRodAvatar::new(network2, &plane(), &resumed, contact()).unwrap();
+    solver2
+        .restore_checkpoint(&mut resumed, &checkpoint)
+        .unwrap();
+    assert_eq!(resumed, state);
+    solver.step(&mut state, settings).unwrap();
+    solver2.step(&mut resumed, settings).unwrap();
+    assert_eq!(resumed, state);
+    let mut altered_plane = plane();
+    for p in &mut altered_plane.vertices {
+        p.z -= 0.001;
+    }
+    let other_network = GarmentRodNetwork::compile(garment, material()).unwrap();
+    let mut target = other_network.initial_state().unwrap();
+    let other = GarmentRodAvatar::new(other_network, &altered_plane, &target, contact()).unwrap();
+    let before = target.clone();
+    assert!(other.restore_checkpoint(&mut target, &checkpoint).is_err());
+    assert_eq!(before, target);
+}

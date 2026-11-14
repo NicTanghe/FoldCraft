@@ -2,7 +2,7 @@
 use super::rod_garment::GarmentRodNetwork;
 use crate::{
     avatar::SurfaceMesh,
-    cosserat::{RodMetrics, RodModel, RodSettings, RodState},
+    cosserat::{RodCheckpoint, RodMetrics, RodModel, RodSettings, RodState},
     ogc::{OgcSettings, OgcWorld},
 };
 use std::collections::BTreeSet;
@@ -13,6 +13,16 @@ pub struct GarmentRodAvatar {
     network: GarmentRodNetwork,
     world: OgcWorld,
     contact: OgcSettings,
+}
+
+/// Research checkpoint bound to the exact rod model, fixed surface and OGC
+/// settings. Solver time step and other rod settings are supplied separately.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RodAvatarCheckpoint {
+    version: u32,
+    surface_signature: Vec<u64>,
+    rod: RodCheckpoint,
 }
 
 impl GarmentRodAvatar {
@@ -51,6 +61,48 @@ impl GarmentRodAvatar {
             contact,
         })
     }
+    fn surface_signature(&self) -> Vec<u64> {
+        let mut signature = vec![
+            self.world.moving as u64,
+            self.world.fixed.len() as u64,
+            self.contact.radius.to_bits(),
+            self.contact.stiffness.to_bits(),
+            self.contact.relaxation.to_bits(),
+            self.contact.refresh_fraction.to_bits(),
+        ];
+        for p in &self.world.fixed {
+            signature.extend([p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]);
+        }
+        signature.push(self.world.topology.triangles.len() as u64);
+        for face in &self.world.topology.triangles {
+            signature.extend(face.map(|index| index as u64));
+        }
+        signature
+    }
+
+    pub fn checkpoint(&self, state: &RodState) -> Result<RodAvatarCheckpoint, String> {
+        Ok(RodAvatarCheckpoint {
+            version: 1,
+            surface_signature: self.surface_signature(),
+            rod: self.network.model.checkpoint(state)?,
+        })
+    }
+
+    /// Refuses changed surface geometry, topology or OGC settings; errors leave
+    /// the destination state unchanged. Detection is refreshed on the next step.
+    pub fn restore_checkpoint(
+        &self,
+        state: &mut RodState,
+        checkpoint: &RodAvatarCheckpoint,
+    ) -> Result<(), String> {
+        if checkpoint.version != 1 || checkpoint.surface_signature != self.surface_signature() {
+            return Err("Rod avatar checkpoint does not match surface contact".into());
+        }
+        self.network
+            .model
+            .restore_checkpoint(state, &checkpoint.rod)
+    }
+
     pub fn model(&self) -> &RodModel {
         &self.network.model
     }
