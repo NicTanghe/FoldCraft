@@ -595,7 +595,7 @@
       "depends_on": [],
       "status": "ready",
       "owner": null,
-      "vruntime": 3.0,
+      "vruntime": 3.045454545454546,
       "pr": null
     },
     {
@@ -748,6 +748,21 @@
       "status": "ready",
       "owner": null,
       "vruntime": 3.35,
+      "pr": null
+    },
+    {
+      "id": "FC-0056",
+      "title": "Implement seam-aware rod contact and garment integration",
+      "acceptance": "Integrate sewing and rod self-contact with explicit local exclusions and tested objective, force, bounds and transactional state; continue garment workflow integration on the existing feature branch.",
+      "points": 5.0,
+      "spent": 2.0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "ready",
+      "owner": null,
+      "vruntime": 3.4214285714285713,
       "pr": null
     }
   ]
