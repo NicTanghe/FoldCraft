@@ -183,3 +183,21 @@ fn rigidly_placed_panels_start_without_artificial_bending() {
     let energy = network.model.elastic_energy(&state).unwrap();
     assert!(energy < 1e-18, "unexpected rest energy: {energy}");
 }
+
+#[test]
+fn approximate_material_responds_to_shared_fabric_properties() {
+    use marvelous_cloth::garment::rod_garment::approximate_rod_material;
+    let mut template = GarmentTemplate::two_panel_demo();
+    let base = approximate_rod_material(&template.compile().unwrap()).unwrap();
+    let fabric = &mut template.fabrics[0].properties;
+    fabric.density *= 2.0;
+    fabric.warp *= 2.0;
+    fabric.weft *= 2.0;
+    fabric.shear *= 2.0;
+    fabric.bend_warp *= 2.0;
+    fabric.bend_weft *= 2.0;
+    let doubled = approximate_rod_material(&template.compile().unwrap()).unwrap();
+    assert!((doubled.linear_density / base.linear_density - 2.0).abs() < 1e-12);
+    assert!((doubled.stretch_shear_rigidity / base.stretch_shear_rigidity - 2.0).abs() < 1e-12);
+    assert!((doubled.bend_twist_rigidity / base.bend_twist_rigidity - 2.0).abs() < 1e-12);
+}

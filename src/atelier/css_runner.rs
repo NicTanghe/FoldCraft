@@ -100,6 +100,7 @@ pub const ACT_RUN_SOLVER_GPU: u64 = 1 << 53;
 pub const ACT_RUN_SOLVER_CPU: u64 = 1 << 54;
 
 pub const ACT_RUN_SOLVER_AL: u64 = 1 << 55;
+pub const ACT_RUN_SOLVER_ROD: u64 = 1 << 56;
 
 // Trampolines
 
@@ -153,6 +154,7 @@ pub struct CssRunnerState {
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
     pub gpu_sim: bool,
+    pub rod_sim: bool,
     pub contact_method: ContactMethod,
     pub solver_menu_open: bool,
     pub drag_test: bool,
@@ -210,6 +212,7 @@ impl CssRunnerState {
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
             gpu_sim: false,
+            rod_sim: false,
             contact_method: ContactMethod::Ipc,
             solver_menu_open: false,
             drag_test: false,
@@ -232,6 +235,7 @@ impl CssRunnerState {
             settings: self.settings.clone(),
             grab: None,
             gpu: self.gpu_sim,
+            rod: self.rod_sim,
             contact_method: self.contact_method,
             signal: worker::RepaintSignal::noop(),
             playing: self.playing,
@@ -267,10 +271,11 @@ impl CssRunnerState {
     }
     pub fn select_solver_method(&mut self, gpu: bool, method: ContactMethod) {
         self.solver_menu_open = false;
-        if self.gpu_sim == gpu && self.contact_method == method {
+        if !self.rod_sim && self.gpu_sim == gpu && self.contact_method == method {
             return;
         }
         self.gpu_sim = gpu;
+        self.rod_sim = false;
         self.contact_method = method;
         self.generation = self.generation.wrapping_add(1);
         self.playing = false;
@@ -279,6 +284,22 @@ impl CssRunnerState {
         self.step_ms = 0.0;
         self.status_message =
             "Solver changed; paused at displayed state. Press Play or Step.".into();
+        self.send_control_state(false);
+    }
+
+    pub fn select_rod_solver(&mut self) {
+        self.solver_menu_open = false;
+        if self.rod_sim {
+            return;
+        }
+        self.rod_sim = true;
+        self.gpu_sim = false;
+        self.generation = self.generation.wrapping_add(1);
+        self.playing = false;
+        self.worker_pending = false;
+        self.last_metrics = None;
+        self.step_ms = 0.0;
+        self.status_message = "Experimental Cosserat: approximate isotropic material; rod history resets on solver changes and reload. Press Play or Step.".into();
         self.send_control_state(false);
     }
 
@@ -304,7 +325,14 @@ impl CssRunnerState {
         match snapshot.save(&path) {
             Ok(_) => {
                 self.project = snapshot;
-                self.status_message = format!("Saved {}", path.display());
+                self.status_message = if self.rod_sim {
+                    format!(
+                        "Saved {}. Cosserat rod orientation/history will be reconstructed on reload.",
+                        path.display()
+                    )
+                } else {
+                    format!("Saved {}", path.display())
+                };
             }
             Err(e) => self.status_message = format!("Save error: {e}"),
         }
@@ -416,6 +444,9 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     }
     if actions & ACT_RUN_SOLVER_CPU != 0 {
         state.select_solver(false);
+    }
+    if actions & ACT_RUN_SOLVER_ROD != 0 {
+        state.select_rod_solver();
     }
     if actions & ACT_RUN_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
@@ -702,7 +733,9 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
         "clean-view-toggle"
     };
 
-    let (backend_class, backend_label) = if state.gpu_sim {
+    let (backend_class, backend_label) = if state.rod_sim {
+        ("backend-badge cpu", "CPU Cosserat (experimental)")
+    } else if state.gpu_sim {
         ("backend-badge gpu", state.contact_method.label())
     } else {
         ("backend-badge cpu", "CPU (OGC)")
@@ -742,6 +775,7 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                             <button id="solver-wgsl-ipc" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_GPU)}>"WGSL AVBD / IPC"</button>
                             <button id="solver-barrier-al" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_AL)}>"WGSL AVBD / barrier AL (experimental)"</button>
                             <button id="solver-cpu" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_CPU)}>"CPU VBD / OGC"</button>
+                            <button id="solver-rod" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_ROD)} title="Experimental isotropic rod approximation; rod history resets on reload">"CPU Cosserat / OGC (experimental)"</button>
                         </div>
                     }} else { ui! { <span /> } }}
                 </div>
@@ -1685,7 +1719,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                         </div>
                         <div class="prop-row">
                             <span class="prop-label">"Active Backend"</span>
-                            <span class="prop-value">{if state.gpu_sim { state.contact_method.label() } else { "CPU (OGC)" }}</span>
+                            <span class="prop-value">{if state.rod_sim { "CPU Cosserat (experimental)" } else if state.gpu_sim { state.contact_method.label() } else { "CPU (OGC)" }}</span>
                         </div>
                     </div>
                 }
@@ -2667,6 +2701,38 @@ mod tests {
         assert!(!app.state().gpu_sim);
         assert_eq!(app.state().generation, generation + 3);
         assert_eq!(app.state().scene.state.x, checkpoint.x);
+
+        // The experimental entry transfers the visible state and pauses.
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 14,
+        });
+        let button = app
+            .find_element_bounds_by_id("#solver-rod")
+            .expect("experimental solver menu entry");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 15,
+        });
+        assert!(app.state().rod_sim);
+        assert!(!app.state().gpu_sim && !app.state().playing && !app.state().solver_menu_open);
+        assert_eq!(app.state().generation, generation + 4);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
+        assert_eq!(app.state().scene.state.v, checkpoint.v);
+        assert_eq!(app.state().scene.state.time, checkpoint.time);
 
         // Headless RGBA8 rendering
         let width = 640;

@@ -103,6 +103,12 @@ impl GarmentRodAvatar {
             .restore_checkpoint(state, &checkpoint.rod)
     }
 
+    pub fn set_contact(&mut self, contact: OgcSettings) -> Result<(), String> {
+        contact.validate()?;
+        self.contact = contact;
+        Ok(())
+    }
+
     pub fn model(&self) -> &RodModel {
         &self.network.model
     }

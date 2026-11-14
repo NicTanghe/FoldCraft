@@ -148,6 +148,8 @@ pub struct RodMetrics {
     pub contact_energy_j: f64,
     /// OGC surface-contact energy, J; zero without a surface world.
     pub surface_contact_energy_j: f64,
+    /// Minimum surface distance reported by final OGC detection.
+    pub surface_minimum_distance_m: Option<f64>,
     /// Minimum computed closest-pair distance; nearly parallel pairs use the
     /// existing floating-point closest-feature heuristic, not exact predicates.
     pub minimum_nonadjacent_distance_m: Option<f64>,
@@ -830,6 +832,7 @@ impl RodModel {
                 (0.0, None)
             };
         let mut surface_contact_energy_j = 0.0;
+        let mut surface_minimum_distance_m = None;
         if let Some((world, surface_settings)) = surface.as_mut() {
             let x = world.positions(&next.positions);
             let contacts = world.detect(&x, 2.0 * surface_settings.radius, surface_settings)?;
@@ -837,6 +840,9 @@ impl RodModel {
                 return Err("Surface contact has zero separation".into());
             }
             surface_contact_energy_j = contacts.value(&x, surface_settings);
+            if contacts.minimum_distance.is_finite() {
+                surface_minimum_distance_m = Some(contacts.minimum_distance);
+            }
             for (vertex, residual) in residuals.iter_mut().enumerate() {
                 for &index in &contacts.incident[vertex] {
                     let (_, gradient, _) = contacts.contacts[index].block(
@@ -873,6 +879,7 @@ impl RodModel {
             max_stretch_shear: max_strain,
             contact_energy_j,
             surface_contact_energy_j,
+            surface_minimum_distance_m,
             minimum_nonadjacent_distance_m,
             bounded_updates,
             rejected_line_searches,

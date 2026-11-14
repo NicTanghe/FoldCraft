@@ -66,6 +66,7 @@ pub struct Work {
     pub settings: VbdSettings,
     pub grab: Option<Grab>,
     pub gpu: bool,
+    pub rod: bool,
     pub contact_method: marvelous_cloth::gpu_avbd::ContactMethod,
     pub signal: RepaintSignal,
     pub playing: bool,
@@ -246,6 +247,7 @@ fn start_inner(
         .spawn(move || {
             let mut gpu = backend.map(|(device, queue)| GpuAvbd::new(device, queue));
             let mut cache: Option<(u64, VbdSolver)> = None;
+            let mut rod_cache: Option<(u64, marvelous_cloth::garment::rod_avatar::GarmentRodAvatar, marvelous_cloth::cosserat::RodState)> = None;
             let mut active: Option<Work> = None;
             let mut deadline = Instant::now();
             loop {
@@ -297,6 +299,52 @@ fn start_inner(
                 let previous = request.map(|_| w.scene.state.clone());
                 w.once = false;
                 let result: Result<(State, VbdMetrics), String> = (|| {
+                    if w.rod {
+                        if w.grab.is_some() { return Err("Experimental Cosserat solver does not yet support grabs".into()); }
+                        w.settings.validate()?;
+                        if rod_cache.as_ref().is_none_or(|(g, _, _)| *g != w.generation) {
+                            let material = marvelous_cloth::garment::rod_garment::approximate_rod_material(&w.scene.garment)?;
+                            let network = marvelous_cloth::garment::rod_garment::GarmentRodNetwork::compile(w.scene.garment.clone(), material)?;
+                            let state = network.state_from_mesh(&w.scene.state)?;
+                            let solver = marvelous_cloth::garment::rod_avatar::GarmentRodAvatar::new(network, &w.scene.collider.surface, &state, w.settings.contact.clone())?;
+                            rod_cache = Some((w.generation, solver, state));
+                            cache = None;
+                            if let Some(gpu) = &gpu { gpu.reset(); }
+                            clear_final_diagnostics();
+                        }
+                        let (_, solver, rod_state) = rod_cache.as_mut().unwrap();
+                        solver.set_contact(w.settings.contact.clone())?;
+                        let settings = marvelous_cloth::cosserat::RodSettings {
+                            dt_s: w.settings.dt,
+                            iterations: w.settings.iterations,
+                            gravity_m_s2: w.settings.gravity,
+                            drag_per_s: w.settings.damping,
+                            ..Default::default()
+                        };
+                        let rod_metrics = solver.step(rod_state, settings)?;
+                        w.scene.state.x.clone_from(&rod_state.positions);
+                        w.scene.state.v.clone_from(&rod_state.velocities);
+                        w.scene.state.time = rod_state.time_s;
+                        let metrics = VbdMetrics {
+                            time_s: rod_metrics.time_s,
+                            dt_s: rod_metrics.dt_s,
+                            step_ms: rod_metrics.step_ms,
+                            iterations: w.settings.iterations,
+                            truncated_vertices: rod_metrics.bounded_updates,
+                            minimum_distance_m: rod_metrics.surface_minimum_distance_m.unwrap_or(f64::INFINITY),
+                            max_seam_gap_m: w.scene.garment.max_seam_gap(&w.scene.state.x),
+                            residual_rms_n: rod_metrics.position_residual_rms_n,
+                            ..Default::default()
+                        };
+                        if let Some(request) = request {
+                            if let Ok(mut sample) = FINAL_DIAGNOSTICS.lock() { *sample = None; }
+                            if let Ok(mut error) = FINAL_DIAGNOSTICS_ERROR.lock() {
+                                *error = Some(FinalDiagnosticsFailure { request, message: "Final VBD diagnostics are unavailable for the experimental Cosserat solver".into() });
+                            }
+                        }
+                        return Ok((w.scene.state.clone(), metrics));
+                    }
+                    rod_cache = None;
                     if w.gpu && !allow_gpu {
                         return Err("GPU simulation requested without a GPU backend".into());
                     }
@@ -501,6 +549,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu,
+            rod: false,
             contact_method: Default::default(),
             signal: RepaintSignal::noop(),
             playing: false,
@@ -698,6 +747,7 @@ mod final_diagnostics_transport_tests {
             settings: settings.clone(),
             grab: None,
             gpu: false,
+            rod: false,
             contact_method: Default::default(),
             signal: RepaintSignal::noop(),
             playing: false,
@@ -789,6 +839,7 @@ mod final_diagnostics_transport_tests {
                     settings: settings.clone(),
                     grab: None,
                     gpu,
+                    rod: false,
                     contact_method: Default::default(),
                     signal: RepaintSignal::noop(),
                     playing: false,
@@ -854,6 +905,72 @@ mod final_diagnostics_transport_tests {
         assert_eq!(take_final_diagnostics_request(11), None);
         assert_eq!(take_final_diagnostics_request(11), None);
 
+        reset();
+    }
+
+    #[test]
+    fn experimental_rod_worker_advances_and_retains_state_across_requests() {
+        use marvelous_cloth::{
+            fitting::FittingProject,
+            garment::{GarmentTemplate, presets::GarmentKind},
+        };
+        let _guard = WORKER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let dir = tempfile::tempdir().unwrap();
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 10 0 -10\nv 11 0 -10\nv 10 1 -10\nf 1 2 3\n").unwrap();
+        let mut project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+        project.template = GarmentTemplate::two_panel_demo();
+        project.template.panels.truncate(1);
+        project.template.seams.clear();
+        let scene = project.compile().unwrap();
+        let settings = VbdSettings {
+            iterations: 1,
+            dt: 0.001,
+            ..Default::default()
+        };
+        let (entered_tx, entered) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let (published_tx, published) = mpsc::channel();
+        let (tx, latest, thread) = start_inner(
+            false,
+            None,
+            Some(TestHooks {
+                entered: entered_tx,
+                release: release_rx,
+                published: published_tx,
+            }),
+        )
+        .unwrap();
+        let worker = TestWorker {
+            tx: Some(tx),
+            release: Some(release),
+            thread: Some(thread),
+        };
+        let work = || Work {
+            generation: 81,
+            scene: scene.clone(),
+            settings: settings.clone(),
+            grab: None,
+            gpu: false,
+            rod: true,
+            contact_method: Default::default(),
+            signal: RepaintSignal::noop(),
+            playing: false,
+            once: true,
+        };
+        for expected_step in 1..=2 {
+            worker.tx.as_ref().unwrap().send(work()).unwrap();
+            assert_eq!(entered.recv_timeout(Duration::from_secs(30)).unwrap(), 81);
+            worker.release.as_ref().unwrap().send(()).unwrap();
+            assert_eq!(published.recv_timeout(Duration::from_secs(30)).unwrap(), 81);
+            let done = latest.lock().unwrap().take().unwrap();
+            let (state, metrics) = done.result.unwrap();
+            assert!((state.time - settings.dt * expected_step as f64).abs() < 1e-12);
+            assert!(metrics.residual_rms_n.is_some());
+            assert!(metrics.gpu_compute_ms.is_none());
+        }
+        worker.shutdown();
         reset();
     }
 

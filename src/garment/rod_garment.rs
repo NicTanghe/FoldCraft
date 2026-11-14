@@ -176,7 +176,12 @@ impl GarmentRodNetwork {
     /// Initialize from the compiled garment's placed 3D state while retaining
     /// material rest lengths. Recompiling the garment requires a new network.
     pub fn initial_state(&self) -> Result<RodState, String> {
-        let source = &self.garment.initial_state;
+        self.state_from_mesh(&self.garment.initial_state)
+    }
+
+    /// Reconstruct orientations from an accepted mesh state when switching
+    /// solvers. Rod twist/history cannot be recovered from positions alone.
+    pub fn state_from_mesh(&self, source: &crate::model::State) -> Result<RodState, String> {
         if source.x.len() != self.garment.mesh.uv.len()
             || source.v.len() != source.x.len()
             || !source.time.is_finite()
@@ -232,4 +237,63 @@ fn frame_from_tangent_normal(tangent: DVec3, normal: DVec3) -> Result<DQuat, Str
     let z = z_raw / z_length;
     let y = z.cross(x);
     Ok(DQuat::from_mat3(&DMat3::from_cols(x, y, z)).normalize())
+}
+
+/// Build an explicit isotropic, mesh-dependent approximation for an
+/// experimental preview. This does not reproduce directional shell behavior.
+pub fn approximate_rod_material(garment: &CompiledGarment) -> Result<RodMaterial, String> {
+    let mut edges = BTreeSet::new();
+    let mut area = 0.0;
+    let mut stiffness = 0.0;
+    let mut bending = 0.0;
+    for t in &garment.mesh.triangles {
+        let m = garment
+            .materials
+            .get(t.material)
+            .ok_or("Unknown triangle material")?;
+        m.validate()?;
+        if !t.area.is_finite() || t.area <= 0.0 {
+            return Err("Invalid triangle area".into());
+        }
+        area += t.area;
+        stiffness += t.area * (m.warp + m.weft + 2.0 * m.shear) * 0.25;
+        bending += t.area * (m.bend_warp + m.bend_weft) * 0.5;
+        let [a, b, c] = t.vertices;
+        for (u, v) in [(a, b), (b, c), (c, a)] {
+            if u >= garment.mesh.uv.len() || v >= garment.mesh.uv.len() || u == v {
+                return Err("Invalid garment edge".into());
+            }
+            edges.insert([u.min(v), u.max(v)]);
+        }
+    }
+    let length: f64 = edges
+        .iter()
+        .map(|[a, b]| garment.mesh.uv[*a].distance(garment.mesh.uv[*b]))
+        .sum();
+    let mass: f64 = garment.mesh.masses.iter().sum();
+    if !area.is_finite()
+        || area <= 0.0
+        || !length.is_finite()
+        || length <= 0.0
+        || !mass.is_finite()
+        || mass <= 0.0
+    {
+        return Err("Invalid material geometry or mass".into());
+    }
+    let width = area / length;
+    let result = RodMaterial {
+        linear_density: mass / length,
+        stretch_shear_rigidity: stiffness / area * width,
+        bend_twist_rigidity: bending / area * width,
+    };
+    if !result.linear_density.is_finite()
+        || !result.stretch_shear_rigidity.is_finite()
+        || !result.bend_twist_rigidity.is_finite()
+        || result.linear_density <= 0.0
+        || result.stretch_shear_rigidity <= 0.0
+        || result.bend_twist_rigidity < 0.0
+    {
+        return Err("Invalid approximate rod material".into());
+    }
+    Ok(result)
 }

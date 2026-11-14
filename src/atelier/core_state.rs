@@ -597,6 +597,7 @@ impl AtelierCore {
                 settings: self.settings.clone(),
                 grab: self.grab.clone(),
                 gpu: self.gpu,
+                rod: false,
                 contact_method: Default::default(),
                 signal: self.signal.clone(),
             })
