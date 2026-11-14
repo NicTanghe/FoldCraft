@@ -10,6 +10,17 @@ The workspace now gives most of the window to the garment and the unified patter
 - **2D header:** frame all patterns and use **gear ▾** for snapping and board rotation. Shapes, selection/clipboard actions and New sheet are in the compact row below. Finish/Cancel appear during a trace; precise dimensions/points live in Properties.
 - **Properties:** the piece browser stays above the **Piece / Fabric / Simulation** tabs. Piece contains seams, dimensions, point/boundary tools and placement. Fabric contains the existing shared material controls. Simulation contains resolution, solver parameters and diagnostics.
 
+The simulation backend menu includes **CPU Cosserat / OGC (experimental)**.
+Selecting it pauses at the displayed positions, velocities and simulated time;
+Play or Step runs the CPU rod network with the existing sewing and fixed-avatar
+surface contact. The badge stays marked experimental. Fabric values are reduced
+to a mesh-dependent isotropic approximation, Grab is unsupported, and rod
+orientation history is reconstructed after changing solvers or reloading a saved
+project. Its interactive worker uses at least a 16.7 ms timestep and at most
+four rod sweeps; the Simulation inspector shows the effective values without
+changing the saved VBD settings. See [Stable Cosserat rods](stable-cosserat.md)
+for the model and limits.
+
 Preferences are saved in the session's `preferences.json`. Layout and display changes persist when pointer interaction ends, rather than writing on every drag frame. Old preference files receive defaults for the new fields. These settings are not garment-project fields and never change material coordinates, contact, mass, seam definitions or simulation state.
 
 ## Display implementation and limits

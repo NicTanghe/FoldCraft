@@ -5,10 +5,27 @@
 //! see `THIRD_PARTY_NOTICES.md` for the complete notice. This module is not a
 //! garment solver or a physical implementation of the geometric fiber guides.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::time::Instant;
 
 use glam::{DMat3, DQuat, DVec3, DVec4};
+
+fn gained_active_surface_contact(
+    previous: &crate::ogc::ContactSet,
+    fresh: &crate::ogc::ContactSet,
+    x: &[DVec3],
+    settings: &crate::ogc::OgcSettings,
+) -> bool {
+    let covered: BTreeSet<_> = previous
+        .contacts
+        .iter()
+        .map(|c| (c.kind, c.vertices, c.count))
+        .collect();
+    fresh.contacts.iter().any(|contact| {
+        contact.value(x, settings.radius, settings.stiffness) > 0.0
+            && !covered.contains(&(contact.kind, contact.vertices, contact.count))
+    })
+}
 
 /// Homogeneous, isotropic rod parameters in SI units.
 #[derive(Clone, Copy, Debug)]
@@ -37,6 +54,20 @@ struct Joint {
     stiffness: f64,
 }
 
+/// A quadratic positional stitch. Coefficients describe the difference between
+/// two material attachments and must sum to zero; stiffness is in N/m.
+#[derive(Clone, Debug)]
+pub struct RodStitch {
+    pub terms: Vec<(usize, f64)>,
+    pub stiffness_n_per_m: f64,
+}
+
+impl RodStitch {
+    fn gap(&self, positions: &[DVec3]) -> DVec3 {
+        self.terms.iter().map(|(i, w)| positions[*i] * *w).sum()
+    }
+}
+
 /// Compiled rod network. Vertex and segment indices are runtime-only and must
 /// not be stored as persistent garment identifiers.
 #[derive(Clone, Debug)]
@@ -47,11 +78,15 @@ pub struct RodModel {
     joints: Vec<Joint>,
     incident_segments: Vec<Vec<usize>>,
     incident_joints: Vec<Vec<usize>>,
+    stitches: Vec<RodStitch>,
+    incident_stitches: Vec<Vec<(usize, f64)>>,
+    sewing_exclusions: HashSet<(usize, usize)>,
 }
 
 /// Accepted state, including the orientation and exact-solve history. A state
 /// must be retained between steps; positions alone are not a complete restart.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RodState {
     pub positions: Vec<DVec3>,
     pub velocities: Vec<DVec3>,
@@ -59,6 +94,16 @@ pub struct RodState {
     /// Per-segment fixed-point history; used only by the refined update.
     pub orientation_gamma: Vec<f64>,
     pub time_s: f64,
+}
+
+/// Portable research checkpoint tied to the exact compiled rod model. This is
+/// not a garment project cache and does not store timestep/contact settings.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RodCheckpoint {
+    version: u32,
+    model_signature: Vec<u64>,
+    state: RodState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,10 +157,16 @@ pub struct RodMetrics {
     /// Complete elapsed CPU time for the accepted call, milliseconds.
     pub step_ms: f64,
     pub elastic_energy_j: f64,
+    /// Quadratic sewing energy, J, separate from rod elastic energy.
+    pub stitch_energy_j: f64,
     /// Final unconstrained positional residual, RMS over free scalar DOFs, N.
     pub position_residual_rms_n: Option<f64>,
     pub max_stretch_shear: f64,
     pub contact_energy_j: f64,
+    /// OGC surface-contact energy, J; zero without a surface world.
+    pub surface_contact_energy_j: f64,
+    /// Minimum surface distance reported by final OGC detection.
+    pub surface_minimum_distance_m: Option<f64>,
     /// Minimum computed closest-pair distance; nearly parallel pairs use the
     /// existing floating-point closest-feature heuristic, not exact predicates.
     pub minimum_nonadjacent_distance_m: Option<f64>,
@@ -269,7 +320,11 @@ impl RodModel {
                 incident_joints[b].push(i);
             }
         }
+        let incident_stitches = vec![Vec::new(); rest_positions.len()];
         Ok(Self {
+            stitches: Vec::new(),
+            incident_stitches,
+            sewing_exclusions: HashSet::new(),
             rest_positions,
             inverse_masses,
             segments,
@@ -277,6 +332,60 @@ impl RodModel {
             incident_segments,
             incident_joints,
         })
+    }
+
+    /// Return a model with validated stitches. Changes require rebuilding the
+    /// model; indices refer only to this runtime topology.
+    pub fn with_stitches(mut self, stitches: Vec<RodStitch>) -> Result<Self, String> {
+        let mut incident = vec![Vec::new(); self.rest_positions.len()];
+        let mut exclusions = HashSet::new();
+        for (index, stitch) in stitches.iter().enumerate() {
+            let sum: f64 = stitch.terms.iter().map(|(_, w)| *w).sum();
+            let magnitude: f64 = stitch.terms.iter().map(|(_, w)| w.abs()).sum();
+            if !stitch.stiffness_n_per_m.is_finite()
+                || stitch.stiffness_n_per_m <= 0.0
+                || !(2..=64).contains(&stitch.terms.len())
+                || !sum.is_finite()
+                || !magnitude.is_finite()
+                || magnitude <= 0.0
+                || sum.abs() > 1e-10 * magnitude
+                || stitch.terms.windows(2).any(|w| w[0].0 >= w[1].0)
+                || stitch
+                    .terms
+                    .iter()
+                    .any(|(i, w)| *i >= incident.len() || !w.is_finite() || *w == 0.0)
+            {
+                return Err("invalid rod stitch coefficients or stiffness".into());
+            }
+            for &(vertex, weight) in &stitch.terms {
+                incident[vertex].push((index, weight));
+                for &(other, other_weight) in &stitch.terms {
+                    if (weight > 0.0 && other_weight < 0.0) || (weight < 0.0 && other_weight > 0.0)
+                    {
+                        exclusions.insert(unordered(vertex, other));
+                    }
+                }
+            }
+        }
+        self.sewing_exclusions = exclusions;
+        self.stitches = stitches;
+        self.incident_stitches = incident;
+        Ok(self)
+    }
+
+    /// Energy in the positional stitches, in joules.
+    pub fn stitch_energy(&self, state: &RodState) -> Result<f64, String> {
+        self.validate_state(state)?;
+        let energy: f64 = self
+            .stitches
+            .iter()
+            .map(|s| 0.5 * s.stiffness_n_per_m * s.gap(&state.positions).length_squared())
+            .sum();
+        if energy.is_finite() {
+            Ok(energy)
+        } else {
+            Err("rod stitch energy overflow".into())
+        }
     }
 
     pub fn initial_state(&self) -> RodState {
@@ -309,6 +418,79 @@ impl RodModel {
         Ok(())
     }
 
+    // Exact model witness, not a lossy hash. Version changes must accompany
+    // changes to these fields or their physical interpretation.
+    fn model_signature(&self) -> Vec<u64> {
+        fn vector(out: &mut Vec<u64>, v: DVec3) {
+            out.extend([v.x.to_bits(), v.y.to_bits(), v.z.to_bits()]);
+        }
+        fn quat_bits(out: &mut Vec<u64>, q: DQuat) {
+            out.extend([q.x.to_bits(), q.y.to_bits(), q.z.to_bits(), q.w.to_bits()]);
+        }
+        let mut out = Vec::new();
+        out.push(self.rest_positions.len() as u64);
+        for p in &self.rest_positions {
+            vector(&mut out, *p);
+        }
+        for mass in &self.inverse_masses {
+            out.push(mass.to_bits());
+        }
+        out.push(self.segments.len() as u64);
+        for seg in &self.segments {
+            out.extend([
+                seg.vertices[0] as u64,
+                seg.vertices[1] as u64,
+                seg.rest_length.to_bits(),
+                seg.stretch.to_bits(),
+                u64::from(seg.pinned),
+            ]);
+            quat_bits(&mut out, seg.rest_frame);
+        }
+        out.push(self.joints.len() as u64);
+        for joint in &self.joints {
+            out.extend([
+                joint.segments[0] as u64,
+                joint.segments[1] as u64,
+                joint.stiffness.to_bits(),
+            ]);
+            quat_bits(&mut out, joint.rest_relative);
+        }
+        out.push(self.stitches.len() as u64);
+        for stitch in &self.stitches {
+            out.extend([
+                stitch.terms.len() as u64,
+                stitch.stiffness_n_per_m.to_bits(),
+            ]);
+            for (vertex, weight) in &stitch.terms {
+                out.extend([*vertex as u64, weight.to_bits()]);
+            }
+        }
+        out
+    }
+
+    pub fn checkpoint(&self, state: &RodState) -> Result<RodCheckpoint, String> {
+        self.validate_state(state)?;
+        Ok(RodCheckpoint {
+            version: 1,
+            model_signature: self.model_signature(),
+            state: state.clone(),
+        })
+    }
+
+    /// Restores only an exact matching model and leaves `state` unchanged on error.
+    pub fn restore_checkpoint(
+        &self,
+        state: &mut RodState,
+        checkpoint: &RodCheckpoint,
+    ) -> Result<(), String> {
+        if checkpoint.version != 1 || checkpoint.model_signature != self.model_signature() {
+            return Err("Rod checkpoint does not match the compiled model".into());
+        }
+        self.validate_state(&checkpoint.state)?;
+        *state = checkpoint.state.clone();
+        Ok(())
+    }
+
     /// Elastic strain energy at an accepted or candidate state, joules.
     pub fn elastic_energy(&self, state: &RodState) -> Result<f64, String> {
         self.validate_state(state)?;
@@ -337,6 +519,50 @@ impl RodModel {
         }
     }
 
+    /// Complete inertial, rod and stitch objective for a candidate at this
+    /// time step. Used to accept a contact-free partial line search without
+    /// projecting a position outside the implicit objective.
+    pub(crate) fn implicit_objective(
+        &self,
+        previous: &RodState,
+        candidate: &RodState,
+        settings: RodSettings,
+    ) -> Result<f64, String> {
+        self.validate_state(previous)?;
+        self.validate_state(candidate)?;
+        let h = settings.dt_s;
+        if !h.is_finite() || h <= 0.0 || !settings.gravity_m_s2.is_finite() {
+            return Err("invalid rod objective settings".into());
+        }
+        let mut value = self.elastic_energy(candidate)? + self.stitch_energy(candidate)?;
+        for (i, &inv_mass) in self.inverse_masses.iter().enumerate() {
+            if inv_mass > 0.0 {
+                let prediction = previous.positions[i]
+                    + h * previous.velocities[i]
+                    + h * h * settings.gravity_m_s2;
+                value += 0.5 * (candidate.positions[i] - prediction).length_squared()
+                    / (inv_mass * h * h);
+            }
+        }
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err("rod implicit objective overflow".into())
+        }
+    }
+
+    pub(crate) fn max_stretch_shear(&self, state: &RodState) -> Result<f64, String> {
+        self.validate_state(state)?;
+        let mut maximum = 0.0_f64;
+        for (i, seg) in self.segments.iter().enumerate() {
+            let [a, b] = seg.vertices;
+            let c = (state.positions[b] - state.positions[a]) / seg.rest_length
+                - state.orientations[i] * DVec3::X;
+            maximum = maximum.max(c.length());
+        }
+        Ok(maximum)
+    }
+
     /// Optional segment-pair contact energy and minimum nonadjacent distance.
     /// Shared-endpoint pairs are excluded, including their immediate vicinity.
     pub fn contact_energy(
@@ -353,6 +579,26 @@ impl RodModel {
     /// nonadjacent rod segment pairs. There is no friction or angular inertia;
     /// the last accepted state survives an error.
     pub fn step(&self, state: &mut RodState, settings: RodSettings) -> Result<RodMetrics, String> {
+        self.step_impl(state, settings, None, 1)
+    }
+
+    pub(crate) fn step_with_surface_contact(
+        &self,
+        state: &mut RodState,
+        settings: RodSettings,
+        world: &mut crate::ogc::OgcWorld,
+        surface: &crate::ogc::OgcSettings,
+    ) -> Result<RodMetrics, String> {
+        self.step_impl(state, settings, Some((world, surface)), 64)
+    }
+
+    fn step_impl(
+        &self,
+        state: &mut RodState,
+        settings: RodSettings,
+        mut surface: Option<(&mut crate::ogc::OgcWorld, &crate::ogc::OgcSettings)>,
+        surface_batch_size: usize,
+    ) -> Result<RodMetrics, String> {
         let started = Instant::now();
         self.validate_state(state)?;
         if !settings.dt_s.is_finite()
@@ -369,6 +615,14 @@ impl RodModel {
             contact.validate()?;
             self.contact_stats(&state.positions, contact)?;
         }
+        if let Some((world, surface_settings)) = surface.as_mut() {
+            surface_settings.validate()?;
+            if world.moving != state.positions.len() {
+                return Err("Surface contact topology does not match rod state".into());
+            }
+            let x = world.positions(&state.positions);
+            world.validate_start(&x)?;
+        }
         let h = settings.dt_s;
         let mut next = state.clone();
         let mut bounded_updates = 0;
@@ -377,7 +631,7 @@ impl RodModel {
         for (i, p) in prediction.iter_mut().enumerate() {
             if self.inverse_masses[i] > 0.0 {
                 *p += h * state.velocities[i] + h * h * settings.gravity_m_s2;
-                if settings.contact.is_none() {
+                if settings.contact.is_none() && surface.is_none() {
                     next.positions[i] += h * state.velocities[i];
                 }
             } else {
@@ -385,9 +639,61 @@ impl RodModel {
             }
         }
         for _ in 0..settings.iterations {
-            for i in 0..next.positions.len() {
+            let mut surface_cache: Option<(
+                crate::ogc::ContactSet,
+                Vec<DVec3>,
+                crate::ogc::OgcSettings,
+            )> = None;
+            let mut i = 0;
+            let mut batch_start = 0;
+            let mut batch_end = 0;
+            let mut batch_size = surface_batch_size;
+            let mut retry_until = None;
+            let mut batch_positions = next.positions.clone();
+            let mut batch_bounded = bounded_updates;
+            let mut batch_rejected = rejected_line_searches;
+            loop {
+                if let Some((world, surface_settings)) = surface.as_mut()
+                    && (surface_cache.is_none() || i == batch_end)
+                {
+                    let x = world.positions(&next.positions);
+                    let fresh =
+                        world.detect(&x, 2.0 * surface_settings.radius, surface_settings)?;
+                    if fresh.minimum_distance <= 1e-12 {
+                        return Err("Surface contact has zero separation".into());
+                    }
+                    if let Some((previous, _, _)) = &surface_cache
+                        && batch_size > 1
+                        && gained_active_surface_contact(previous, &fresh, &x, surface_settings)
+                    {
+                        next.positions.clone_from(&batch_positions);
+                        bounded_updates = batch_bounded;
+                        rejected_line_searches = batch_rejected;
+                        i = batch_start;
+                        retry_until = Some(batch_end);
+                        batch_size = 1;
+                        surface_cache = None;
+                        continue;
+                    }
+                    if i < next.positions.len() {
+                        if retry_until == Some(i) {
+                            retry_until = None;
+                            batch_size = surface_batch_size;
+                        }
+                        batch_start = i;
+                        batch_end = (i + batch_size).min(next.positions.len());
+                        batch_positions.clone_from(&next.positions);
+                        batch_bounded = bounded_updates;
+                        batch_rejected = rejected_line_searches;
+                        surface_cache = Some((fresh, x, (*surface_settings).clone()));
+                    }
+                }
+                if i == next.positions.len() {
+                    break;
+                }
                 let inv_mass = self.inverse_masses[i];
                 if inv_mass == 0.0 {
+                    i += 1;
                     continue;
                 }
                 let inertia = 1.0 / (inv_mass * h * h);
@@ -402,6 +708,11 @@ impl RodModel {
                     force += direction * seg.stretch / seg.rest_length * c;
                     hessian += seg.stretch / (seg.rest_length * seg.rest_length);
                 }
+                for &(index, weight) in &self.incident_stitches[i] {
+                    let stitch = &self.stitches[index];
+                    force -= stitch.stiffness_n_per_m * weight * stitch.gap(&next.positions);
+                    hessian += stitch.stiffness_n_per_m * weight * weight;
+                }
                 let mut matrix = DMat3::from_diagonal(DVec3::splat(hessian));
                 if let Some(contact) = settings.contact {
                     self.for_each_contact_pair(&next.positions, |a, b, sample| {
@@ -415,6 +726,23 @@ impl RodModel {
                         Ok(())
                     })?;
                 }
+                let surface_local = if let Some((contacts, x, surface_settings)) = &surface_cache {
+                    for &contact_index in &contacts.incident[i] {
+                        let (_, gradient, _) = contacts.contacts[contact_index].block(
+                            x,
+                            i,
+                            surface_settings.radius,
+                            surface_settings.stiffness,
+                        );
+                        if !gradient.is_finite() {
+                            return Err("Surface contact force is non-finite".into());
+                        }
+                        force -= gradient;
+                    }
+                    Some((contacts, x, surface_settings))
+                } else {
+                    None
+                };
                 let delta = if settings.contact.is_some() {
                     matrix.inverse() * force
                 } else {
@@ -423,36 +751,64 @@ impl RodModel {
                 if !delta.is_finite() {
                     return Err("rod position solve became non-finite".into());
                 }
-                if let Some(contact) = settings.contact {
+                if settings.contact.is_some() || surface_local.is_some() {
                     let mut fraction: f64 = 1.0;
                     let distance = delta.length();
-                    self.for_each_contact_pair(&next.positions, |a, b, sample| {
-                        if a.contains(&i) || b.contains(&i) {
-                            if sample.safe_distance <= contact.clearance_m {
-                                return Err("rod segment separation cannot be established above numerical clearance".into());
+                    if let Some(contact) = settings.contact {
+                        self.for_each_contact_pair(&next.positions, |a, b, sample| {
+                            if a.contains(&i) || b.contains(&i) {
+                                if sample.safe_distance <= contact.clearance_m {
+                                    return Err("rod segment separation cannot be established above numerical clearance".into());
+                                }
+                                if distance > 0.0 {
+                                    fraction = fraction.min(0.8 * (sample.safe_distance - contact.clearance_m) / distance);
+                                }
                             }
-                            if distance > 0.0 {
-                                fraction = fraction.min(0.8 * (sample.safe_distance - contact.clearance_m) / distance);
-                            }
+                            Ok(())
+                        })?;
+                    }
+                    let original = next.positions[i];
+                    let mut bounded_delta = delta * fraction.clamp(0.0, 1.0);
+                    if let Some((contacts, _, _)) = &surface_local {
+                        let (candidate, clipped) =
+                            contacts.truncate_step(i, original, original + bounded_delta);
+                        bounded_delta = candidate - original;
+                        if clipped {
+                            bounded_updates += 1;
                         }
-                        Ok(())
-                    })?;
+                    }
                     if fraction < 1.0 {
                         bounded_updates += 1;
                     }
-                    fraction = fraction.clamp(0.0, 1.0);
-                    let original = next.positions[i];
-                    let before = self.local_objective(i, &next, &prediction, h, contact)?;
+                    let mut base_surface = 0.0;
+                    if let Some((contacts, x, surface_settings)) = &surface_local {
+                        base_surface = contacts.value(x, surface_settings);
+                    }
+                    let before =
+                        self.local_objective(i, &next, &prediction, h, settings.contact)?
+                            + base_surface;
                     let mut accepted = false;
+                    let mut scale = 1.0;
                     for _ in 0..32 {
-                        next.positions[i] = original + fraction * delta;
-                        match self.local_objective(i, &next, &prediction, h, contact) {
-                            Ok(after) if after <= before + 1e-12 * before.abs().max(1e-12) => {
+                        next.positions[i] = original + scale * bounded_delta;
+                        let surface_value =
+                            if let Some((contacts, x, surface_settings)) = &surface_local {
+                                let mut candidate_x = (*x).clone();
+                                candidate_x[i] = next.positions[i];
+                                contacts.value(&candidate_x, surface_settings)
+                            } else {
+                                0.0
+                            };
+                        match self.local_objective(i, &next, &prediction, h, settings.contact) {
+                            Ok(after)
+                                if after + surface_value
+                                    <= before + 1e-12 * before.abs().max(1e-12) =>
+                            {
                                 accepted = true;
                                 break;
                             }
                             _ => {
-                                fraction *= 0.5;
+                                scale *= 0.5;
                             }
                         }
                     }
@@ -467,6 +823,10 @@ impl RodModel {
                     }
                     next.positions[i] = updated;
                 }
+                if let Some((_, x, _)) = surface_cache.as_mut() {
+                    x[i] = next.positions[i];
+                }
+                i += 1;
             }
             for (i, seg) in self.segments.iter().enumerate() {
                 if seg.pinned {
@@ -542,6 +902,7 @@ impl RodModel {
         next.time_s += h;
         self.validate_state(&next)?;
         let energy = self.elastic_energy(&next)?;
+        let stitch_energy_j = self.stitch_energy(&next)?;
         let mut max_strain: f64 = 0.0;
         let mut residual_sum = 0.0;
         let mut free = 0;
@@ -561,6 +922,12 @@ impl RodModel {
             residuals[a] -= f;
             residuals[b] += f;
         }
+        for stitch in &self.stitches {
+            let force = stitch.stiffness_n_per_m * stitch.gap(&next.positions);
+            for &(vertex, weight) in &stitch.terms {
+                residuals[vertex] += weight * force;
+            }
+        }
         let (contact_energy_j, minimum_nonadjacent_distance_m) =
             if let Some(contact) = settings.contact {
                 self.for_each_contact_pair(&next.positions, |a, b, sample| {
@@ -576,6 +943,33 @@ impl RodModel {
             } else {
                 (0.0, None)
             };
+        let mut surface_contact_energy_j = 0.0;
+        let mut surface_minimum_distance_m = None;
+        if let Some((world, surface_settings)) = surface.as_mut() {
+            let x = world.positions(&next.positions);
+            let contacts = world.detect(&x, 2.0 * surface_settings.radius, surface_settings)?;
+            if contacts.minimum_distance <= 1e-12 {
+                return Err("Surface contact has zero separation".into());
+            }
+            surface_contact_energy_j = contacts.value(&x, surface_settings);
+            if contacts.minimum_distance.is_finite() {
+                surface_minimum_distance_m = Some(contacts.minimum_distance);
+            }
+            for (vertex, residual) in residuals.iter_mut().enumerate() {
+                for &index in &contacts.incident[vertex] {
+                    let (_, gradient, _) = contacts.contacts[index].block(
+                        &x,
+                        vertex,
+                        surface_settings.radius,
+                        surface_settings.stiffness,
+                    );
+                    *residual += gradient;
+                }
+            }
+            if !surface_contact_energy_j.is_finite() {
+                return Err("Surface contact energy is non-finite".into());
+            }
+        }
         for (i, r) in residuals.into_iter().enumerate() {
             if self.inverse_masses[i] > 0.0 {
                 residual_sum += r.length_squared();
@@ -592,9 +986,12 @@ impl RodModel {
             dt_s: h,
             step_ms: started.elapsed().as_secs_f64() * 1000.0,
             elastic_energy_j: energy,
+            stitch_energy_j,
             position_residual_rms_n: residual,
             max_stretch_shear: max_strain,
             contact_energy_j,
+            surface_contact_energy_j,
+            surface_minimum_distance_m,
             minimum_nonadjacent_distance_m,
             bounded_updates,
             rejected_line_searches,
@@ -716,7 +1113,12 @@ impl RodModel {
             let a = self.segments[i].vertices;
             for segment in self.segments.iter().skip(i + 1) {
                 let b = segment.vertices;
-                if a.iter().any(|v| b.contains(v)) {
+                if a.iter().any(|v| b.contains(v))
+                    || a.iter().any(|&x| {
+                        b.iter()
+                            .any(|&y| self.sewing_exclusions.contains(&unordered(x, y)))
+                    })
+                {
                     continue;
                 }
                 let [p0, p1] = a.map(|v| positions[v]);
@@ -792,7 +1194,7 @@ impl RodModel {
         state: &RodState,
         prediction: &[DVec3],
         h: f64,
-        contact: RodContact,
+        contact: Option<RodContact>,
     ) -> Result<f64, String> {
         let mut energy = 0.5 * (state.positions[vertex] - prediction[vertex]).length_squared()
             / (self.inverse_masses[vertex] * h * h);
@@ -803,12 +1205,19 @@ impl RodModel {
                 - state.orientations[i] * DVec3::X;
             energy += 0.5 * seg.stretch * c.length_squared();
         }
-        self.for_each_contact_pair(&state.positions, |a, b, sample| {
-            if a.contains(&vertex) || b.contains(&vertex) {
-                energy += contact.barrier(sample.distance)?.0;
-            }
-            Ok(())
-        })?;
+        for &(index, _) in &self.incident_stitches[vertex] {
+            let stitch = &self.stitches[index];
+            energy +=
+                0.5 * stitch.stiffness_n_per_m * stitch.gap(&state.positions).length_squared();
+        }
+        if let Some(contact) = contact {
+            self.for_each_contact_pair(&state.positions, |a, b, sample| {
+                if a.contains(&vertex) || b.contains(&vertex) {
+                    energy += contact.barrier(sample.distance)?.0;
+                }
+                Ok(())
+            })?;
+        }
         if energy.is_finite() {
             Ok(energy)
         } else {

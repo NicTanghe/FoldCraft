@@ -1,6 +1,6 @@
 # Research and decisions — 14 October 2026
 
-**Stable Cosserat rods:** An opt-in CPU rod-network implementation and small-scene segment-contact experiment now exist; see [model, attribution, tests and limits](stable-cosserat.md). This is not a yarn-level garment backend or a reproduction of the paper’s GPU benchmarks.
+**Stable Cosserat rods:** An opt-in CPU rod-network implementation and small-scene segment-contact experiment now exist. The desktop solver menu also has an experimental compiled-garment adapter with OGC and approximate isotropic material; see [model, attribution, tests and limits](stable-cosserat.md). This is not a yarn-level garment backend or a reproduction of the paper’s GPU benchmarks.
 
 
 **Branch update (FC-0047; formerly branch-local FC-0040):** desktop-enabled entry points now default to the independent [resident WGSL finite AVBD / IPC-style pipeline](wgsl-avbd-ipc.md). CPU-only builds retain CPU execution. Historical VBD/OGC descriptions and timings below describe the retained controls; `--hybrid-vbd` selects the old hybrid, while `--gpu-sim` selects the new default. This selection does not establish performance or full IPC/AVBD equivalence.

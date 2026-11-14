@@ -104,7 +104,10 @@ pub const ACT_RUN_2D_ZOOM_IN: u64 = 1 << 56;
 pub const ACT_RUN_2D_ZOOM_OUT: u64 = 1 << 57;
 pub const ACT_RUN_2D_FIT: u64 = 1 << 58;
 pub const ACT_RUN_2D_NEXT_PIECE: u64 = 1 << 59;
+pub const ACT_RUN_SOLVER_ROD: u64 = 1 << 60;
 
+const ROD_INTERACTIVE_DT_S: f64 = 1.0 / 60.0;
+const ROD_INTERACTIVE_SWEEPS: usize = 4;
 
 // Trampolines
 
@@ -158,6 +161,7 @@ pub struct CssRunnerState {
     pub pointer_down: bool,
     pub last_pointer_pos: (f32, f32),
     pub gpu_sim: bool,
+    pub rod_sim: bool,
     pub contact_method: ContactMethod,
     pub solver_menu_open: bool,
     pub drag_test: bool,
@@ -217,6 +221,7 @@ impl CssRunnerState {
             pointer_down: false,
             last_pointer_pos: (0.0, 0.0),
             gpu_sim: false,
+            rod_sim: false,
             contact_method: ContactMethod::Ipc,
             solver_menu_open: false,
             drag_test: false,
@@ -234,13 +239,23 @@ impl CssRunnerState {
         }
     }
 
+    fn worker_settings(&self) -> VbdSettings {
+        let mut settings = self.settings.clone();
+        if self.rod_sim {
+            settings.dt = settings.dt.max(ROD_INTERACTIVE_DT_S);
+            settings.iterations = settings.iterations.min(ROD_INTERACTIVE_SWEEPS);
+        }
+        settings
+    }
+
     pub fn send_control_state(&mut self, once: bool) {
         let work = Work {
             generation: self.generation,
             scene: self.scene.clone(),
-            settings: self.settings.clone(),
+            settings: self.worker_settings(),
             grab: None,
             gpu: self.gpu_sim,
+            rod: self.rod_sim,
             contact_method: self.contact_method,
             signal: worker::RepaintSignal::noop(),
             playing: self.playing,
@@ -276,10 +291,11 @@ impl CssRunnerState {
     }
     pub fn select_solver_method(&mut self, gpu: bool, method: ContactMethod) {
         self.solver_menu_open = false;
-        if self.gpu_sim == gpu && self.contact_method == method {
+        if !self.rod_sim && self.gpu_sim == gpu && self.contact_method == method {
             return;
         }
         self.gpu_sim = gpu;
+        self.rod_sim = false;
         self.contact_method = method;
         self.generation = self.generation.wrapping_add(1);
         self.playing = false;
@@ -288,6 +304,27 @@ impl CssRunnerState {
         self.step_ms = 0.0;
         self.status_message =
             "Solver changed; paused at displayed state. Press Play or Step.".into();
+        self.send_control_state(false);
+    }
+
+    pub fn select_rod_solver(&mut self) {
+        self.solver_menu_open = false;
+        if self.rod_sim {
+            return;
+        }
+        self.rod_sim = true;
+        self.gpu_sim = false;
+        self.generation = self.generation.wrapping_add(1);
+        self.playing = false;
+        self.worker_pending = false;
+        self.last_metrics = None;
+        self.step_ms = 0.0;
+        let effective = self.worker_settings();
+        self.status_message = format!(
+            "Experimental Cosserat CPU: {:.1} ms step, {} sweeps; approximate isotropic material. Rod history resets on solver changes and reload. Press Play or Step.",
+            effective.dt * 1000.0,
+            effective.iterations
+        );
         self.send_control_state(false);
     }
 
@@ -313,7 +350,14 @@ impl CssRunnerState {
         match snapshot.save(&path) {
             Ok(_) => {
                 self.project = snapshot;
-                self.status_message = format!("Saved {}", path.display());
+                self.status_message = if self.rod_sim {
+                    format!(
+                        "Saved {}. Cosserat rod orientation/history will be reconstructed on reload.",
+                        path.display()
+                    )
+                } else {
+                    format!("Saved {}", path.display())
+                };
             }
             Err(e) => self.status_message = format!("Save error: {e}"),
         }
@@ -371,12 +415,14 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
                         )
                     },
                 );
+                let distance = if metrics.minimum_distance_m.is_finite() {
+                    format!("min dist {:.3} mm", metrics.minimum_distance_m * 1000.)
+                } else {
+                    "no nearby contact".into()
+                };
                 state.status_message = format!(
-                    "Step {}: min dist {:.3} mm, residual {}, {:.1} ms",
-                    state.step_count,
-                    metrics.minimum_distance_m * 1000.,
-                    residual,
-                    metrics.step_ms
+                    "Step {}: {}, residual {}, {:.1} ms",
+                    state.step_count, distance, residual, metrics.step_ms
                 );
                 state.last_metrics = Some(metrics);
                 state.sync_usd_points();
@@ -396,8 +442,9 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
         state.playing,
     );
 
+    let effective_dt = state.worker_settings().dt;
     if let Some(perf) = state.perf.as_mut() {
-        let dt = state.settings.dt;
+        let dt = effective_dt;
         if let Some(report) = perf.tick(state.scene.state.time, frame.frame_index, dt, true) {
             let _ = fs::create_dir_all(&state.files.output);
             let perf_path = state.files.output.join("ui-perf.json");
@@ -425,6 +472,9 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     }
     if actions & ACT_RUN_SOLVER_CPU != 0 {
         state.select_solver(false);
+    }
+    if actions & ACT_RUN_SOLVER_ROD != 0 {
+        state.select_rod_solver();
     }
     if actions & ACT_RUN_PLAY_PAUSE != 0 {
         state.playing = !state.playing;
@@ -602,7 +652,12 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     if actions & ACT_RUN_2D_NEXT_PIECE != 0 {
         let count = state.project.template.panels.len().max(1);
         state.selected_piece_index = (state.selected_piece_index + 1) % count;
-        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+        if let Some(p) = state
+            .project
+            .template
+            .panels
+            .get(state.selected_piece_index)
+        {
             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
         }
     }
@@ -637,15 +692,26 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                     if ch == "]" {
                         let count = state.project.template.panels.len().max(1);
                         state.selected_piece_index = (state.selected_piece_index + 1) % count;
-                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                        if let Some(p) = state
+                            .project
+                            .template
+                            .panels
+                            .get(state.selected_piece_index)
+                        {
                             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                         }
                         return true;
                     }
                     if ch == "[" {
                         let count = state.project.template.panels.len().max(1);
-                        state.selected_piece_index = (state.selected_piece_index + count - 1) % count;
-                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                        state.selected_piece_index =
+                            (state.selected_piece_index + count - 1) % count;
+                        if let Some(p) = state
+                            .project
+                            .template
+                            .panels
+                            .get(state.selected_piece_index)
+                        {
                             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                         }
                         return true;
@@ -691,7 +757,12 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                 if is_2d_side && state.last_pointer_pos.1 >= 50.0 {
                     let count = state.project.template.panels.len().max(1);
                     state.selected_piece_index = (state.selected_piece_index + 1) % count;
-                    if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                    if let Some(p) = state
+                        .project
+                        .template
+                        .panels
+                        .get(state.selected_piece_index)
+                    {
                         state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                     }
                     return true;
@@ -797,7 +868,9 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
         "clean-view-toggle"
     };
 
-    let (backend_class, backend_label) = if state.gpu_sim {
+    let (backend_class, backend_label) = if state.rod_sim {
+        ("backend-badge cpu", "CPU Cosserat (experimental)")
+    } else if state.gpu_sim {
         ("backend-badge gpu", state.contact_method.label())
     } else {
         ("backend-badge cpu", "CPU (OGC)")
@@ -837,6 +910,7 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                             <button id="solver-wgsl-ipc" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_GPU)}>"WGSL AVBD / IPC"</button>
                             <button id="solver-barrier-al" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_AL)}>"WGSL AVBD / barrier AL (experimental)"</button>
                             <button id="solver-cpu" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_CPU)}>"CPU VBD / OGC"</button>
+                            <button id="solver-rod" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_ROD)} title="Experimental isotropic rod approximation; interactive steps use at least 16.7 ms and at most 4 sweeps; rod history resets on reload">"CPU Cosserat / OGC (experimental)"</button>
                         </div>
                     }} else { ui! { <span /> } }}
                 </div>
@@ -1221,10 +1295,26 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
     let selected_name = selected_panel.map_or("None", |p| p.name.as_str());
     let (w_mm, h_mm) = selected_panel.map_or((0.0, 0.0), |p| {
         let (w, h) = if let Some(poly) = &p.polygon {
-            let min_x = poly.points.iter().map(|pt| pt.x).fold(f64::INFINITY, f64::min);
-            let max_x = poly.points.iter().map(|pt| pt.x).fold(f64::NEG_INFINITY, f64::max);
-            let min_y = poly.points.iter().map(|pt| pt.y).fold(f64::INFINITY, f64::min);
-            let max_y = poly.points.iter().map(|pt| pt.y).fold(f64::NEG_INFINITY, f64::max);
+            let min_x = poly
+                .points
+                .iter()
+                .map(|pt| pt.x)
+                .fold(f64::INFINITY, f64::min);
+            let max_x = poly
+                .points
+                .iter()
+                .map(|pt| pt.x)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let min_y = poly
+                .points
+                .iter()
+                .map(|pt| pt.y)
+                .fold(f64::INFINITY, f64::min);
+            let max_y = poly
+                .points
+                .iter()
+                .map(|pt| pt.y)
+                .fold(f64::NEG_INFINITY, f64::max);
             (max_x - min_x, max_y - min_y)
         } else {
             (p.pattern.width, p.pattern.height)
@@ -1579,12 +1669,13 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     let area_dm2 = (width_mm * height_mm) / 10000.0;
     let perimeter_mm = (width_mm + height_mm) * 2.0;
 
-    let last_pen = state
-        .last_metrics
-        .as_ref()
-        .map_or("0.00 mm".to_string(), |m| {
+    let last_pen = state.last_metrics.as_ref().map_or("N/A".to_string(), |m| {
+        if m.minimum_distance_m.is_finite() {
             format!("{:.2} mm", m.minimum_distance_m * 1000.0)
-        });
+        } else {
+            "No nearby contact".into()
+        }
+    });
     let last_res = state.last_metrics.as_ref().map_or("N/A".to_string(), |m| {
         m.barrier_al.as_ref().map_or_else(
             || {
@@ -1810,8 +1901,14 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                         </div>
                         <div class="prop-row">
                             <span class="prop-label">"Active Backend"</span>
-                            <span class="prop-value">{if state.gpu_sim { state.contact_method.label() } else { "CPU (OGC)" }}</span>
+                            <span class="prop-value">{if state.rod_sim { "CPU Cosserat (experimental)" } else if state.gpu_sim { state.contact_method.label() } else { "CPU (OGC)" }}</span>
                         </div>
+                        {if state.rod_sim { ui! {
+                            <div class="prop-row">
+                                <span class="prop-label">"Rod Step / Sweeps"</span>
+                                <span class="prop-value">{format!("{:.1} ms / {}", state.worker_settings().dt * 1000.0, state.worker_settings().iterations)}</span>
+                            </div>
+                        }} else { ui! { <span class="hidden" /> } }}
                     </div>
                 }
             } else {
@@ -2153,10 +2250,22 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let grid_minor = if is_dark { "#161c28" } else { "#e2e8f0" };
     let grid_major = if is_dark { "#253147" } else { "#cbd5e1" };
     let unsel_stroke = if is_dark { "#38bdf8" } else { "#2563eb" };
-    let unsel_fill = if is_dark { "rgba(56, 189, 248, 0.08)" } else { "rgba(37, 99, 235, 0.06)" };
+    let unsel_fill = if is_dark {
+        "rgba(56, 189, 248, 0.08)"
+    } else {
+        "rgba(37, 99, 235, 0.06)"
+    };
     let sel_stroke = if is_dark { "#f59e0b" } else { "#d97706" };
-    let sel_fill = if is_dark { "rgba(245, 158, 11, 0.18)" } else { "rgba(217, 119, 6, 0.14)" };
-    let badge_fill = if is_dark { "rgba(15, 23, 42, 0.90)" } else { "rgba(255, 255, 255, 0.92)" };
+    let sel_fill = if is_dark {
+        "rgba(245, 158, 11, 0.18)"
+    } else {
+        "rgba(217, 119, 6, 0.14)"
+    };
+    let badge_fill = if is_dark {
+        "rgba(15, 23, 42, 0.90)"
+    } else {
+        "rgba(255, 255, 255, 0.92)"
+    };
     let badge_border = if is_dark { "#334155" } else { "#cbd5e1" };
     let grain_color = if is_dark { "#60a5fa" } else { "#3b82f6" };
 
@@ -2172,7 +2281,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     while gx <= vb_min_x + vb_w {
         let is_major = (gx.abs() % 0.5).abs() < 0.01;
         let stroke = if is_major { grid_major } else { grid_minor };
-        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
+        let sw = if is_major {
+            vb_w * 0.0025
+        } else {
+            vb_w * 0.0012
+        };
         let pts = format!("{gx:.3},{:.3} {gx:.3},{:.3}", vb_min_y, vb_min_y + vb_h);
         nodes.push(ui! {
             <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
@@ -2184,7 +2297,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     while gy <= vb_min_y + vb_h {
         let is_major = (gy.abs() % 0.5).abs() < 0.01;
         let stroke = if is_major { grid_major } else { grid_minor };
-        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
+        let sw = if is_major {
+            vb_w * 0.0025
+        } else {
+            vb_w * 0.0012
+        };
         let pts = format!("{:.3},{gy:.3} {:.3},{gy:.3}", vb_min_x, vb_min_x + vb_w);
         nodes.push(ui! {
             <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
@@ -2206,7 +2323,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
 
     // Panels rendering
     for p in &panel_geos {
-        let stroke_color = if p.is_selected { sel_stroke } else { unsel_stroke };
+        let stroke_color = if p.is_selected {
+            sel_stroke
+        } else {
+            unsel_stroke
+        };
         let fill_color = if p.is_selected { sel_fill } else { unsel_fill };
         let stroke_w = if p.is_selected {
             vb_w * 0.0055
@@ -2315,7 +2436,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
                 vb_w * 0.0015
             }
         );
-        let vertex_stroke = if p.is_selected { sel_stroke } else { unsel_stroke };
+        let vertex_stroke = if p.is_selected {
+            sel_stroke
+        } else {
+            unsel_stroke
+        };
 
         for (pt_x, pt_y) in &p.points {
             nodes.push(ui! {
@@ -2366,7 +2491,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         let badge_h = vb_w * 0.038;
         let bx = cx - badge_w * 0.5;
         let by = cy - badge_h * 0.5;
-        let badge_border_color = if p.is_selected { sel_stroke } else { badge_border };
+        let badge_border_color = if p.is_selected {
+            sel_stroke
+        } else {
+            badge_border
+        };
         nodes.push(ui! {
             <rect x={format!("{bx:.4}")} y={format!("{by:.4}")} width={format!("{badge_w:.4}")} height={format!("{badge_h:.4}")} fill={badge_fill} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.002)} rx={format!("{:.4}", vb_w * 0.005)} ry={format!("{:.4}", vb_w * 0.005)} />
         });
@@ -2855,6 +2984,44 @@ mod tests {
         assert!(!app.state().gpu_sim);
         assert_eq!(app.state().generation, generation + 3);
         assert_eq!(app.state().scene.state.x, checkpoint.x);
+
+        // The experimental entry transfers the visible state and pauses.
+        let button = app
+            .find_element_bounds_by_id("#sim-backend-indicator")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 14,
+        });
+        let button = app
+            .find_element_bounds_by_id("#solver-rod")
+            .expect("experimental solver menu entry");
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 15,
+        });
+        assert!(app.state().rod_sim);
+        assert!(!app.state().gpu_sim && !app.state().playing && !app.state().solver_menu_open);
+        assert_eq!(app.state().generation, generation + 4);
+        assert_eq!(app.state().scene.state.x, checkpoint.x);
+        assert_eq!(app.state().scene.state.v, checkpoint.v);
+        assert_eq!(app.state().scene.state.time, checkpoint.time);
+        assert_eq!(app.state().worker_settings().dt, ROD_INTERACTIVE_DT_S);
+        assert_eq!(
+            app.state().worker_settings().iterations,
+            ROD_INTERACTIVE_SWEEPS
+        );
+        assert_eq!(app.state().settings.dt, VbdSettings::default().dt);
 
         // Headless RGBA8 rendering
         let width = 640;
