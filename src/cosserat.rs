@@ -5,10 +5,27 @@
 //! see `THIRD_PARTY_NOTICES.md` for the complete notice. This module is not a
 //! garment solver or a physical implementation of the geometric fiber guides.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::time::Instant;
 
 use glam::{DMat3, DQuat, DVec3, DVec4};
+
+fn gained_active_surface_contact(
+    previous: &crate::ogc::ContactSet,
+    fresh: &crate::ogc::ContactSet,
+    x: &[DVec3],
+    settings: &crate::ogc::OgcSettings,
+) -> bool {
+    let covered: BTreeSet<_> = previous
+        .contacts
+        .iter()
+        .map(|c| (c.kind, c.vertices, c.count))
+        .collect();
+    fresh.contacts.iter().any(|contact| {
+        contact.value(x, settings.radius, settings.stiffness) > 0.0
+            && !covered.contains(&(contact.kind, contact.vertices, contact.count))
+    })
+}
 
 /// Homogeneous, isotropic rod parameters in SI units.
 #[derive(Clone, Copy, Debug)]
@@ -502,6 +519,50 @@ impl RodModel {
         }
     }
 
+    /// Complete inertial, rod and stitch objective for a candidate at this
+    /// time step. Used to accept a contact-free partial line search without
+    /// projecting a position outside the implicit objective.
+    pub(crate) fn implicit_objective(
+        &self,
+        previous: &RodState,
+        candidate: &RodState,
+        settings: RodSettings,
+    ) -> Result<f64, String> {
+        self.validate_state(previous)?;
+        self.validate_state(candidate)?;
+        let h = settings.dt_s;
+        if !h.is_finite() || h <= 0.0 || !settings.gravity_m_s2.is_finite() {
+            return Err("invalid rod objective settings".into());
+        }
+        let mut value = self.elastic_energy(candidate)? + self.stitch_energy(candidate)?;
+        for (i, &inv_mass) in self.inverse_masses.iter().enumerate() {
+            if inv_mass > 0.0 {
+                let prediction = previous.positions[i]
+                    + h * previous.velocities[i]
+                    + h * h * settings.gravity_m_s2;
+                value += 0.5 * (candidate.positions[i] - prediction).length_squared()
+                    / (inv_mass * h * h);
+            }
+        }
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err("rod implicit objective overflow".into())
+        }
+    }
+
+    pub(crate) fn max_stretch_shear(&self, state: &RodState) -> Result<f64, String> {
+        self.validate_state(state)?;
+        let mut maximum = 0.0_f64;
+        for (i, seg) in self.segments.iter().enumerate() {
+            let [a, b] = seg.vertices;
+            let c = (state.positions[b] - state.positions[a]) / seg.rest_length
+                - state.orientations[i] * DVec3::X;
+            maximum = maximum.max(c.length());
+        }
+        Ok(maximum)
+    }
+
     /// Optional segment-pair contact energy and minimum nonadjacent distance.
     /// Shared-endpoint pairs are excluded, including their immediate vicinity.
     pub fn contact_energy(
@@ -518,7 +579,7 @@ impl RodModel {
     /// nonadjacent rod segment pairs. There is no friction or angular inertia;
     /// the last accepted state survives an error.
     pub fn step(&self, state: &mut RodState, settings: RodSettings) -> Result<RodMetrics, String> {
-        self.step_impl(state, settings, None)
+        self.step_impl(state, settings, None, 1)
     }
 
     pub(crate) fn step_with_surface_contact(
@@ -528,7 +589,7 @@ impl RodModel {
         world: &mut crate::ogc::OgcWorld,
         surface: &crate::ogc::OgcSettings,
     ) -> Result<RodMetrics, String> {
-        self.step_impl(state, settings, Some((world, surface)))
+        self.step_impl(state, settings, Some((world, surface)), 64)
     }
 
     fn step_impl(
@@ -536,6 +597,7 @@ impl RodModel {
         state: &mut RodState,
         settings: RodSettings,
         mut surface: Option<(&mut crate::ogc::OgcWorld, &crate::ogc::OgcSettings)>,
+        surface_batch_size: usize,
     ) -> Result<RodMetrics, String> {
         let started = Instant::now();
         self.validate_state(state)?;
@@ -577,9 +639,61 @@ impl RodModel {
             }
         }
         for _ in 0..settings.iterations {
-            for i in 0..next.positions.len() {
+            let mut surface_cache: Option<(
+                crate::ogc::ContactSet,
+                Vec<DVec3>,
+                crate::ogc::OgcSettings,
+            )> = None;
+            let mut i = 0;
+            let mut batch_start = 0;
+            let mut batch_end = 0;
+            let mut batch_size = surface_batch_size;
+            let mut retry_until = None;
+            let mut batch_positions = next.positions.clone();
+            let mut batch_bounded = bounded_updates;
+            let mut batch_rejected = rejected_line_searches;
+            loop {
+                if let Some((world, surface_settings)) = surface.as_mut()
+                    && (surface_cache.is_none() || i == batch_end)
+                {
+                    let x = world.positions(&next.positions);
+                    let fresh =
+                        world.detect(&x, 2.0 * surface_settings.radius, surface_settings)?;
+                    if fresh.minimum_distance <= 1e-12 {
+                        return Err("Surface contact has zero separation".into());
+                    }
+                    if let Some((previous, _, _)) = &surface_cache
+                        && batch_size > 1
+                        && gained_active_surface_contact(previous, &fresh, &x, surface_settings)
+                    {
+                        next.positions.clone_from(&batch_positions);
+                        bounded_updates = batch_bounded;
+                        rejected_line_searches = batch_rejected;
+                        i = batch_start;
+                        retry_until = Some(batch_end);
+                        batch_size = 1;
+                        surface_cache = None;
+                        continue;
+                    }
+                    if i < next.positions.len() {
+                        if retry_until == Some(i) {
+                            retry_until = None;
+                            batch_size = surface_batch_size;
+                        }
+                        batch_start = i;
+                        batch_end = (i + batch_size).min(next.positions.len());
+                        batch_positions.clone_from(&next.positions);
+                        batch_bounded = bounded_updates;
+                        batch_rejected = rejected_line_searches;
+                        surface_cache = Some((fresh, x, (*surface_settings).clone()));
+                    }
+                }
+                if i == next.positions.len() {
+                    break;
+                }
                 let inv_mass = self.inverse_masses[i];
                 if inv_mass == 0.0 {
+                    i += 1;
                     continue;
                 }
                 let inertia = 1.0 / (inv_mass * h * h);
@@ -612,16 +726,10 @@ impl RodModel {
                         Ok(())
                     })?;
                 }
-                let surface_local = if let Some((world, surface_settings)) = surface.as_mut() {
-                    let x = world.positions(&next.positions);
-                    let contacts =
-                        world.detect(&x, 2.0 * surface_settings.radius, surface_settings)?;
-                    if contacts.minimum_distance <= 1e-12 {
-                        return Err("Surface contact has zero separation".into());
-                    }
+                let surface_local = if let Some((contacts, x, surface_settings)) = &surface_cache {
                     for &contact_index in &contacts.incident[i] {
                         let (_, gradient, _) = contacts.contacts[contact_index].block(
-                            &x,
+                            x,
                             i,
                             surface_settings.radius,
                             surface_settings.stiffness,
@@ -631,7 +739,7 @@ impl RodModel {
                         }
                         force -= gradient;
                     }
-                    Some((contacts, x, (*surface_settings).clone()))
+                    Some((contacts, x, surface_settings))
                 } else {
                     None
                 };
@@ -685,7 +793,7 @@ impl RodModel {
                         next.positions[i] = original + scale * bounded_delta;
                         let surface_value =
                             if let Some((contacts, x, surface_settings)) = &surface_local {
-                                let mut candidate_x = x.clone();
+                                let mut candidate_x = (*x).clone();
                                 candidate_x[i] = next.positions[i];
                                 contacts.value(&candidate_x, surface_settings)
                             } else {
@@ -715,6 +823,10 @@ impl RodModel {
                     }
                     next.positions[i] = updated;
                 }
+                if let Some((_, x, _)) = surface_cache.as_mut() {
+                    x[i] = next.positions[i];
+                }
+                i += 1;
             }
             for (i, seg) in self.segments.iter().enumerate() {
                 if seg.pinned {

@@ -106,6 +106,9 @@ pub const ACT_RUN_2D_FIT: u64 = 1 << 58;
 pub const ACT_RUN_2D_NEXT_PIECE: u64 = 1 << 59;
 pub const ACT_RUN_SOLVER_ROD: u64 = 1 << 60;
 
+const ROD_INTERACTIVE_DT_S: f64 = 1.0 / 60.0;
+const ROD_INTERACTIVE_SWEEPS: usize = 4;
+
 // Trampolines
 
 // ============================================================================
@@ -236,11 +239,20 @@ impl CssRunnerState {
         }
     }
 
+    fn worker_settings(&self) -> VbdSettings {
+        let mut settings = self.settings.clone();
+        if self.rod_sim {
+            settings.dt = settings.dt.max(ROD_INTERACTIVE_DT_S);
+            settings.iterations = settings.iterations.min(ROD_INTERACTIVE_SWEEPS);
+        }
+        settings
+    }
+
     pub fn send_control_state(&mut self, once: bool) {
         let work = Work {
             generation: self.generation,
             scene: self.scene.clone(),
-            settings: self.settings.clone(),
+            settings: self.worker_settings(),
             grab: None,
             gpu: self.gpu_sim,
             rod: self.rod_sim,
@@ -307,7 +319,12 @@ impl CssRunnerState {
         self.worker_pending = false;
         self.last_metrics = None;
         self.step_ms = 0.0;
-        self.status_message = "Experimental Cosserat: approximate isotropic material; rod history resets on solver changes and reload. Press Play or Step.".into();
+        let effective = self.worker_settings();
+        self.status_message = format!(
+            "Experimental Cosserat CPU: {:.1} ms step, {} sweeps; approximate isotropic material. Rod history resets on solver changes and reload. Press Play or Step.",
+            effective.dt * 1000.0,
+            effective.iterations
+        );
         self.send_control_state(false);
     }
 
@@ -425,8 +442,9 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
         state.playing,
     );
 
+    let effective_dt = state.worker_settings().dt;
     if let Some(perf) = state.perf.as_mut() {
-        let dt = state.settings.dt;
+        let dt = effective_dt;
         if let Some(report) = perf.tick(state.scene.state.time, frame.frame_index, dt, true) {
             let _ = fs::create_dir_all(&state.files.output);
             let perf_path = state.files.output.join("ui-perf.json");
@@ -892,7 +910,7 @@ fn build_runner_top_bar(state: &CssRunnerState) -> Node {
                             <button id="solver-wgsl-ipc" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_GPU)}>"WGSL AVBD / IPC"</button>
                             <button id="solver-barrier-al" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_AL)}>"WGSL AVBD / barrier AL (experimental)"</button>
                             <button id="solver-cpu" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_CPU)}>"CPU VBD / OGC"</button>
-                            <button id="solver-rod" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_ROD)} title="Experimental isotropic rod approximation; rod history resets on reload">"CPU Cosserat / OGC (experimental)"</button>
+                            <button id="solver-rod" class="menu-item" onclick_shared={queue_action(&state.actions, ACT_RUN_SOLVER_ROD)} title="Experimental isotropic rod approximation; interactive steps use at least 16.7 ms and at most 4 sweeps; rod history resets on reload">"CPU Cosserat / OGC (experimental)"</button>
                         </div>
                     }} else { ui! { <span /> } }}
                 </div>
@@ -1885,6 +1903,12 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                             <span class="prop-label">"Active Backend"</span>
                             <span class="prop-value">{if state.rod_sim { "CPU Cosserat (experimental)" } else if state.gpu_sim { state.contact_method.label() } else { "CPU (OGC)" }}</span>
                         </div>
+                        {if state.rod_sim { ui! {
+                            <div class="prop-row">
+                                <span class="prop-label">"Rod Step / Sweeps"</span>
+                                <span class="prop-value">{format!("{:.1} ms / {}", state.worker_settings().dt * 1000.0, state.worker_settings().iterations)}</span>
+                            </div>
+                        }} else { ui! { <span class="hidden" /> } }}
                     </div>
                 }
             } else {
@@ -2992,6 +3016,12 @@ mod tests {
         assert_eq!(app.state().scene.state.x, checkpoint.x);
         assert_eq!(app.state().scene.state.v, checkpoint.v);
         assert_eq!(app.state().scene.state.time, checkpoint.time);
+        assert_eq!(app.state().worker_settings().dt, ROD_INTERACTIVE_DT_S);
+        assert_eq!(
+            app.state().worker_settings().iterations,
+            ROD_INTERACTIVE_SWEEPS
+        );
+        assert_eq!(app.state().settings.dt, VbdSettings::default().dt);
 
         // Headless RGBA8 rendering
         let width = 640;

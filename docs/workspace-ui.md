@@ -16,7 +16,10 @@ Play or Step runs the CPU rod network with the existing sewing and fixed-avatar
 surface contact. The badge stays marked experimental. Fabric values are reduced
 to a mesh-dependent isotropic approximation, Grab is unsupported, and rod
 orientation history is reconstructed after changing solvers or reloading a saved
-project. See [Stable Cosserat rods](stable-cosserat.md) for the model and limits.
+project. Its interactive worker uses at least a 16.7 ms timestep and at most
+four rod sweeps; the Simulation inspector shows the effective values without
+changing the saved VBD settings. See [Stable Cosserat rods](stable-cosserat.md)
+for the model and limits.
 
 Preferences are saved in the session's `preferences.json`. Layout and display changes persist when pointer interaction ends, rather than writing on every drag frame. Old preference files receive defaults for the new fields. These settings are not garment-project fields and never change material coordinates, contact, mass, seam definitions or simulation state.
 

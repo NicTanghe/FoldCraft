@@ -247,22 +247,32 @@ invalidate checkpoints when those settings make resumption inappropriate.
 `GarmentRodAvatar` wraps a compiled garment rod network with a fixed triangle
 surface using the existing CPU OGC world. Garment triangles and avatar faces
 participate in vertex-face and edge-edge detection; local sewing exclusions
-follow the existing garment seam samples. Each free-vertex update refreshes
-detection, adds the OGC contact gradient to the rod/sewing objective and clips
-the candidate to the OGC region before energy-checked backtracking. The solve
+follow the existing garment seam samples. The contact solve refreshes detection
+in blocks of at most 64 vertices, adds OGC contact gradients to the rod/sewing
+objective and clips each candidate to the current OGC region before
+energy-checked backtracking. A fresh detection checks for newly active terms at
+each block boundary; a block that missed one is rolled back and retried with
+per-vertex detection. All vertices remain inside the region from that block's
+last detection. The solve
 uses the rod local Hessian as a positive search preconditioner; the OGC Hessian
 is not included. Final residuals include OGC contact forces, and
 `surface_contact_energy_j` reports OGC surface energy, including garment
 self-contact as well as avatar contact. Enabling the separate rod barrier too
 adds a second self-contact energy; it is an experiment, not calibrated cloth.
+When no surface contact is active, a full rod step first tries a contact-free
+path. Successive OGC detections certify its straight path through convex safe
+regions. If contact turns on near the end, an inactive prefix can be accepted
+only when it lowers the complete implicit rod/sewing/inertial objective. The
+accepted velocity is recomputed from that prefix; its force residual is
+reported unavailable. Otherwise the contact solve runs.
 
 The avatar is fixed for the lifetime of this wrapper. OGC starts from an
 initially separated state and applies only to included pairs; seam-local
 exclusions and floating-point predicates limit its guarantees. It does not
 repair intersections, determine whether a garment already lies inside a closed
 avatar, implement friction or animated avatars, or directly collide a yarn
-cross-section against the surface. The exhaustive per-vertex detections are a
-CPU research path with no production performance claim. The desktop worker uses
+cross-section against the surface. The CPU path has no production performance
+claim. The desktop worker uses
 it for the experimental solver-menu option. It keeps rod orientations and
 fixed-point history between worker steps, and transfers the displayed garment
 positions, velocities and time when selected. Switching solvers or reloading a
@@ -274,6 +284,16 @@ rod model currently limits networks to 4096 vertices. The menu badge and status
 identify the mode as experimental. CPU step duration is complete worker
 compute time, not rendering cadence. Existing VBD-specific diagnostics are
 unavailable in this mode and are not rod convergence evidence.
+
+For interactive use the menu worker advances with a timestep of at least
+16.7 ms and at most four sweeps, independently of the retained VBD settings.
+The effective values are shown in the Simulation inspector; switching back
+restores the VBD settings. This is a responsiveness choice, not a convergence
+claim. On the bundled 2,454-vertex T-shirt with the fixed mannequin, the first
+three CPU steps at 16.7 ms and four sweeps took 0.59, 0.46 and 0.47 seconds,
+respectively (local M1 Pro test). They advanced the simulation by 0.05 seconds
+in 1.65 seconds of wall time. Rendering and native-window cadence were not
+measured. Near-contact scenes may still run slowly.
 
 `RodAvatarCheckpoint` additionally records an exact witness of the fixed
 avatar vertices, combined triangle topology and OGC settings. Restoration

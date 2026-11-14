@@ -1,7 +1,12 @@
 use glam::DVec3;
 use marvelous_cloth::{
+    avatar::SurfaceMesh,
     cosserat::{RodMaterial, RodSettings},
-    garment::{GarmentTemplate, presets::GarmentKind, rod_garment::GarmentRodNetwork},
+    garment::{
+        GarmentTemplate, presets::GarmentKind, rod_avatar::GarmentRodAvatar,
+        rod_garment::GarmentRodNetwork,
+    },
+    ogc::OgcSettings,
 };
 use std::sync::Arc;
 fn material() -> RodMaterial {
@@ -13,18 +18,45 @@ fn material() -> RodMaterial {
 }
 
 #[test]
-fn default_tshirt_compiles_for_experimental_menu() {
+fn default_tshirt_advances_with_interactive_rod_budget() {
     let garment = Arc::new(
-        marvelous_cloth::garment::presets::basic(GarmentKind::Tshirt, 1)
+        marvelous_cloth::garment::presets::basic(GarmentKind::Tshirt, 2)
             .compile()
             .unwrap(),
     );
     let material =
         marvelous_cloth::garment::rod_garment::approximate_rod_material(&garment).unwrap();
     let network = GarmentRodNetwork::compile(garment.clone(), material).unwrap();
-    let state = network.state_from_mesh(&garment.initial_state).unwrap();
+    let mut state = network.state_from_mesh(&garment.initial_state).unwrap();
     assert_eq!(state.positions, garment.initial_state.x);
     assert_eq!(state.velocities, garment.initial_state.v);
+    let avatar =
+        SurfaceMesh::load_obj(std::path::Path::new("assets/makehuman/mannequin.obj")).unwrap();
+    let mut solver =
+        GarmentRodAvatar::new(network, &avatar, &state, OgcSettings::default()).unwrap();
+    let settings = RodSettings {
+        dt_s: 1.0 / 60.0,
+        iterations: 4,
+        drag_per_s: 1.5,
+        ..Default::default()
+    };
+    for step in 1..=10 {
+        let before = state.positions.clone();
+        let metrics = solver.step(&mut state, settings).unwrap();
+        let max_motion = state
+            .positions
+            .iter()
+            .zip(&before)
+            .map(|(a, b)| a.distance(*b))
+            .fold(0.0_f64, f64::max);
+        eprintln!(
+            "default shirt rod step {step}: {:.1} ms, max motion {:.4} m",
+            metrics.step_ms, max_motion
+        );
+        assert!((state.time_s - step as f64 * settings.dt_s).abs() < 1e-12);
+        assert!(max_motion > if step == 1 { 0.01 } else { 1e-6 });
+        assert!(metrics.surface_minimum_distance_m.unwrap() > 0.0);
+    }
 }
 
 #[test]

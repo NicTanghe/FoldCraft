@@ -910,22 +910,19 @@ mod final_diagnostics_transport_tests {
 
     #[test]
     fn experimental_rod_worker_advances_sewn_garment_and_retains_state() {
-        use marvelous_cloth::{
-            fitting::FittingProject,
-            garment::{GarmentTemplate, presets::GarmentKind},
-        };
+        use marvelous_cloth::{fitting::FittingProject, garment::presets::GarmentKind};
         let _guard = WORKER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset();
-        let dir = tempfile::tempdir().unwrap();
-        let avatar = dir.path().join("avatar.obj");
-        std::fs::write(&avatar, "v 10 0 -10\nv 11 0 -10\nv 10 1 -10\nf 1 2 3\n").unwrap();
-        let mut project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
-        project.template = GarmentTemplate::two_panel_demo();
+        let project = FittingProject::basic(
+            GarmentKind::Tshirt,
+            2,
+            "assets/makehuman/mannequin.obj".into(),
+        );
         let scene = project.compile().unwrap();
         assert!(!scene.garment.seams.is_empty());
         let settings = VbdSettings {
-            iterations: 1,
-            dt: 0.001,
+            iterations: 4,
+            dt: 1.0 / 60.0,
             ..Default::default()
         };
         let (entered_tx, entered) = mpsc::channel();
@@ -958,6 +955,7 @@ mod final_diagnostics_transport_tests {
             playing: false,
             once: true,
         };
+        let mut previous = scene.state.x.clone();
         for expected_step in 1..=2 {
             worker.tx.as_ref().unwrap().send(work()).unwrap();
             assert_eq!(entered.recv_timeout(Duration::from_secs(30)).unwrap(), 81);
@@ -966,7 +964,15 @@ mod final_diagnostics_transport_tests {
             let done = latest.lock().unwrap().take().unwrap();
             let (state, metrics) = done.result.unwrap();
             assert!((state.time - settings.dt * expected_step as f64).abs() < 1e-12);
-            assert!(metrics.residual_rms_n.is_some());
+            let max_motion = state
+                .x
+                .iter()
+                .zip(&previous)
+                .map(|(a, b)| a.distance(*b))
+                .fold(0.0_f64, f64::max);
+            assert!(max_motion > if expected_step == 1 { 0.01 } else { 1e-6 });
+            previous = state.x;
+            assert!(metrics.step_ms > 0.0);
             assert!(metrics.max_seam_gap_m.is_finite());
             assert!(metrics.gpu_compute_ms.is_none());
         }
