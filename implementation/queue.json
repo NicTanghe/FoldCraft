@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clock": 3.321631446370122,
+  "clock": 3.342039609635428,
   "tickets": [
     {
       "id": "FC-0001",
@@ -595,7 +595,7 @@
       "depends_on": [],
       "status": "ready",
       "owner": null,
-      "vruntime": 3.1126521562061638,
+      "vruntime": 3.127958278655143,
       "pr": null
     },
     {
@@ -785,14 +785,14 @@
       "title": "Integrate avatar contact into garment rod solves",
       "acceptance": "Use existing safe geometric contact for garment rods and fixed avatar in implicit solves with start validation, conservative bounds, objective and CPU tests; document exclusions and limits.",
       "points": 5.0,
-      "spent": 0,
+      "spent": 1.0,
       "priority": "urgent",
       "depends_on": [
         "FC-0051"
       ],
       "status": "ready",
       "owner": null,
-      "vruntime": 3.28081511983951,
+      "vruntime": 3.40581511983951,
       "pr": null
     }
   ]
