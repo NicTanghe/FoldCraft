@@ -1,7 +1,7 @@
 use glam::DVec3;
 use marvelous_cloth::{
     cosserat::{RodMaterial, RodSettings},
-    garment::{GarmentTemplate, rod_garment::GarmentRodNetwork},
+    garment::{GarmentTemplate, presets::GarmentKind, rod_garment::GarmentRodNetwork},
 };
 use std::sync::Arc;
 fn material() -> RodMaterial {
@@ -10,6 +10,21 @@ fn material() -> RodMaterial {
         stretch_shear_rigidity: 20.0,
         bend_twist_rigidity: 0.0,
     }
+}
+
+#[test]
+fn default_tshirt_compiles_for_experimental_menu() {
+    let garment = Arc::new(
+        marvelous_cloth::garment::presets::basic(GarmentKind::Tshirt, 1)
+            .compile()
+            .unwrap(),
+    );
+    let material =
+        marvelous_cloth::garment::rod_garment::approximate_rod_material(&garment).unwrap();
+    let network = GarmentRodNetwork::compile(garment.clone(), material).unwrap();
+    let state = network.state_from_mesh(&garment.initial_state).unwrap();
+    assert_eq!(state.positions, garment.initial_state.x);
+    assert_eq!(state.velocities, garment.initial_state.v);
 }
 
 #[test]

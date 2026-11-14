@@ -909,7 +909,7 @@ mod final_diagnostics_transport_tests {
     }
 
     #[test]
-    fn experimental_rod_worker_advances_and_retains_state_across_requests() {
+    fn experimental_rod_worker_advances_sewn_garment_and_retains_state() {
         use marvelous_cloth::{
             fitting::FittingProject,
             garment::{GarmentTemplate, presets::GarmentKind},
@@ -921,9 +921,8 @@ mod final_diagnostics_transport_tests {
         std::fs::write(&avatar, "v 10 0 -10\nv 11 0 -10\nv 10 1 -10\nf 1 2 3\n").unwrap();
         let mut project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
         project.template = GarmentTemplate::two_panel_demo();
-        project.template.panels.truncate(1);
-        project.template.seams.clear();
         let scene = project.compile().unwrap();
+        assert!(!scene.garment.seams.is_empty());
         let settings = VbdSettings {
             iterations: 1,
             dt: 0.001,
@@ -968,6 +967,7 @@ mod final_diagnostics_transport_tests {
             let (state, metrics) = done.result.unwrap();
             assert!((state.time - settings.dt * expected_step as f64).abs() < 1e-12);
             assert!(metrics.residual_rms_n.is_some());
+            assert!(metrics.max_seam_gap_m.is_finite());
             assert!(metrics.gpu_compute_ms.is_none());
         }
         worker.shutdown();

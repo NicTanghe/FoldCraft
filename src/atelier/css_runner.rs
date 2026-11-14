@@ -398,12 +398,14 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
                         )
                     },
                 );
+                let distance = if metrics.minimum_distance_m.is_finite() {
+                    format!("min dist {:.3} mm", metrics.minimum_distance_m * 1000.)
+                } else {
+                    "no nearby contact".into()
+                };
                 state.status_message = format!(
-                    "Step {}: min dist {:.3} mm, residual {}, {:.1} ms",
-                    state.step_count,
-                    metrics.minimum_distance_m * 1000.,
-                    residual,
-                    metrics.step_ms
+                    "Step {}: {}, residual {}, {:.1} ms",
+                    state.step_count, distance, residual, metrics.step_ms
                 );
                 state.last_metrics = Some(metrics);
                 state.sync_usd_points();
@@ -632,7 +634,12 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     if actions & ACT_RUN_2D_NEXT_PIECE != 0 {
         let count = state.project.template.panels.len().max(1);
         state.selected_piece_index = (state.selected_piece_index + 1) % count;
-        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+        if let Some(p) = state
+            .project
+            .template
+            .panels
+            .get(state.selected_piece_index)
+        {
             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
         }
     }
@@ -667,15 +674,26 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                     if ch == "]" {
                         let count = state.project.template.panels.len().max(1);
                         state.selected_piece_index = (state.selected_piece_index + 1) % count;
-                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                        if let Some(p) = state
+                            .project
+                            .template
+                            .panels
+                            .get(state.selected_piece_index)
+                        {
                             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                         }
                         return true;
                     }
                     if ch == "[" {
                         let count = state.project.template.panels.len().max(1);
-                        state.selected_piece_index = (state.selected_piece_index + count - 1) % count;
-                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                        state.selected_piece_index =
+                            (state.selected_piece_index + count - 1) % count;
+                        if let Some(p) = state
+                            .project
+                            .template
+                            .panels
+                            .get(state.selected_piece_index)
+                        {
                             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                         }
                         return true;
@@ -721,7 +739,12 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                 if is_2d_side && state.last_pointer_pos.1 >= 50.0 {
                     let count = state.project.template.panels.len().max(1);
                     state.selected_piece_index = (state.selected_piece_index + 1) % count;
-                    if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                    if let Some(p) = state
+                        .project
+                        .template
+                        .panels
+                        .get(state.selected_piece_index)
+                    {
                         state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                     }
                     return true;
@@ -1254,10 +1277,26 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
     let selected_name = selected_panel.map_or("None", |p| p.name.as_str());
     let (w_mm, h_mm) = selected_panel.map_or((0.0, 0.0), |p| {
         let (w, h) = if let Some(poly) = &p.polygon {
-            let min_x = poly.points.iter().map(|pt| pt.x).fold(f64::INFINITY, f64::min);
-            let max_x = poly.points.iter().map(|pt| pt.x).fold(f64::NEG_INFINITY, f64::max);
-            let min_y = poly.points.iter().map(|pt| pt.y).fold(f64::INFINITY, f64::min);
-            let max_y = poly.points.iter().map(|pt| pt.y).fold(f64::NEG_INFINITY, f64::max);
+            let min_x = poly
+                .points
+                .iter()
+                .map(|pt| pt.x)
+                .fold(f64::INFINITY, f64::min);
+            let max_x = poly
+                .points
+                .iter()
+                .map(|pt| pt.x)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let min_y = poly
+                .points
+                .iter()
+                .map(|pt| pt.y)
+                .fold(f64::INFINITY, f64::min);
+            let max_y = poly
+                .points
+                .iter()
+                .map(|pt| pt.y)
+                .fold(f64::NEG_INFINITY, f64::max);
             (max_x - min_x, max_y - min_y)
         } else {
             (p.pattern.width, p.pattern.height)
@@ -1612,12 +1651,13 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     let area_dm2 = (width_mm * height_mm) / 10000.0;
     let perimeter_mm = (width_mm + height_mm) * 2.0;
 
-    let last_pen = state
-        .last_metrics
-        .as_ref()
-        .map_or("0.00 mm".to_string(), |m| {
+    let last_pen = state.last_metrics.as_ref().map_or("N/A".to_string(), |m| {
+        if m.minimum_distance_m.is_finite() {
             format!("{:.2} mm", m.minimum_distance_m * 1000.0)
-        });
+        } else {
+            "No nearby contact".into()
+        }
+    });
     let last_res = state.last_metrics.as_ref().map_or("N/A".to_string(), |m| {
         m.barrier_al.as_ref().map_or_else(
             || {
@@ -2186,10 +2226,22 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let grid_minor = if is_dark { "#161c28" } else { "#e2e8f0" };
     let grid_major = if is_dark { "#253147" } else { "#cbd5e1" };
     let unsel_stroke = if is_dark { "#38bdf8" } else { "#2563eb" };
-    let unsel_fill = if is_dark { "rgba(56, 189, 248, 0.08)" } else { "rgba(37, 99, 235, 0.06)" };
+    let unsel_fill = if is_dark {
+        "rgba(56, 189, 248, 0.08)"
+    } else {
+        "rgba(37, 99, 235, 0.06)"
+    };
     let sel_stroke = if is_dark { "#f59e0b" } else { "#d97706" };
-    let sel_fill = if is_dark { "rgba(245, 158, 11, 0.18)" } else { "rgba(217, 119, 6, 0.14)" };
-    let badge_fill = if is_dark { "rgba(15, 23, 42, 0.90)" } else { "rgba(255, 255, 255, 0.92)" };
+    let sel_fill = if is_dark {
+        "rgba(245, 158, 11, 0.18)"
+    } else {
+        "rgba(217, 119, 6, 0.14)"
+    };
+    let badge_fill = if is_dark {
+        "rgba(15, 23, 42, 0.90)"
+    } else {
+        "rgba(255, 255, 255, 0.92)"
+    };
     let badge_border = if is_dark { "#334155" } else { "#cbd5e1" };
     let grain_color = if is_dark { "#60a5fa" } else { "#3b82f6" };
 
@@ -2205,7 +2257,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     while gx <= vb_min_x + vb_w {
         let is_major = (gx.abs() % 0.5).abs() < 0.01;
         let stroke = if is_major { grid_major } else { grid_minor };
-        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
+        let sw = if is_major {
+            vb_w * 0.0025
+        } else {
+            vb_w * 0.0012
+        };
         let pts = format!("{gx:.3},{:.3} {gx:.3},{:.3}", vb_min_y, vb_min_y + vb_h);
         nodes.push(ui! {
             <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
@@ -2217,7 +2273,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     while gy <= vb_min_y + vb_h {
         let is_major = (gy.abs() % 0.5).abs() < 0.01;
         let stroke = if is_major { grid_major } else { grid_minor };
-        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
+        let sw = if is_major {
+            vb_w * 0.0025
+        } else {
+            vb_w * 0.0012
+        };
         let pts = format!("{:.3},{gy:.3} {:.3},{gy:.3}", vb_min_x, vb_min_x + vb_w);
         nodes.push(ui! {
             <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
@@ -2239,7 +2299,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
 
     // Panels rendering
     for p in &panel_geos {
-        let stroke_color = if p.is_selected { sel_stroke } else { unsel_stroke };
+        let stroke_color = if p.is_selected {
+            sel_stroke
+        } else {
+            unsel_stroke
+        };
         let fill_color = if p.is_selected { sel_fill } else { unsel_fill };
         let stroke_w = if p.is_selected {
             vb_w * 0.0055
@@ -2348,7 +2412,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
                 vb_w * 0.0015
             }
         );
-        let vertex_stroke = if p.is_selected { sel_stroke } else { unsel_stroke };
+        let vertex_stroke = if p.is_selected {
+            sel_stroke
+        } else {
+            unsel_stroke
+        };
 
         for (pt_x, pt_y) in &p.points {
             nodes.push(ui! {
@@ -2399,7 +2467,11 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         let badge_h = vb_w * 0.038;
         let bx = cx - badge_w * 0.5;
         let by = cy - badge_h * 0.5;
-        let badge_border_color = if p.is_selected { sel_stroke } else { badge_border };
+        let badge_border_color = if p.is_selected {
+            sel_stroke
+        } else {
+            badge_border
+        };
         nodes.push(ui! {
             <rect x={format!("{bx:.4}")} y={format!("{by:.4}")} width={format!("{badge_w:.4}")} height={format!("{badge_h:.4}")} fill={badge_fill} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.002)} rx={format!("{:.4}", vb_w * 0.005)} ry={format!("{:.4}", vb_w * 0.005)} />
         });

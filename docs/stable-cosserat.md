@@ -19,9 +19,9 @@ The separate YarnBall GPU code is GPL-licensed and is not included.
 Call `RodModel::new` with *rest* vertex positions in metres, segment endpoint
 pairs, joint pairs, optional rest material frames, pin lists and one material.
 Each joint connects two segments sharing a vertex. Segment/joint indices are
-runtime data; this API is not a garment file format. No panel, seam, saved
-project or 2D material coordinate is converted into a rod by the low-level API
-implicitly. The garment adapter below compiles the existing material-space mesh. The
+runtime data; this API is not a garment file format. The low-level API does not
+implicitly convert panels, seams, saved projects or 2D material coordinates.
+The garment adapter below compiles the existing material-space mesh. The
 existing fiber guides remain geometric surface attachments, not physical yarns.
 
 Each segment stores a unit quaternion rotating local +X onto its rest tangent.
@@ -68,7 +68,9 @@ and the final free-position residual RMS (N) of the *pre-drag implicit
 objective*. It does not include an orientation torque residual or certify
 convergence. When contact is enabled it also reports contact energy, the
 computed closest-pair distance, bounded updates and rejected local line
-searches. These are CPU wall timings, not GPU timestamps or viewport cadence.
+searches. The fixed-avatar wrapper additionally reports the detected surface
+minimum distance when finite. These are CPU wall timings, not GPU timestamps or
+viewport cadence.
 
 ## Experimental rod self-contact
 

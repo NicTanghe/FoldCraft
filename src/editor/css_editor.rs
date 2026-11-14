@@ -1335,7 +1335,11 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
     let is_dark = state.theme == Theme::Dark;
     let bg_color = if is_dark { "#0d0f17" } else { "#f8fafc" };
     let grid_color = if is_dark { "#1e2636" } else { "#e2e8f0" };
-    let tri_fill = if is_dark { "rgba(148, 163, 184, 0.10)" } else { "rgba(100, 116, 139, 0.08)" };
+    let tri_fill = if is_dark {
+        "rgba(148, 163, 184, 0.10)"
+    } else {
+        "rgba(100, 116, 139, 0.08)"
+    };
     let tri_stroke = if is_dark { "#334155" } else { "#cbd5e1" };
     let unsel_edge_color = if is_dark { "#f0f3f8" } else { "#1e293b" };
 
@@ -1396,7 +1400,11 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
         let (x_start, y_start) = corners[i];
         let (x_end, y_end) = corners[(i + 1) % 4];
         let is_selected = state.selected_edge == Some(i);
-        let stroke_color = if is_selected { "#f59e0b" } else { unsel_edge_color };
+        let stroke_color = if is_selected {
+            "#f59e0b"
+        } else {
+            unsel_edge_color
+        };
         let stroke_w = if is_selected { "3.0" } else { "1.5" };
 
         let pts = format!("{x_start:.1},{y_start:.1} {x_end:.1},{y_end:.1}");
