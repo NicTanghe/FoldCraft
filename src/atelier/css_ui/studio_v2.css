@@ -1198,7 +1198,7 @@ button {
 }
 
 .pattern-piece:hover {
-  border-color: var(--accent);
+  opacity: 0.85;
 }
 
 .cad-vertex {
