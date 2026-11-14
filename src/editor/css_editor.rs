@@ -60,6 +60,12 @@ pub const ACT_SOLVER_GPU: u64 = 1 << 25;
 pub const ACT_SOLVER_CPU: u64 = 1 << 26;
 
 pub const ACT_SOLVER_AL: u64 = 1 << 27;
+pub const ACT_TOOL_GIZMO: u64 = 1 << 28;
+pub const ACT_TOOL_EDIT2D: u64 = 1 << 29;
+pub const ACT_TOOL_RECT2D: u64 = 1 << 30;
+pub const ACT_TOOL_PEN2D: u64 = 1 << 31;
+pub const ACT_TOOL_CORNER2D: u64 = 1 << 32;
+pub const ACT_TOOL_MEASURE2D: u64 = 1 << 33;
 
 // Onclick trampolines
 
@@ -257,6 +263,8 @@ pub struct CssEditorState {
     pub layout_mode: ViewLayoutMode,
     pub command_palette_open: bool,
     pub left_drawer_open: bool,
+    pub active_3d_tool: String,
+    pub active_2d_tool: String,
     pub selected_edge: Option<usize>,
     pub status_message: String,
     // Mesh prep inputs
@@ -267,7 +275,9 @@ pub struct CssEditorState {
     pub mesh_prep_error: Option<String>,
     // Pointer / camera drag state
     pub pointer_down: bool,
+    pub dragging_3d: bool,
     pub last_pointer_pos: (f32, f32),
+    pub window_size: (f32, f32),
     pub worker_tx: mpsc::Sender<RefWork>,
     pub worker_latest: RefLatest,
     pub generation: u64,
@@ -285,6 +295,12 @@ impl CssEditorState {
     ) -> Self {
         let gpu_sim = gpu.is_some();
         let (mesh, state) = project.build().expect("build initial mesh from project");
+        let sphere_surface = project
+            .sphere
+            .as_ref()
+            .map(marvelous_cloth::usd_scene::viewport_sphere);
+        let camera =
+            marvelous_cloth::usd_scene::default_scene_camera(&state.x, sphere_surface.as_ref());
         let (warp, weft, ratio, trans) = if let Some(plan) = &project.physics_sizing {
             (
                 plan.young_pa[0].to_string(),
@@ -313,7 +329,7 @@ impl CssEditorState {
             gpu_sim,
             contact_method: ContactMethod::Ipc,
             solver_menu_open: false,
-            camera: Camera::default(),
+            camera,
             playing: false,
             wire: true,
             shaded: true,
@@ -326,6 +342,8 @@ impl CssEditorState {
             layout_mode: ViewLayoutMode::Split,
             command_palette_open: false,
             left_drawer_open: true,
+            active_3d_tool: "Gizmo".to_string(),
+            active_2d_tool: "Edit".to_string(),
             selected_edge: None,
             status_message: "Ready".to_string(),
             mesh_prep_warp_e: warp,
@@ -334,7 +352,9 @@ impl CssEditorState {
             mesh_prep_transition: trans,
             mesh_prep_error: None,
             pointer_down: false,
+            dragging_3d: false,
             last_pointer_pos: (0.0, 0.0),
+            window_size: (1600.0, 980.0),
             worker_tx,
             worker_latest,
             generation: 1,
@@ -427,6 +447,15 @@ impl CssEditorState {
             }
         }
         self.sync_usd_points();
+    }
+
+    pub fn sync_usd_camera(&mut self) {
+        if let Some(scene) = &self.usd_scene
+            && let Err(error) =
+                marvelous_cloth::usd_scene::update_viewport_camera(scene, &self.camera)
+        {
+            self.status_message = format!("USD camera update error: {error}");
+        }
     }
 
     pub fn sync_usd_points(&mut self) {
@@ -596,20 +625,35 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
         state.active.scene = Scene::Sphere;
         state.active.sphere = Some(Default::default());
         state.reset();
+        let sphere_surface = state
+            .active
+            .sphere
+            .as_ref()
+            .map(marvelous_cloth::usd_scene::viewport_sphere);
+        state.camera = marvelous_cloth::usd_scene::default_scene_camera(
+            &state.state.x,
+            sphere_surface.as_ref(),
+        );
+        state.sync_usd_camera();
     }
     if actions & ACT_SCENE_HANG != 0 {
         state.active.scene = Scene::Hanging;
         state.active.sphere = None;
         state.reset();
+        state.camera = marvelous_cloth::usd_scene::default_scene_camera(&state.state.x, None);
+        state.sync_usd_camera();
     }
     if actions & ACT_TOGGLE_WIRE != 0 {
         state.wire = !state.wire;
+        state.status_message = format!("Wireframe: {}", if state.wire { "ON" } else { "OFF" });
     }
     if actions & ACT_TOGGLE_SHADED != 0 {
         state.shaded = !state.shaded;
+        state.status_message = format!("Shaded: {}", if state.shaded { "ON" } else { "OFF" });
     }
     if actions & ACT_TOGGLE_COLLIDER != 0 {
         state.collider = !state.collider;
+        state.status_message = format!("Collider: {}", if state.collider { "ON" } else { "OFF" });
     }
     if actions & ACT_TAB_PROPERTIES != 0 {
         state.active_tab = EditorTab::Properties;
@@ -642,10 +686,62 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
         state.left_drawer_open = !state.left_drawer_open;
     }
     if actions & ACT_CAM_RESET != 0 {
-        state.camera = Camera::default();
+        let sphere_surface = state
+            .active
+            .sphere
+            .as_ref()
+            .map(marvelous_cloth::usd_scene::viewport_sphere);
+        state.camera = marvelous_cloth::usd_scene::default_scene_camera(
+            &state.state.x,
+            sphere_surface.as_ref(),
+        );
+        state.sync_usd_camera();
+        state.status_message = "Reset 3D camera".to_string();
     }
     if actions & ACT_EDGE_SELECT_NEXT != 0 {
-        state.selected_edge = Some(state.selected_edge.map_or(0, |e| (e + 1) % 4));
+        let next = state.selected_edge.map_or(0, |e| (e + 1) % 4);
+        state.selected_edge = Some(next);
+        state.status_message = format!("Selected boundary edge {}", next + 1);
+    }
+    if actions & ACT_TOOL_GIZMO != 0 {
+        state.active_3d_tool = "Gizmo".to_string();
+        state.status_message = "3D Orbit tool active (drag in 3D viewport to orbit)".to_string();
+    }
+    if actions & ACT_TOOL_EDIT2D != 0 {
+        state.active_2d_tool = "Edit".to_string();
+        let next = state.selected_edge.unwrap_or(0);
+        state.selected_edge = Some(next);
+        state.status_message = format!(
+            "2D Inspect (Project v1 rect edge {}; launch `cloth-fit --view` for freeform 2D editing)",
+            next + 1
+        );
+    }
+    if actions & ACT_TOOL_RECT2D != 0 {
+        state.active_2d_tool = "Rect".to_string();
+        state.status_message =
+            "Project v1 shows fixed rectangular pattern (use `cloth-fit --view` to draw pieces)"
+                .to_string();
+    }
+    if actions & ACT_TOOL_PEN2D != 0 {
+        state.active_2d_tool = "Pen".to_string();
+        state.status_message =
+            "Project v1 shows fixed rectangular pattern (use `cloth-fit --view` to draw polygons)"
+                .to_string();
+    }
+    if actions & ACT_TOOL_CORNER2D != 0 {
+        state.active_2d_tool = "Corner".to_string();
+        state.status_message =
+            "Corner rounding edits v2 polygons (launch `cloth-fit --view` to round & adjust Bézier handles)"
+                .to_string();
+    }
+    if actions & ACT_TOOL_MEASURE2D != 0 {
+        state.active_2d_tool = "Measure".to_string();
+        let p = &state.active.pattern;
+        state.status_message = format!(
+            "Pattern dimensions: {:.0} × {:.0} mm",
+            p.width * 1000.0,
+            p.height * 1000.0
+        );
     }
 
     if actions != 0 || (had_result && !state.playing) {
@@ -657,8 +753,32 @@ pub fn update_editor(state: &mut CssEditorState, _frame: FrameInfo) -> Invalidat
     }
 }
 
+fn editor_viewport_3d_contains(state: &CssEditorState, px: f32, py: f32) -> bool {
+    let win_w = state.window_size.0.max(100.0);
+    let win_h = state.window_size.1.max(100.0);
+    let body_y = 40.0_f32 + 32.0;
+    let body_h = (win_h - 40.0 - 26.0 - 32.0).max(1.0);
+    let left_w = 48.0_f32 + if state.left_drawer_open { 240.0 } else { 0.0 };
+    let right_w = 48.0_f32 + 300.0;
+    let stage_w = (win_w - left_w - right_w).max(1.0);
+    let vp3d_w = match state.layout_mode {
+        ViewLayoutMode::TwoDOnly => return false,
+        ViewLayoutMode::ThreeDOnly => stage_w,
+        ViewLayoutMode::Split => stage_w * 0.5,
+    };
+    px >= left_w && px <= left_w + vp3d_w && py >= body_y && py <= body_y + body_h
+}
+
 pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> bool {
     match event {
+        EngineEvent::ViewportChanged(vp) => {
+            let new_size = (vp.width.max(1) as f32, vp.height.max(1) as f32);
+            if state.window_size != new_size {
+                state.window_size = new_size;
+                return true;
+            }
+            false
+        }
         EngineEvent::Key(k) => {
             if k.state == cssimpler::renderer::ButtonState::Pressed {
                 if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key {
@@ -692,27 +812,43 @@ pub fn handle_editor_event(state: &mut CssEditorState, event: &EngineEvent) -> b
             state: btn_state,
             ..
         } => {
-            state.pointer_down = *btn_state == cssimpler::renderer::ButtonState::Pressed;
+            let pressed = *btn_state == cssimpler::renderer::ButtonState::Pressed;
+            state.pointer_down = pressed;
+            if pressed {
+                let (px, py) = state.last_pointer_pos;
+                state.dragging_3d = !state.command_palette_open
+                    && !state.solver_menu_open
+                    && editor_viewport_3d_contains(state, px, py);
+            } else {
+                state.dragging_3d = false;
+            }
             false
         }
         EngineEvent::PointerMoved { position, .. } => {
             let (px, py) = (position.x, position.y);
-            if state.pointer_down {
+            let mut handled = false;
+            if state.pointer_down && state.dragging_3d {
                 let dx = px - state.last_pointer_pos.0;
                 let dy = py - state.last_pointer_pos.1;
-                // If dragging in 3D viewport region, orbit camera
-                state.camera.yaw += dx * 0.008;
+                state.camera.yaw -= dx * 0.008;
                 state.camera.pitch = (state.camera.pitch + dy * 0.008).clamp(-1.45, 1.45);
+                state.sync_usd_camera();
+                handled = true;
             }
             state.last_pointer_pos = (px, py);
-            false
+            handled
         }
         EngineEvent::Scroll { delta, .. } => {
-            let dy = match delta {
-                cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
-                cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
-            };
-            state.camera.distance = (state.camera.distance - dy).clamp(0.5, 12.0);
+            let (px, py) = state.last_pointer_pos;
+            if editor_viewport_3d_contains(state, px, py) {
+                let dy = match delta {
+                    cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
+                    cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
+                };
+                state.camera.distance = (state.camera.distance - dy).clamp(0.5, 12.0);
+                state.sync_usd_camera();
+                return true;
+            }
             false
         }
         _ => false,
@@ -827,9 +963,14 @@ fn build_top_bar(state: &CssEditorState) -> Node {
 }
 
 fn build_tool_rail_3d(state: &CssEditorState) -> Node {
+    let gizmo_class = if state.active_3d_tool == "Gizmo" {
+        "tool-btn active"
+    } else {
+        "tool-btn"
+    };
     ui! {
         <aside id="rail-3d" class="tool-rail tool-rail-3d">
-            <button class="tool-btn active" title="Select & Arrange [Gizmo] (1)">
+            <button class={gizmo_class} onclick_shared={queue_action(&state.actions, ACT_TOOL_GIZMO)} title="Select & Arrange [Gizmo] (1)">
                 {icon_gizmo()}
                 <span class="tool-label">"Gizmo"</span>
             </button>
@@ -849,26 +990,33 @@ fn build_tool_rail_3d(state: &CssEditorState) -> Node {
     }
 }
 
-fn build_tool_rail_2d(_state: &CssEditorState) -> Node {
+fn build_tool_rail_2d(state: &CssEditorState) -> Node {
+    let cls = |name: &str| {
+        if state.active_2d_tool == name {
+            "tool-btn active"
+        } else {
+            "tool-btn"
+        }
+    };
     ui! {
         <aside id="rail-2d" class="tool-rail tool-rail-2d">
-            <button class="tool-btn active" title="Edit Point / Transform (Z / A)">
+            <button class={cls("Edit")} onclick_shared={queue_action(&state.actions, ACT_TOOL_EDIT2D)} title="Inspect Boundary Edge (Z / A)">
                 {icon_edit_2d()}
                 <span class="tool-label">"Edit"</span>
             </button>
-            <button class="tool-btn" title="Rectangle Pattern (S)">
+            <button class={cls("Rect")} onclick_shared={queue_action(&state.actions, ACT_TOOL_RECT2D)} title="Rectangle Pattern (S)">
                 {icon_rect_2d()}
                 <span class="tool-label">"Rect"</span>
             </button>
-            <button class="tool-btn" title="Polygon Pattern (H)">
+            <button class={cls("Pen")} onclick_shared={queue_action(&state.actions, ACT_TOOL_PEN2D)} title="Polygon Pattern (H)">
                 {icon_polygon_2d()}
                 <span class="tool-label">"Pen"</span>
             </button>
-            <button class="tool-btn" title="Corner Rounding (C)">
+            <button class={cls("Corner")} onclick_shared={queue_action(&state.actions, ACT_TOOL_CORNER2D)} title="Corner Rounding (C)">
                 {icon_corner_2d()}
                 <span class="tool-label">"Corner"</span>
             </button>
-            <button class="tool-btn" title="2D Tape Measure (M)">
+            <button class={cls("Measure")} onclick_shared={queue_action(&state.actions, ACT_TOOL_MEASURE2D)} title="2D Pattern Dimensions (M)">
                 {icon_measure_2d()}
                 <span class="tool-label">"Measure"</span>
             </button>
@@ -1335,7 +1483,11 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
     let is_dark = state.theme == Theme::Dark;
     let bg_color = if is_dark { "#0d0f17" } else { "#f8fafc" };
     let grid_color = if is_dark { "#1e2636" } else { "#e2e8f0" };
-    let tri_fill = if is_dark { "rgba(148, 163, 184, 0.10)" } else { "rgba(100, 116, 139, 0.08)" };
+    let tri_fill = if is_dark {
+        "rgba(148, 163, 184, 0.10)"
+    } else {
+        "rgba(100, 116, 139, 0.08)"
+    };
     let tri_stroke = if is_dark { "#334155" } else { "#cbd5e1" };
     let unsel_edge_color = if is_dark { "#f0f3f8" } else { "#1e293b" };
 
@@ -1396,7 +1548,11 @@ fn render_2d_pattern_svg(state: &CssEditorState) -> (Vec<Node>, String) {
         let (x_start, y_start) = corners[i];
         let (x_end, y_end) = corners[(i + 1) % 4];
         let is_selected = state.selected_edge == Some(i);
-        let stroke_color = if is_selected { "#f59e0b" } else { unsel_edge_color };
+        let stroke_color = if is_selected {
+            "#f59e0b"
+        } else {
+            unsel_edge_color
+        };
         let stroke_w = if is_selected { "3.0" } else { "1.5" };
 
         let pts = format!("{x_start:.1},{y_start:.1} {x_end:.1},{y_end:.1}");
@@ -1475,6 +1631,9 @@ pub fn create_editor_app<'a>(
 
     let usd_scene = cssimpler::renderer::gpu::usd::UsdScene::open(&preview_path)
         .expect("load generated USD viewport scene");
+    if let Err(err) = marvelous_cloth::usd_scene::init_viewport_camera(&usd_scene, &state.camera) {
+        state.status_message = format!("USD camera init error: {err}");
+    }
     state.usd_scene = Some(usd_scene.clone());
 
     let app = App::new(
@@ -1491,7 +1650,9 @@ pub fn create_editor_app<'a>(
     let app = app.with_usd_viewport(
         "viewport-3d-scene",
         usd_scene,
-        cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
+        cssimpler::renderer::gpu::usd::UsdCameraMode::Authored(
+            marvelous_cloth::usd_scene::VIEWPORT_CAMERA_PATH.into(),
+        ),
     );
 
     app
@@ -1970,5 +2131,151 @@ mod tests {
         // Test Mesh Preparation: Uniform Reset
         app.state_mut().uniform_grid_and_reset();
         assert!(app.state().active.physics_sizing.is_none());
+    }
+
+    #[test]
+    fn test_editor_all_buttons_and_usd_camera_audit() {
+        let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = CssEditorState::new(Project::default(), dir.path().join("editor_audit"));
+        let mut app = create_editor_app(state, &stylesheet);
+
+        fn collect_clickable(
+            nodes: &[cssimpler::renderer::RenderNode],
+            out: &mut Vec<cssimpler::core::LayoutBox>,
+        ) {
+            for n in nodes {
+                if n.handlers.click().is_some() {
+                    out.push(n.layout);
+                }
+                collect_clickable(&n.children, out);
+            }
+        }
+
+        // 1. Audit all clickable button bounds at 1600x980 and 1280x800
+        for (w, h) in [(1600_usize, 980_usize), (1280_usize, 800_usize)] {
+            app.state_mut().window_size = (w as f32, h as f32);
+            app.set_viewport(cssimpler::renderer::ViewportSize::new(w, h));
+            let roots = app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: w as u64,
+            });
+            let mut btns = Vec::new();
+            collect_clickable(&roots, &mut btns);
+            assert!(!btns.is_empty());
+            for (idx, b) in btns.iter().enumerate() {
+                assert!(
+                    b.width >= 10.0
+                        && b.height >= 10.0
+                        && b.x >= -1.0
+                        && b.y >= -1.0
+                        && b.x + b.width <= w as f32 + 1.0
+                        && b.y + b.height <= h as f32 + 1.0,
+                    "editor button #{idx} out of bounds at {w}x{h}: {b:?}"
+                );
+            }
+        }
+
+        // 2. Verify every button in #rail-3d and #rail-2d is clickable and updates state/status
+        app.state_mut().window_size = (1600.0, 980.0);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        let mut frame = 10_u64;
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: frame,
+        });
+
+        for (act, expected_tool) in [
+            (ACT_TOOL_RECT2D, "Rect"),
+            (ACT_TOOL_PEN2D, "Pen"),
+            (ACT_TOOL_CORNER2D, "Corner"),
+            (ACT_TOOL_MEASURE2D, "Measure"),
+            (ACT_TOOL_EDIT2D, "Edit"),
+        ] {
+            frame += 1;
+            app.state_mut().actions.fetch_or(act, Ordering::Relaxed);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: frame,
+            });
+            assert_eq!(app.state().active_2d_tool, expected_tool);
+        }
+
+        frame += 1;
+        app.state_mut()
+            .actions
+            .fetch_or(ACT_TOOL_GIZMO, Ordering::Relaxed);
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: frame,
+        });
+        assert_eq!(app.state().active_3d_tool, "Gizmo");
+
+        // 3. Verify 3D viewport orbit drag, scroll zoom, and ACT_CAM_RESET drive USD camera transform
+        let read_xform = |st: &CssEditorState| {
+            st.usd_scene
+                .as_ref()
+                .unwrap()
+                .stage()
+                .attribute(format!(
+                    "{}.xformOp:transform",
+                    marvelous_cloth::usd_scene::VIEWPORT_CAMERA_PATH
+                ))
+                .unwrap()
+                .get::<cssimpler::renderer::gpu::openusd::gf::Matrix4d>()
+                .unwrap()
+                .unwrap()
+                .0
+        };
+        let initial_xf = read_xform(app.state());
+        let initial_yaw = app.state().camera.yaw;
+        let initial_dist = app.state().camera.distance;
+
+        let vp3d = app.find_element_bounds_by_id("#viewport-3d-scene").unwrap();
+        let cx = vp3d.x + vp3d.width * 0.5;
+        let cy = vp3d.y + vp3d.height * 0.5;
+        let move_ev = |x: f32, y: f32| EngineEvent::PointerMoved {
+            position: cssimpler::renderer::PointerPosition { x, y },
+            modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+        };
+        let press_ev = |down: bool| EngineEvent::PointerButton {
+            button: cssimpler::renderer::PointerButton::Primary,
+            state: if down {
+                cssimpler::renderer::ButtonState::Pressed
+            } else {
+                cssimpler::renderer::ButtonState::Released
+            },
+            modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+        };
+
+        handle_editor_event(app.state_mut(), &move_ev(cx, cy));
+        handle_editor_event(app.state_mut(), &press_ev(true));
+        assert!(handle_editor_event(
+            app.state_mut(),
+            &move_ev(cx + 40.0, cy - 15.0)
+        ));
+        handle_editor_event(app.state_mut(), &press_ev(false));
+        assert!((app.state().camera.yaw - initial_yaw).abs() > 0.1);
+        assert!(handle_editor_event(
+            app.state_mut(),
+            &EngineEvent::Scroll {
+                delta: cssimpler::renderer::ScrollDelta::Lines { x: 0.0, y: 1.5 },
+                modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+            }
+        ));
+        assert!((app.state().camera.distance - initial_dist).abs() > 0.1);
+        assert_ne!(read_xform(app.state()), initial_xf);
+
+        frame += 1;
+        app.state_mut()
+            .actions
+            .fetch_or(ACT_CAM_RESET, Ordering::Relaxed);
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: frame,
+        });
+        assert!((app.state().camera.yaw - initial_yaw).abs() < 1e-6);
+        assert!((app.state().camera.distance - initial_dist).abs() < 1e-6);
+        assert_eq!(read_xform(app.state()), initial_xf);
     }
 }

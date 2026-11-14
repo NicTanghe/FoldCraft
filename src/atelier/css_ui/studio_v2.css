@@ -98,37 +98,6 @@ button {
               color 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.top-bar,
-.tool-rail,
-.tool-btn,
-.sidebar,
-.left-drawer,
-.right-dock,
-.status-bar,
-.viewport-header,
-.viewport-container,
-.canvas-area,
-.viewport,
-#viewport-stage,
-.stage,
-.dock-tabs,
-.dock-tab,
-.accordion-header,
-.accordion-content,
-.piece-card,
-.palette-item,
-#command-palette,
-.menu-item,
-.transport-btn,
-.layout-btn,
-.clean-view-toggle,
-.solver-dropdown,
-.svg-canvas {
-  transition: background-color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
-              color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.45s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 /* ============================================================================
    Top Menu & Transport Bar
    ============================================================================ */
@@ -176,7 +145,6 @@ button {
   color: var(--text);
   border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.12s ease;
 }
 
 .menu-item:hover {
@@ -206,7 +174,6 @@ button {
   color: var(--text);
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 .transport-btn:hover {
@@ -244,7 +211,6 @@ button {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 
 .clean-view-toggle .icon {
@@ -316,7 +282,6 @@ button {
   color: var(--text-muted);
   border-radius: 3px;
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 .layout-btn .icon {
@@ -416,7 +381,6 @@ button {
   border-radius: 4px;
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 #command-palette-trigger .icon {
@@ -464,6 +428,10 @@ button {
   border-left: 1px solid var(--border);
 }
 
+.tool-rail-2d.collapsed {
+  display: none;
+}
+
 .tool-btn, .rail-tool-btn {
   width: 36px;
   height: 36px;
@@ -476,7 +444,6 @@ button {
   font-weight: 500;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 .tool-btn:hover, .rail-tool-btn:hover {
@@ -640,7 +607,7 @@ button {
   background-color: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 6px;
-  transition: border-color 0.15s;
+  cursor: pointer;
 }
 
 .template-entry:hover {
@@ -698,7 +665,6 @@ button {
   background-color: var(--surface-raised);
   color: var(--text);
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 
 .btn:hover {
@@ -737,7 +703,6 @@ button {
   border-radius: 4px;
   color: var(--text);
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 .btn-open-template:hover {
@@ -784,7 +749,6 @@ button {
   color: var(--text);
   text-align: center;
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 .btn-action:hover, .drawer-btn:hover {
@@ -807,7 +771,6 @@ button {
   color: var(--text);
   text-align: center;
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 .action-btn:hover {
@@ -851,11 +814,15 @@ button {
   border-radius: 6px;
   gap: 2px;
   cursor: pointer;
-  transition: all 0.12s ease;
 }
 
 .piece-card:hover {
   border-color: var(--accent);
+}
+
+.piece-card.connected {
+  border-color: #10b981;
+  background-color: rgba(16, 185, 129, 0.12);
 }
 
 .piece-card.active, .piece-card-selected {
@@ -922,8 +889,8 @@ button {
   position: relative;
   background-color: var(--viewport-bg-3d);
   overflow: hidden;
-  min-width: 0;
-  min-height: 0;
+  min-width: 100px;
+  min-height: 100px;
 }
 
 #viewport-2d, .stage-2d-only #viewport-2d {
@@ -957,9 +924,12 @@ button {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   background-color: var(--viewport-header-bg);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
   z-index: 2;
 }
 
@@ -968,6 +938,9 @@ button {
   flex-direction: column;
   justify-content: center;
   gap: 1px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .viewport-title {
@@ -976,30 +949,39 @@ button {
   color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .viewport-sub {
   font-size: 10px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .viewport-tools {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .viewport-tool-btn {
   font-size: 11px;
   font-weight: 500;
-  padding: 3px 8px;
+  padding: 3px 7px;
   border-radius: 4px;
   background-color: var(--surface-raised);
   border: 1px solid var(--border);
   color: var(--text);
   cursor: pointer;
   line-height: 1.2;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .viewport-tool-btn:hover {
@@ -1037,6 +1019,10 @@ button {
   justify-content: center;
 }
 
+#viewport-2d .canvas-area {
+  background-color: var(--viewport-bg-2d);
+}
+
 .viewport {
   flex: 1;
   width: 100%;
@@ -1055,9 +1041,160 @@ button {
   display: block;
 }
 
+#svg-2d-board {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  flex-shrink: 0;
+}
+
+.cad-2d-bar {
+  height: 28px;
+  padding: 0 8px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.cad-2d-bar.rows-2,
+.cad-2d-bar.rows-3,
+.cad-2d-bar.rows-4 {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 2px 6px;
+  gap: 3px;
+}
+
+.cad-2d-bar.rows-2 { height: 52px; }
+.cad-2d-bar.rows-3 { height: 75px; }
+.cad-2d-bar.rows-4 { height: 98px; }
+
+.cad-2d-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  min-width: 0;
+  width: 100%;
+}
+
+.cad-2d-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.cad-2d-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cad-2d-value {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 1px 5px;
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cad-2d-pill {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cad-2d-pill:hover {
+  background-color: var(--border);
+}
+
+.cad-2d-pill.active {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.cad-2d-pill.primary {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.cad-2d-pill.primary:hover {
+  background-color: #10b981;
+  color: #ffffff;
+}
+
+.cad-prop-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.cad-prop-btn {
+  flex: 1;
+  min-width: 54px;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 3px;
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cad-prop-btn:hover {
+  background-color: var(--border);
+}
+
+.cad-prop-btn.active {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.cad-prop-btn.primary {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.cad-prop-btn.primary:hover {
+  background-color: #10b981;
+  color: #ffffff;
+}
+
 .pattern-piece {
   cursor: pointer;
-  transition: fill 0.2s ease, stroke 0.2s ease;
 }
 
 .pattern-piece:hover {
@@ -1073,10 +1210,6 @@ button {
 }
 
 .bezier-handle {
-  cursor: pointer;
-}
-
-.pattern-piece {
   cursor: pointer;
 }
 
@@ -1118,7 +1251,6 @@ button {
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: all 0.12s ease;
   padding: 0 4px;
 }
 
@@ -1163,6 +1295,24 @@ button {
   overflow-y: auto;
 }
 
+.browser-tree-spaced {
+  margin-top: 6px;
+}
+
+.badge-accent {
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.text-muted-sm {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.pointer-item {
+  cursor: pointer;
+}
+
 .tree-item, .tree-node {
   display: flex;
   flex-direction: row;
@@ -1173,11 +1323,16 @@ button {
   color: var(--text);
   border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.12s ease;
 }
 
 .tree-item:hover, .tree-node:hover {
   background-color: var(--surface-raised);
+}
+
+.tree-item.connected {
+  background-color: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+  font-weight: 500;
 }
 
 .tree-item.active {
@@ -1451,7 +1606,6 @@ button {
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
-  transition: background-color 0.12s ease;
 }
 
 .palette-item .item-left, .command-palette-item .item-left {

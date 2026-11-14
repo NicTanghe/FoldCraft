@@ -19,7 +19,7 @@
 
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 
 use cssimpler::app::{App, Invalidation, RenderMode};
 use cssimpler::core::Node;
@@ -27,10 +27,26 @@ use cssimpler::renderer::{EngineEvent, FrameInfo, WindowConfig};
 use cssimpler::style::Stylesheet;
 use cssimpler::ui;
 
+use glam::DVec2;
+use marvelous_cloth::authoring::{
+    self, Command, CornerRule, History,
+    corner_tool::{
+        CIRCLE_TENSION, FilletPreview, connected_corners, connected_edges, preview_adjust_handle,
+        preview_fillet, preview_move_corner, validate_fillet_preview,
+    },
+};
 use marvelous_cloth::css_ui::icons::*;
 use marvelous_cloth::css_ui::{Theme, ViewLayoutMode, load_studio_stylesheet};
 use marvelous_cloth::fitting::{FittingProject, FittingScene};
-use marvelous_cloth::garment::export;
+use marvelous_cloth::garment::{
+    GarmentTemplate, curves, export,
+    meshing::MeshingSettings,
+    polygon::{MeasurementAnchor, PatternMeasurement, PolygonPattern},
+    presets::{GarmentKind, basic as basic_garment},
+    seam::{BoundaryRef, Side},
+    shapes::Primitive,
+    template::Panel,
+};
 use marvelous_cloth::gpu_avbd::ContactMethod;
 use marvelous_cloth::render::Camera;
 use marvelous_cloth::vbd::{VbdMetrics, VbdSettings};
@@ -105,11 +121,8 @@ pub const ACT_RUN_2D_ZOOM_OUT: u64 = 1 << 57;
 pub const ACT_RUN_2D_FIT: u64 = 1 << 58;
 pub const ACT_RUN_2D_NEXT_PIECE: u64 = 1 << 59;
 
-
-// Trampolines
-
 // ============================================================================
-// Object Browser Category Enum
+// Object Browser Category & 2D Interactive Types
 // ============================================================================
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -122,16 +135,138 @@ pub enum ObjectCategory {
     Environment,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rect2d {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl Rect2d {
+    pub fn contains(self, px: f32, py: f32) -> bool {
+        self.w > 0.0
+            && self.h > 0.0
+            && px >= self.x
+            && px <= self.x + self.w
+            && py >= self.y
+            && py <= self.y + self.h
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Hover2dTarget {
+    Panel(usize),
+    Edge {
+        panel_idx: usize,
+        edge_idx: usize,
+    },
+    Point {
+        panel_idx: usize,
+        point_idx: usize,
+    },
+    BezierHandle {
+        panel_idx: usize,
+        edge_idx: usize,
+        handle_index: usize,
+    },
+    CornerPreviewHandle {
+        panel_idx: usize,
+        edge_name: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum Drag2d {
+    Pan {
+        start_pan: (f64, f64),
+        start_pointer: (f32, f32),
+    },
+    Point {
+        panel_id: String,
+        point_idx: usize,
+        start_pointer: (f32, f32),
+        moved: bool,
+        last_local: DVec2,
+    },
+    BezierHandle {
+        panel_id: String,
+        edge_name: String,
+        handle_index: usize,
+        start_pointer: (f32, f32),
+        moved: bool,
+        last_local: DVec2,
+    },
+    CornerRadius {
+        panel_id: String,
+        edge_name: String,
+        corner_board_m: DVec2,
+        bisector: DVec2,
+        denom: f64,
+        max_radius_m: f64,
+        start_pointer: (f32, f32),
+        moved: bool,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ToolDraft2d {
+    Rect {
+        start_board_m: DVec2,
+        current_board_m: DVec2,
+    },
+    Pen {
+        points_board_m: Vec<DVec2>,
+        hover_board_m: Option<DVec2>,
+    },
+    Freehand {
+        samples_board_m: Vec<DVec2>,
+    },
+    Sew {
+        first_edge: Option<(String, String)>,
+    },
+    InternalLine {
+        panel_id: String,
+        points_local_m: Vec<DVec2>,
+        hover_local_m: Option<DVec2>,
+    },
+    Measure {
+        first_board_m: Option<DVec2>,
+        second_board_m: Option<DVec2>,
+        hover_board_m: Option<DVec2>,
+        first_anchor: Option<(String, String, f64)>,
+        last_distance_mm: Option<f64>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum RunnerUiOp {
+    SetCornerMode(bool),
+    SetCornerRule(CornerRule),
+    AdjustCornerRadiusMm(f64),
+    AdjustCornerTension(f64),
+    ApplyCornerRoundSelected,
+    ToggleSelectedCurve(bool),
+    Undo2d,
+    Redo2d,
+    SelectPiece(usize),
+    LoadPreset(GarmentKind),
+    StatusNote(String),
+}
+
 // ============================================================================
 // State Struct
 // ============================================================================
 
 pub struct CssRunnerState {
     actions: Arc<AtomicU64>,
+    pending_ui_ops: Arc<Mutex<Vec<RunnerUiOp>>>,
     pub smoke: bool,
     pub smoke_done: std::rc::Rc<std::cell::Cell<bool>>,
     pub usd_scene: Option<cssimpler::renderer::gpu::usd::UsdScene>,
     pub project: FittingProject,
+    pub preview_template: Option<GarmentTemplate>,
+    pub history: History,
     pub scene: FittingScene,
     pub initial_scene: FittingScene,
     pub files: DocumentFiles,
@@ -154,9 +289,16 @@ pub struct CssRunnerState {
     pub command_palette_open: bool,
     pub left_drawer_open: bool,
     pub selected_piece_index: usize,
+    pub selected_2d_point: Option<(String, usize)>,
+    pub selected_2d_edge: Option<(String, String)>,
+    pub hovered_2d: Option<Hover2dTarget>,
+    pub drag_2d: Option<Drag2d>,
+    pub draft_2d: Option<ToolDraft2d>,
     pub status_message: String,
     pub pointer_down: bool,
+    pub dragging_3d: bool,
     pub last_pointer_pos: (f32, f32),
+    pub window_size: (f32, f32),
     pub gpu_sim: bool,
     pub contact_method: ContactMethod,
     pub solver_menu_open: bool,
@@ -168,6 +310,9 @@ pub struct CssRunnerState {
     pub should_exit: bool,
     pub pin_mode_contour: bool,
     pub corner_mode_radius: bool,
+    pub corner_radius_mm: f64,
+    pub corner_tension: f64,
+    pub corner_rule: CornerRule,
     pub open_accordion_idx: usize,
     pub accordion_open: [bool; 6],
     pub board_2d_pan: (f64, f64),
@@ -184,13 +329,20 @@ impl CssRunnerState {
     ) -> Self {
         let settings = project.simulation.clone().unwrap_or_default();
         let initial_scene = scene.clone();
+        let camera = marvelous_cloth::usd_scene::default_scene_camera(
+            &scene.state.x,
+            Some(&scene.collider.surface),
+        );
 
         Self {
             actions: Arc::new(AtomicU64::new(0)),
+            pending_ui_ops: Arc::new(Mutex::new(Vec::new())),
             smoke: false,
             smoke_done: Default::default(),
             usd_scene: None,
             project,
+            preview_template: None,
+            history: History::default(),
             scene,
             initial_scene,
             files,
@@ -203,7 +355,7 @@ impl CssRunnerState {
             step_count: 0,
             step_ms: 0.0,
             last_metrics: None,
-            camera: Camera::default(),
+            camera,
             theme: Theme::Dark,
             layout_mode: ViewLayoutMode::Split,
             active_category: ObjectCategory::Pattern2D,
@@ -213,9 +365,16 @@ impl CssRunnerState {
             command_palette_open: false,
             left_drawer_open: true,
             selected_piece_index: 0,
+            selected_2d_point: None,
+            selected_2d_edge: None,
+            hovered_2d: None,
+            drag_2d: None,
+            draft_2d: None,
             status_message: "Ready".to_string(),
             pointer_down: false,
+            dragging_3d: false,
             last_pointer_pos: (0.0, 0.0),
+            window_size: (1600.0, 980.0),
             gpu_sim: false,
             contact_method: ContactMethod::Ipc,
             solver_menu_open: false,
@@ -227,11 +386,20 @@ impl CssRunnerState {
             should_exit: false,
             pin_mode_contour: true,
             corner_mode_radius: true,
+            corner_radius_mm: 10.0,
+            corner_tension: CIRCLE_TENSION,
+            corner_rule: CornerRule::Smooth,
             open_accordion_idx: 0,
             accordion_open: [true, false, true, false, false, false],
             board_2d_pan: (0.0, 0.0),
             board_2d_zoom: 1.0,
         }
+    }
+
+    pub fn active_template(&self) -> &GarmentTemplate {
+        self.preview_template
+            .as_ref()
+            .unwrap_or(&self.project.template)
     }
 
     pub fn send_control_state(&mut self, once: bool) {
@@ -253,6 +421,15 @@ impl CssRunnerState {
 
     pub fn trigger_worker_step(&mut self, once: bool) {
         self.send_control_state(once);
+    }
+
+    pub fn sync_usd_camera(&mut self) {
+        if let Some(scene) = &self.usd_scene
+            && let Err(error) =
+                marvelous_cloth::usd_scene::update_viewport_camera(scene, &self.camera)
+        {
+            self.status_message = format!("USD camera error: {error}");
+        }
     }
 
     pub fn sync_usd_points(&mut self) {
@@ -413,6 +590,7 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
 
     // 2. Process pending UI actions
     let actions = state.actions.swap(0, Ordering::Relaxed);
+    let mut prev_piece = state.selected_piece_index;
 
     if actions & ACT_RUN_SOLVER_MENU != 0 {
         state.solver_menu_open = !state.solver_menu_open;
@@ -479,7 +657,12 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
         state.active_category = ObjectCategory::Environment;
     }
     if actions & ACT_RUN_CAM_RESET != 0 {
-        state.camera = Camera::default();
+        state.camera = marvelous_cloth::usd_scene::default_scene_camera(
+            &state.scene.state.x,
+            Some(&state.scene.collider.surface),
+        );
+        state.sync_usd_camera();
+        state.status_message = "Reset 3D camera".to_string();
     }
     if actions & ACT_RUN_PIECE_NEXT != 0 {
         let count = state.project.template.panels.len().max(1);
@@ -487,51 +670,63 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     }
     if actions & ACT_RUN_TOOL_GIZMO != 0 || actions & ACT_RUN_TOOL_SELECT != 0 {
         state.active_3d_tool = "Gizmo".to_string();
+        state.status_message = "3D Tool: Gizmo — drag 3D viewport to orbit".to_string();
     }
     if actions & ACT_RUN_TOOL_GRAB != 0 {
         state.active_3d_tool = "Grab".to_string();
+        state.status_message = "3D Tool: Grab".to_string();
     }
     if actions & ACT_RUN_TOOL_SEW3D != 0 {
         state.active_3d_tool = "3D Sew".to_string();
+        state.active_category = ObjectCategory::Sewing;
+        state.status_message = "3D Tool: 3D Sew (inspect seams in Object Browser)".to_string();
     }
     if actions & ACT_RUN_TOOL_PIN != 0 {
         state.active_3d_tool = "Pin".to_string();
+        state.accordion_open[3] = true;
+        state.open_accordion_idx = 3;
+        state.status_message = "3D Tool: Pin".to_string();
     }
     if actions & ACT_RUN_TOOL_MEASURE3D != 0 {
         state.active_3d_tool = "Measure".to_string();
+        state.status_message = "3D Tool: 3D Measure".to_string();
     }
     if actions & ACT_RUN_TOOL_AVATAR_DIAG != 0 {
         state.active_3d_tool = "Avatar Diagnostics".to_string();
+        state.active_category = ObjectCategory::Environment;
+        state.accordion_open[5] = true;
+        state.open_accordion_idx = 5;
+        state.status_message = "3D Tool: Avatar Diagnostics".to_string();
     }
     if actions & ACT_RUN_TOOL_EDIT2D != 0 {
-        state.active_2d_tool = "Edit".to_string();
+        set_active_2d_tool(state, "Edit");
     }
     if actions & ACT_RUN_TOOL_RECT2D != 0 {
-        state.active_2d_tool = "Rect".to_string();
+        set_active_2d_tool(state, "Rect");
     }
     if actions & ACT_RUN_TOOL_PEN2D != 0 {
-        state.active_2d_tool = "Pen".to_string();
+        set_active_2d_tool(state, "Pen");
     }
     if actions & ACT_RUN_TOOL_FREE2D != 0 {
-        state.active_2d_tool = "Freehand".to_string();
+        set_active_2d_tool(state, "Freehand");
     }
     if actions & ACT_RUN_TOOL_SEW2D != 0 || actions & ACT_RUN_TOOL_SEW != 0 {
-        state.active_2d_tool = "Sew".to_string();
+        set_active_2d_tool(state, "Sew");
     }
     if actions & ACT_RUN_TOOL_SPLIT2D != 0 {
-        state.active_2d_tool = "Split".to_string();
+        set_active_2d_tool(state, "Split");
     }
     if actions & ACT_RUN_TOOL_INTERNAL2D != 0 {
-        state.active_2d_tool = "Internal Line".to_string();
+        set_active_2d_tool(state, "Internal Line");
     }
     if actions & ACT_RUN_TOOL_MEASURE2D != 0 || actions & ACT_RUN_TOOL_MEASURE != 0 {
-        state.active_2d_tool = "Measure".to_string();
+        set_active_2d_tool(state, "Measure");
     }
     if actions & ACT_RUN_TOOL_TRIM2D != 0 {
-        state.active_2d_tool = "Trim".to_string();
+        set_active_2d_tool(state, "Trim");
     }
     if actions & ACT_RUN_TOOL_CORNER2D != 0 || actions & ACT_RUN_TOOL_CORNER != 0 {
-        state.active_2d_tool = "Corner".to_string();
+        set_active_2d_tool(state, "Corner");
     }
     if actions & ACT_RUN_PIN_MODE_TOGGLE != 0 {
         state.pin_mode_contour = !state.pin_mode_contour;
@@ -590,10 +785,10 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
         state.selected_piece_index = 3;
     }
     if actions & ACT_RUN_2D_ZOOM_IN != 0 {
-        state.board_2d_zoom = (state.board_2d_zoom * 1.25).clamp(0.25, 8.0);
+        state.board_2d_zoom = (state.board_2d_zoom * 1.25).clamp(0.25, 10.0);
     }
     if actions & ACT_RUN_2D_ZOOM_OUT != 0 {
-        state.board_2d_zoom = (state.board_2d_zoom / 1.25).clamp(0.25, 8.0);
+        state.board_2d_zoom = (state.board_2d_zoom / 1.25).clamp(0.25, 10.0);
     }
     if actions & ACT_RUN_2D_FIT != 0 {
         state.board_2d_pan = (0.0, 0.0);
@@ -602,12 +797,33 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     if actions & ACT_RUN_2D_NEXT_PIECE != 0 {
         let count = state.project.template.panels.len().max(1);
         state.selected_piece_index = (state.selected_piece_index + 1) % count;
-        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+        if let Some(p) = state
+            .project
+            .template
+            .panels
+            .get(state.selected_piece_index)
+        {
             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
         }
     }
+    if state.selected_piece_index != prev_piece {
+        prev_piece = state.selected_piece_index;
+        let _ = prev_piece;
+        state.selected_2d_point = None;
+        state.selected_2d_edge = None;
+    }
 
-    if actions != 0 || (had_result && !state.playing) {
+    let ui_ops: Vec<RunnerUiOp> = state
+        .pending_ui_ops
+        .lock()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default();
+    let had_ui_ops = !ui_ops.is_empty();
+    for op in ui_ops {
+        apply_runner_ui_op(state, op);
+    }
+
+    if actions != 0 || had_ui_ops || (had_result && !state.playing) {
         Invalidation::Structure
     } else if had_result {
         Invalidation::Paint
@@ -616,46 +832,1343 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     }
 }
 
+fn set_active_2d_tool(state: &mut CssRunnerState, tool: &str) {
+    state.active_2d_tool = tool.to_string();
+    state.draft_2d = None;
+    state.preview_template = None;
+    match tool {
+        "Edit" => {
+            state.status_message =
+                "2D Tool: Edit — click/drag corners, edges, or Bézier handles".into();
+        }
+        "Rect" => {
+            state.status_message = "2D Tool: Rect — drag on board to create rectangle".into();
+        }
+        "Pen" => {
+            state.status_message =
+                "2D Tool: Pen — click vertices on board, Enter or click start to close".into();
+        }
+        "Freehand" => {
+            state.status_message = "2D Tool: Freehand — drag on board to sketch contour".into();
+        }
+        "Sew" => {
+            state.active_category = ObjectCategory::Sewing;
+            state.status_message = "2D Tool: Sew — click two edges to create a seam".into();
+        }
+        "Split" => {
+            state.status_message =
+                "2D Tool: Split — click a boundary edge to insert a point".into();
+        }
+        "Internal Line" => {
+            state.status_message =
+                "2D Tool: Internal Line — click points inside piece, Enter to finish".into();
+        }
+        "Measure" => {
+            state.status_message =
+                "2D Tool: Measure — click two points on board to measure distance".into();
+        }
+        "Trim" => {
+            state.status_message =
+                "2D Tool: Trim — click corner, sewn edge, or internal line to remove".into();
+        }
+        "Corner" => {
+            state.accordion_open[1] = true;
+            state.open_accordion_idx = 1;
+            state.status_message =
+                "2D Tool: Corner — click or drag a corner handle to round".into();
+        }
+        _ => {}
+    }
+}
+
+fn default_fabric_id(state: &CssRunnerState) -> String {
+    state
+        .project
+        .template
+        .panels
+        .get(state.selected_piece_index)
+        .map(|p| p.fabric.clone())
+        .or_else(|| state.project.template.fabrics.first().map(|f| f.id.clone()))
+        .unwrap_or_else(|| "cotton".to_string())
+}
+
+fn queue_action(actions: &Arc<AtomicU64>, action: u64) -> impl Fn() + Send + Sync + 'static {
+    let actions = Arc::clone(actions);
+    move || {
+        actions.fetch_or(action, Ordering::Relaxed);
+    }
+}
+
+fn queue_ui_op(
+    ops: &Arc<Mutex<Vec<RunnerUiOp>>>,
+    op: RunnerUiOp,
+) -> impl Fn() + Send + Sync + 'static {
+    let ops = Arc::clone(ops);
+    move || {
+        if let Ok(mut guard) = ops.lock() {
+            guard.push(op.clone());
+        }
+    }
+}
+
+fn apply_runner_ui_op(state: &mut CssRunnerState, op: RunnerUiOp) {
+    match op {
+        RunnerUiOp::SetCornerMode(radius) => {
+            state.corner_mode_radius = radius;
+            state.status_message = if radius {
+                "Corner mode: Radius (circular fillet)".into()
+            } else {
+                format!("Corner mode: Shape (tension {:.2})", state.corner_tension)
+            };
+        }
+        RunnerUiOp::SetCornerRule(rule) => {
+            state.corner_rule = rule;
+            state.status_message = format!("Continuity rule: {:?}", rule);
+        }
+        RunnerUiOp::AdjustCornerRadiusMm(delta) => {
+            state.corner_radius_mm = (state.corner_radius_mm + delta).clamp(1.0, 250.0);
+            state.status_message = format!("Corner radius: {:.1} mm", state.corner_radius_mm);
+        }
+        RunnerUiOp::AdjustCornerTension(delta) => {
+            state.corner_tension = (state.corner_tension + delta).clamp(0.05, 1.5);
+            state.corner_mode_radius = false;
+            state.status_message = format!("Corner tension: {:.2}", state.corner_tension);
+        }
+        RunnerUiOp::ApplyCornerRoundSelected => {
+            round_selected_corner(state);
+        }
+        RunnerUiOp::ToggleSelectedCurve(curved) => {
+            toggle_selected_curve(state, curved);
+        }
+        RunnerUiOp::Undo2d => {
+            undo_redo_2d(state, false);
+        }
+        RunnerUiOp::Redo2d => {
+            undo_redo_2d(state, true);
+        }
+        RunnerUiOp::SelectPiece(idx) => {
+            if let Some(p) = state.project.template.panels.get(idx) {
+                state.selected_piece_index = idx;
+                state.selected_2d_point = None;
+                state.selected_2d_edge = None;
+                state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
+            }
+        }
+        RunnerUiOp::LoadPreset(kind) => {
+            let subdivisions = state
+                .project
+                .template
+                .panels
+                .first()
+                .and_then(|p| p.polygon.as_ref())
+                .map_or(1, |poly| poly.subdivisions);
+            let next_template = basic_garment(kind, subdivisions);
+            match next_template.compile() {
+                Ok(compiled) => {
+                    let old = state.project.template.clone();
+                    state.history.record(old);
+                    state.preview_template = None;
+                    state.drag_2d = None;
+                    state.draft_2d = None;
+                    state.hovered_2d = None;
+                    state.selected_piece_index = 0;
+                    state.selected_2d_point = None;
+                    state.selected_2d_edge = None;
+                    state.board_2d_pan = (0.0, 0.0);
+                    state.board_2d_zoom = 1.0;
+
+                    let next_garment = Arc::new(compiled);
+                    let next_state = next_garment.initial_state.clone();
+                    state.project.template = next_template;
+                    state.project.state = None;
+                    state.project.mesh_signature = None;
+                    state.generation = state.generation.wrapping_add(1);
+                    state.worker_pending = false;
+                    state.playing = false;
+                    state.step_count = 0;
+                    state.scene = FittingScene {
+                        garment: Arc::clone(&next_garment),
+                        collider: Arc::clone(&state.scene.collider),
+                        state: next_state.clone(),
+                        quasistatic: state.scene.quasistatic,
+                        next_dt: state.scene.next_dt,
+                    };
+                    state.initial_scene = FittingScene {
+                        garment: next_garment,
+                        collider: Arc::clone(&state.scene.collider),
+                        state: next_state,
+                        quasistatic: state.scene.quasistatic,
+                        next_dt: state.scene.next_dt,
+                    };
+                    state.camera = marvelous_cloth::usd_scene::default_scene_camera(
+                        &state.scene.state.x,
+                        Some(&state.scene.collider.surface),
+                    );
+                    if let Some(ref usd) = state.usd_scene {
+                        let _ = marvelous_cloth::usd_scene::update_panel_viewport_mesh(
+                            usd,
+                            &state.scene.garment,
+                            &state.scene.state,
+                        );
+                    }
+                    state.sync_usd_camera();
+                    state.send_control_state(false);
+                    state.status_message = format!("Loaded {} preset", kind.name());
+                }
+                Err(err) => {
+                    state.status_message = format!("Preset compile error: {err}");
+                }
+            }
+        }
+        RunnerUiOp::StatusNote(msg) => {
+            state.status_message = msg;
+        }
+    }
+}
+
+/// Responsive row count and bar height `(rows, height_px)` for `#cad-2d-bar` given `#viewport-2d` width.
+pub fn cad_2d_bar_layout(vp2d_w: f32) -> (usize, f32) {
+    if vp2d_w >= 800.0 {
+        (1, 28.0)
+    } else if vp2d_w >= 430.0 {
+        (2, 52.0)
+    } else if vp2d_w >= 275.0 {
+        (3, 75.0)
+    } else {
+        (4, 98.0)
+    }
+}
+
+/// Exact CSS layout width and x-origin `(vp2d_x, vp2d_w)` for `#viewport-2d`.
+pub fn viewport_2d_span_x(state: &CssRunnerState) -> (f32, f32) {
+    let win_w = state.window_size.0.max(100.0);
+    let left_w = 48.0_f32
+        + if state.left_drawer_open && !state.clean_view {
+            240.0
+        } else {
+            0.0
+        };
+    let right_w = if state.clean_view {
+        0.0_f32
+    } else {
+        48.0 + 300.0
+    };
+    let stage_w = (win_w - left_w - right_w).max(1.0);
+    match state.layout_mode {
+        ViewLayoutMode::TwoDOnly => (left_w, stage_w),
+        ViewLayoutMode::ThreeDOnly => (0.0, 0.0),
+        ViewLayoutMode::Split => {
+            let half = stage_w * 0.5;
+            (left_w + half + 1.0, (half - 1.0).max(1.0))
+        }
+    }
+}
+
+/// Exact CSS layout rects for `#viewport-2d`'s `.canvas-area` and square `#svg-2d-board`.
+pub fn compute_2d_viewport_rects(state: &CssRunnerState) -> (Rect2d, Rect2d) {
+    let win_h = state.window_size.1.max(100.0);
+    let body_y = 40.0_f32;
+    let body_h = (win_h - 40.0 - 26.0).max(1.0);
+    if matches!(state.layout_mode, ViewLayoutMode::ThreeDOnly) {
+        return (Rect2d::default(), Rect2d::default());
+    }
+    let (vp2d_x, vp2d_w) = viewport_2d_span_x(state);
+
+    // `.viewport-header` (32px) + `.cad-2d-bar` (`bar_h`)
+    let (_rows, bar_h) = cad_2d_bar_layout(vp2d_w);
+    let top_chrome_h = 32.0_f32 + bar_h;
+    let canvas_rect = Rect2d {
+        x: vp2d_x,
+        y: body_y + top_chrome_h,
+        w: vp2d_w,
+        h: (body_h - top_chrome_h).max(1.0),
+    };
+    let sq = canvas_rect.w.min(canvas_rect.h).floor().max(1.0);
+    let svg_rect = Rect2d {
+        x: canvas_rect.x + (canvas_rect.w - sq) * 0.5,
+        y: canvas_rect.y + (canvas_rect.h - sq) * 0.5,
+        w: sq,
+        h: sq,
+    };
+    (canvas_rect, svg_rect)
+}
+
+/// Exact CSS layout rect for `#viewport-3d`'s `.canvas-area` (for 3D camera orbit gating).
+pub fn viewport_3d_rect(state: &CssRunnerState) -> Rect2d {
+    let win_w = state.window_size.0.max(100.0);
+    let win_h = state.window_size.1.max(100.0);
+    let body_y = 40.0_f32;
+    let body_h = (win_h - 40.0 - 26.0).max(1.0);
+
+    let left_w = 48.0_f32
+        + if state.left_drawer_open && !state.clean_view {
+            240.0
+        } else {
+            0.0
+        };
+    let right_w = if state.clean_view {
+        0.0_f32
+    } else {
+        48.0 + 300.0
+    };
+    let stage_w = (win_w - left_w - right_w).max(1.0);
+
+    let vp3d_w = match state.layout_mode {
+        ViewLayoutMode::TwoDOnly => return Rect2d::default(),
+        ViewLayoutMode::ThreeDOnly => stage_w,
+        ViewLayoutMode::Split => stage_w * 0.5,
+    };
+
+    Rect2d {
+        x: left_w,
+        y: body_y + 32.0,
+        w: vp3d_w,
+        h: (body_h - 32.0).max(1.0),
+    }
+}
+
+fn panel_raw_points(panel: &Panel) -> Vec<DVec2> {
+    if let Some(ref poly) = panel.polygon
+        && !poly.points.is_empty()
+    {
+        return poly.points.clone();
+    }
+    let w = panel.pattern.width.max(0.1);
+    let h = panel.pattern.height.max(0.1);
+    vec![
+        DVec2::ZERO,
+        DVec2::new(w, 0.0),
+        DVec2::new(w, h),
+        DVec2::new(0.0, h),
+    ]
+}
+
+fn panel_to_board_pt(template: &GarmentTemplate, idx: usize, local: DVec2) -> DVec2 {
+    let origin = authoring::layout(template, idx);
+    let rot = template.panels[idx].layout_rotation_degrees;
+    origin + authoring::rotate_2d(local, rot)
+}
+
+fn board_to_panel_pt(template: &GarmentTemplate, idx: usize, board: DVec2) -> DVec2 {
+    let origin = authoring::layout(template, idx);
+    let rot = template.panels[idx].layout_rotation_degrees;
+    authoring::rotate_2d(board - origin, -rot)
+}
+
+/// Square 2D board viewBox `(min_x_m, min_y_m, span_m)` derived from `template` and pan/zoom.
+pub fn compute_2d_view_box_m(state: &CssRunnerState) -> (f64, f64, f64) {
+    let template = &state.project.template;
+    let mut g_min_x = f64::INFINITY;
+    let mut g_max_x = f64::NEG_INFINITY;
+    let mut g_min_y = f64::INFINITY;
+    let mut g_max_y = f64::NEG_INFINITY;
+
+    for (idx, panel) in template.panels.iter().enumerate() {
+        for pt in panel_raw_points(panel) {
+            let b = panel_to_board_pt(template, idx, pt);
+            g_min_x = g_min_x.min(b.x);
+            g_max_x = g_max_x.max(b.x);
+            g_min_y = g_min_y.min(b.y);
+            g_max_y = g_max_y.max(b.y);
+        }
+        if let Some(ref poly) = panel.polygon {
+            for [c1, c2] in poly.curves.values() {
+                for c in [c1, c2] {
+                    let b = panel_to_board_pt(template, idx, *c);
+                    g_min_x = g_min_x.min(b.x);
+                    g_max_x = g_max_x.max(b.x);
+                    g_min_y = g_min_y.min(b.y);
+                    g_max_y = g_max_y.max(b.y);
+                }
+            }
+        }
+    }
+
+    if !g_min_x.is_finite() {
+        g_min_x = 0.0;
+        g_max_x = 0.6;
+        g_min_y = 0.0;
+        g_max_y = 0.6;
+    }
+
+    let span_x = (g_max_x - g_min_x).max(0.2);
+    let span_y = (g_max_y - g_min_y).max(0.2);
+    let max_span = span_x.max(span_y).max(0.4);
+    let center_x = (g_min_x + g_max_x) * 0.5;
+    let center_y = (g_min_y + g_max_y) * 0.5;
+    let margin = (max_span * 0.12).max(0.06);
+    let half_span = max_span * 0.5 + margin;
+
+    let zoom = state.board_2d_zoom.clamp(0.25, 10.0);
+    let view_span = (half_span * 2.0) / zoom;
+    let vb_min_x = center_x + state.board_2d_pan.0 - view_span * 0.5;
+    let vb_min_y = center_y + state.board_2d_pan.1 - view_span * 0.5;
+    (vb_min_x, vb_min_y, view_span)
+}
+
+pub fn screen_to_board_m(state: &CssRunnerState, px: f32, py: f32) -> Option<DVec2> {
+    let (_canvas, svg_rect) = compute_2d_viewport_rects(state);
+    if !svg_rect.contains(px, py) {
+        return None;
+    }
+    let (vb_x, vb_y, span) = compute_2d_view_box_m(state);
+    let u = ((px - svg_rect.x) / svg_rect.w) as f64;
+    let v = ((py - svg_rect.y) / svg_rect.h) as f64;
+    Some(DVec2::new(vb_x + u * span, vb_y + v * span))
+}
+
+pub fn screen_to_board_unclamped_m(state: &CssRunnerState, px: f32, py: f32) -> Option<DVec2> {
+    let (_canvas, svg_rect) = compute_2d_viewport_rects(state);
+    if svg_rect.w <= 0.0 || svg_rect.h <= 0.0 {
+        return None;
+    }
+    let (vb_x, vb_y, span) = compute_2d_view_box_m(state);
+    let u = ((px - svg_rect.x) / svg_rect.w) as f64;
+    let v = ((py - svg_rect.y) / svg_rect.h) as f64;
+    Some(DVec2::new(vb_x + u * span, vb_y + v * span))
+}
+
+fn dist_point_to_segment(p: DVec2, a: DVec2, b: DVec2) -> f64 {
+    let ab = b - a;
+    let len_sq = ab.length_squared();
+    if len_sq <= 1e-18 {
+        return p.distance(a);
+    }
+    let t = ((p - a).dot(ab) / len_sq).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
+}
+
+fn point_in_poly_2d(p: DVec2, ring: &[DVec2]) -> bool {
+    if ring.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = ring.len() - 1;
+    for i in 0..ring.len() {
+        let a = ring[i];
+        let b = ring[j];
+        if ((a.y > p.y) != (b.y > p.y)) && (p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn sample_polygon_boundary(poly: &PolygonPattern) -> Vec<DVec2> {
+    let mut ring = Vec::new();
+    for edge_idx in 0..poly.edges.len() {
+        if let Ok(pts) = poly.edge_points(edge_idx)
+            && pts.len() >= 2
+        {
+            ring.extend_from_slice(&pts[..pts.len() - 1]);
+        }
+    }
+    ring
+}
+
+fn panel_edge_length_m(panel: &Panel, edge_name: &str) -> Option<f64> {
+    let poly = panel.polygon.as_ref()?;
+    let idx = poly.edges.iter().position(|e| e == edge_name)?;
+    let pts = poly.edge_points(idx).ok()?;
+    Some(pts.windows(2).map(|pair| pair[0].distance(pair[1])).sum())
+}
+
+fn dashed_path_d(pts: &[(f64, f64)], dash: f64, gap: f64) -> String {
+    if pts.len() < 2 || dash <= 1e-6 {
+        return String::new();
+    }
+    let period = dash + gap.max(0.0);
+    let mut d = String::new();
+    let mut draw = true;
+    let mut rem = dash;
+    for pair in pts.windows(2) {
+        let mut p0 = DVec2::new(pair[0].0, pair[0].1);
+        let p1 = DVec2::new(pair[1].0, pair[1].1);
+        let mut left = p0.distance(p1);
+        if left <= 1e-9 {
+            continue;
+        }
+        let dir = (p1 - p0) / left;
+        while left > 1e-9 {
+            let step = rem.min(left);
+            let next = p0 + dir * step;
+            if draw {
+                d.push_str(&format!(
+                    "M {:.2},{:.2} L {:.2},{:.2} ",
+                    p0.x, p0.y, next.x, next.y
+                ));
+            }
+            p0 = next;
+            left -= step;
+            rem -= step;
+            if rem <= 1e-9 {
+                draw = !draw;
+                rem = if draw { dash } else { gap.max(period * 0.1) };
+            }
+        }
+    }
+    d
+}
+
+struct Connected2dHighlight {
+    connected_panels: std::collections::BTreeSet<String>,
+    selected_corners: std::collections::BTreeSet<(String, usize)>,
+    hovered_corners: std::collections::BTreeSet<(String, usize)>,
+    selected_edges: std::collections::BTreeSet<(String, String)>,
+    hovered_edges: std::collections::BTreeSet<(String, String)>,
+    weld_links: Vec<((String, usize), (String, usize))>,
+}
+
+fn compute_connected_2d_highlight(state: &CssRunnerState) -> Connected2dHighlight {
+    let template = state.active_template();
+    let primary_panel_id = template
+        .panels
+        .get(state.selected_piece_index)
+        .map(|p| p.id.as_str())
+        .unwrap_or("");
+    let mut connected_panels = std::collections::BTreeSet::new();
+    let mut selected_corners = std::collections::BTreeSet::new();
+    let mut hovered_corners = std::collections::BTreeSet::new();
+    let mut selected_edges = std::collections::BTreeSet::new();
+    let mut hovered_edges = std::collections::BTreeSet::new();
+    let mut weld_links = Vec::new();
+
+    if let Some((ref pid, pt_idx)) = state.selected_2d_point {
+        let corners = connected_corners(template, pid, pt_idx);
+        for c in corners {
+            if &c.panel != pid || c.point != pt_idx {
+                weld_links.push(((pid.clone(), pt_idx), (c.panel.clone(), c.point)));
+            }
+            if c.panel != primary_panel_id {
+                connected_panels.insert(c.panel.clone());
+            }
+            selected_corners.insert((c.panel, c.point));
+        }
+    } else if let Some((ref pid, ref ename)) = state.selected_2d_edge {
+        for ce in connected_edges(template, pid, ename) {
+            if ce.panel != primary_panel_id {
+                connected_panels.insert(ce.panel.clone());
+            }
+            selected_edges.insert((ce.panel, ce.edge));
+        }
+    }
+
+    match &state.hovered_2d {
+        Some(Hover2dTarget::Point {
+            panel_idx,
+            point_idx,
+        }) => {
+            if let Some(hp) = template.panels.get(*panel_idx) {
+                for c in connected_corners(template, &hp.id, *point_idx) {
+                    hovered_corners.insert((c.panel, c.point));
+                }
+            }
+        }
+        Some(Hover2dTarget::CornerPreviewHandle {
+            panel_idx,
+            edge_name,
+        }) => {
+            if let Some(hp) = template.panels.get(*panel_idx)
+                && let Some(poly) = hp.polygon.as_ref()
+                && let Some(pt_idx) = poly.edges.iter().position(|e| e == edge_name)
+            {
+                for c in connected_corners(template, &hp.id, pt_idx) {
+                    hovered_corners.insert((c.panel, c.point));
+                }
+            }
+        }
+        Some(Hover2dTarget::Edge {
+            panel_idx,
+            edge_idx,
+        })
+        | Some(Hover2dTarget::BezierHandle {
+            panel_idx,
+            edge_idx,
+            ..
+        }) => {
+            if let Some(hp) = template.panels.get(*panel_idx)
+                && let Some(poly) = hp.polygon.as_ref()
+                && let Some(ename) = poly.edges.get(*edge_idx)
+            {
+                for ce in connected_edges(template, &hp.id, ename) {
+                    hovered_edges.insert((ce.panel, ce.edge));
+                }
+            }
+        }
+        Some(Hover2dTarget::Panel(_)) | None => {}
+    }
+
+    Connected2dHighlight {
+        connected_panels,
+        selected_corners,
+        hovered_corners,
+        selected_edges,
+        hovered_edges,
+        weld_links,
+    }
+}
+
+fn connected_fillet_max_radius_m(
+    template: &GarmentTemplate,
+    panel_id: &str,
+    edge_name: &str,
+) -> Result<f64, String> {
+    Ok(validate_fillet_preview(template, panel_id, edge_name, 1e-4, CIRCLE_TENSION)?.max_radius_m)
+}
+
+fn active_fillet_previews(state: &CssRunnerState) -> Vec<(usize, String, FilletPreview, f64)> {
+    if state.active_2d_tool != "Corner" {
+        return Vec::new();
+    }
+    let template = state.active_template();
+    let Some((panel_idx, point_idx)) = (match &state.drag_2d {
+        Some(Drag2d::CornerRadius {
+            panel_id,
+            edge_name,
+            ..
+        }) => template
+            .panels
+            .iter()
+            .position(|p| &p.id == panel_id)
+            .and_then(|pidx| {
+                template.panels[pidx]
+                    .polygon
+                    .as_ref()
+                    .and_then(|poly| poly.edges.iter().position(|e| e == edge_name))
+                    .map(|eidx| (pidx, eidx))
+            }),
+        _ => match &state.hovered_2d {
+            Some(Hover2dTarget::CornerPreviewHandle {
+                panel_idx,
+                edge_name,
+            }) => template.panels.get(*panel_idx).and_then(|p| {
+                p.polygon
+                    .as_ref()
+                    .and_then(|poly| poly.edges.iter().position(|e| e == edge_name))
+                    .map(|eidx| (*panel_idx, eidx))
+            }),
+            Some(Hover2dTarget::Point {
+                panel_idx,
+                point_idx,
+            }) => Some((*panel_idx, *point_idx)),
+            _ => state.selected_2d_point.as_ref().and_then(|(pid, pt)| {
+                template
+                    .panels
+                    .iter()
+                    .position(|p| &p.id == pid)
+                    .map(|pidx| (pidx, *pt))
+            }),
+        },
+    }) else {
+        return Vec::new();
+    };
+    let Some(panel) = template.panels.get(panel_idx) else {
+        return Vec::new();
+    };
+    let Some(poly) = panel.polygon.as_ref() else {
+        return Vec::new();
+    };
+    let Some(edge_name) = poly.edges.get(point_idx) else {
+        return Vec::new();
+    };
+    let Ok(max_r) = connected_fillet_max_radius_m(template, &panel.id, edge_name) else {
+        return Vec::new();
+    };
+    if max_r <= 0.0005 {
+        return Vec::new();
+    }
+    let eff_r = (state.corner_radius_mm / 1000.0).clamp(0.0005, max_r * 0.98);
+    let tension = if state.corner_mode_radius {
+        CIRCLE_TENSION
+    } else {
+        state.corner_tension
+    };
+    if validate_fillet_preview(template, &panel.id, edge_name, eff_r, tension).is_err() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for c in connected_corners(template, &panel.id, point_idx) {
+        if let Some(c_pidx) = template.panels.iter().position(|p| p.id == c.panel)
+            && let Some(c_poly) = template.panels[c_pidx].polygon.as_ref()
+            && let Some(c_edge) = c_poly.edges.get(c.point)
+            && let Ok(mut prev) = preview_fillet(&template.panels[c_pidx], c_edge, eff_r, tension)
+        {
+            prev.max_radius_m = max_r;
+            out.push((c_pidx, c_edge.clone(), prev, eff_r));
+        }
+    }
+    out
+}
+
+fn fillet_drag_handle_local(preview: &FilletPreview) -> DVec2 {
+    curves::cubic(
+        [
+            preview.start,
+            preview.control_1,
+            preview.control_2,
+            preview.end,
+        ],
+        0.5,
+    )
+}
+
+fn panel_order_selected_first(len: usize, selected: usize) -> Vec<usize> {
+    let mut order = Vec::with_capacity(len);
+    if selected < len {
+        order.push(selected);
+    }
+    for i in 0..len {
+        if i != selected {
+            order.push(i);
+        }
+    }
+    order
+}
+
+fn hit_test_2d(state: &CssRunnerState, board_m: DVec2) -> Option<Hover2dTarget> {
+    let (_canvas, svg_rect) = compute_2d_viewport_rects(state);
+    let (_vbx, _vby, view_span) = compute_2d_view_box_m(state);
+    let px_m = view_span / (svg_rect.w.max(1.0) as f64);
+    let hit_r = 10.0 * px_m;
+    let template = state.active_template();
+
+    // 1. Live Corner Fillet radius handles (including connected corners)
+    for (panel_idx, edge_name, preview, _eff_r) in active_fillet_previews(state) {
+        let knob_b = panel_to_board_pt(template, panel_idx, fillet_drag_handle_local(&preview));
+        if board_m.distance(knob_b) <= hit_r * 1.35 {
+            return Some(Hover2dTarget::CornerPreviewHandle {
+                panel_idx,
+                edge_name,
+            });
+        }
+    }
+
+    let order = panel_order_selected_first(template.panels.len(), state.selected_piece_index);
+
+    // 2 & 3. Pick nearest among Bézier tangent handles and contour points (selected panel first)
+    let mut best_handle: Option<(usize, usize, usize, f64)> = None;
+    let mut best_point: Option<(usize, usize, f64)> = None;
+    for &panel_idx in &order {
+        let panel = &template.panels[panel_idx];
+        if best_handle.is_none()
+            && let Some(ref poly) = panel.polygon
+        {
+            for (edge_idx, edge_name) in poly.edges.iter().enumerate() {
+                if let Some([c1, c2]) = poly.curves.get(edge_name) {
+                    let d0 = board_m.distance(panel_to_board_pt(template, panel_idx, *c1));
+                    if d0 <= hit_r * 1.25 && best_handle.is_none_or(|(_, _, _, bd)| d0 < bd) {
+                        best_handle = Some((panel_idx, edge_idx, 0, d0));
+                    }
+                    let d1 = board_m.distance(panel_to_board_pt(template, panel_idx, *c2));
+                    if d1 <= hit_r * 1.25 && best_handle.is_none_or(|(_, _, _, bd)| d1 < bd) {
+                        best_handle = Some((panel_idx, edge_idx, 1, d1));
+                    }
+                }
+            }
+        }
+        if best_point.is_none() {
+            let pts = panel_raw_points(panel);
+            for (pt_idx, pt) in pts.iter().enumerate() {
+                let d = board_m.distance(panel_to_board_pt(template, panel_idx, *pt));
+                if d <= hit_r && best_point.is_none_or(|(_, _, bd)| d < bd) {
+                    best_point = Some((panel_idx, pt_idx, d));
+                }
+            }
+        }
+        if best_handle.is_some() || best_point.is_some() {
+            break;
+        }
+    }
+    match (best_handle, best_point) {
+        (Some((hp, he, hi, hd)), Some((pp, pi, pd))) => {
+            if pd <= hd * 1.15 {
+                return Some(Hover2dTarget::Point {
+                    panel_idx: pp,
+                    point_idx: pi,
+                });
+            } else {
+                return Some(Hover2dTarget::BezierHandle {
+                    panel_idx: hp,
+                    edge_idx: he,
+                    handle_index: hi,
+                });
+            }
+        }
+        (Some((hp, he, hi, _)), None) => {
+            return Some(Hover2dTarget::BezierHandle {
+                panel_idx: hp,
+                edge_idx: he,
+                handle_index: hi,
+            });
+        }
+        (None, Some((pp, pi, _))) => {
+            return Some(Hover2dTarget::Point {
+                panel_idx: pp,
+                point_idx: pi,
+            });
+        }
+        (None, None) => {}
+    }
+
+    // 4. Contour edges across panels
+    let edge_hit_r = 8.0 * px_m;
+    for &panel_idx in &order {
+        let panel = &template.panels[panel_idx];
+        if let Some(ref poly) = panel.polygon {
+            let mut best: Option<(usize, f64)> = None;
+            for edge_idx in 0..poly.edges.len() {
+                if let Ok(sampled) = poly.edge_points(edge_idx) {
+                    let mut min_d = f64::INFINITY;
+                    for pair in sampled.windows(2) {
+                        let a = panel_to_board_pt(template, panel_idx, pair[0]);
+                        let b = panel_to_board_pt(template, panel_idx, pair[1]);
+                        min_d = min_d.min(dist_point_to_segment(board_m, a, b));
+                    }
+                    if min_d <= edge_hit_r && best.is_none_or(|(_, bd)| min_d < bd) {
+                        best = Some((edge_idx, min_d));
+                    }
+                }
+            }
+            if let Some((edge_idx, _)) = best {
+                return Some(Hover2dTarget::Edge {
+                    panel_idx,
+                    edge_idx,
+                });
+            }
+        }
+    }
+
+    // 5. Panel interiors
+    for &panel_idx in &order {
+        let panel = &template.panels[panel_idx];
+        let ring: Vec<DVec2> = if let Some(ref poly) = panel.polygon {
+            sample_polygon_boundary(poly)
+                .into_iter()
+                .map(|p| panel_to_board_pt(template, panel_idx, p))
+                .collect()
+        } else {
+            panel_raw_points(panel)
+                .into_iter()
+                .map(|p| panel_to_board_pt(template, panel_idx, p))
+                .collect()
+        };
+        if point_in_poly_2d(board_m, &ring) {
+            return Some(Hover2dTarget::Panel(panel_idx));
+        }
+    }
+
+    None
+}
+
+fn sanitize_2d_subselection(state: &mut CssRunnerState) {
+    if state.selected_piece_index >= state.project.template.panels.len() {
+        state.selected_piece_index = 0;
+    }
+    if let Some((ref pid, pt_idx)) = state.selected_2d_point {
+        let valid = state
+            .project
+            .template
+            .panels
+            .iter()
+            .find(|p| &p.id == pid)
+            .and_then(|p| p.polygon.as_ref())
+            .is_some_and(|poly| pt_idx < poly.points.len());
+        if !valid {
+            state.selected_2d_point = None;
+        }
+    }
+    if let Some((ref pid, ref edge_name)) = state.selected_2d_edge {
+        let valid = state
+            .project
+            .template
+            .panels
+            .iter()
+            .find(|p| &p.id == pid)
+            .and_then(|p| p.polygon.as_ref())
+            .is_some_and(|poly| poly.edges.iter().any(|e| e == edge_name));
+        if !valid {
+            state.selected_2d_edge = None;
+        }
+    }
+}
+
+fn install_authoring_edit(
+    state: &mut CssRunnerState,
+    edit: authoring::Edit,
+    record_old: Option<GarmentTemplate>,
+    msg: String,
+) {
+    if let Some(old) = record_old {
+        state.history.record(old);
+    }
+    let next_garment = Arc::new(edit.garment.clone());
+    let next_state = if edit.reset_simulation {
+        edit.state_after(&state.scene.garment, &state.scene.state)
+    } else {
+        state.scene.state.clone()
+    };
+
+    if let Some(ref sel_id) = edit.selected
+        && let Some(idx) = edit.template.panels.iter().position(|p| &p.id == sel_id)
+    {
+        state.selected_piece_index = idx;
+    }
+    if let Some(np) = edit.new_point
+        && let Some(p) = edit.template.panels.get(state.selected_piece_index)
+    {
+        state.selected_2d_point = Some((p.id.clone(), np));
+        state.selected_2d_edge = None;
+    }
+
+    state.project.template = edit.template;
+    if edit.reset_simulation {
+        state.project.state = None;
+        state.project.mesh_signature = None;
+        state.generation = state.generation.wrapping_add(1);
+        state.worker_pending = false;
+        state.scene = FittingScene {
+            garment: Arc::clone(&next_garment),
+            collider: Arc::clone(&state.scene.collider),
+            state: next_state.clone(),
+            quasistatic: state.scene.quasistatic,
+            next_dt: state.scene.next_dt,
+        };
+        state.initial_scene = FittingScene {
+            garment: next_garment,
+            collider: Arc::clone(&state.scene.collider),
+            state: state.scene.garment.initial_state.clone(),
+            quasistatic: state.scene.quasistatic,
+            next_dt: state.scene.next_dt,
+        };
+        if let Some(ref usd) = state.usd_scene {
+            let _ = marvelous_cloth::usd_scene::update_panel_viewport_mesh(
+                usd,
+                &state.scene.garment,
+                &state.scene.state,
+            );
+        }
+        state.send_control_state(false);
+    }
+
+    sanitize_2d_subselection(state);
+    state.status_message = msg;
+}
+
+pub fn commit_authoring_command(
+    state: &mut CssRunnerState,
+    cmd: Command,
+    msg: impl Into<String>,
+) -> bool {
+    state.preview_template = None;
+    let before = state.project.template.clone();
+    match authoring::apply(&before, cmd) {
+        Ok(edit) => {
+            install_authoring_edit(state, edit, Some(before), msg.into());
+            true
+        }
+        Err(err) => {
+            state.status_message = format!("Edit rejected: {err}");
+            false
+        }
+    }
+}
+
+pub fn undo_redo_2d(state: &mut CssRunnerState, redo: bool) -> bool {
+    state.preview_template = None;
+    match state.history.restore(&state.project.template, redo) {
+        Ok(edit) => {
+            let label = if redo {
+                "Redid 2D edit"
+            } else {
+                "Undid 2D edit"
+            };
+            install_authoring_edit(state, edit, None, label.into());
+            true
+        }
+        Err(err) => {
+            state.status_message = err;
+            false
+        }
+    }
+}
+
+fn round_corner_by_name(
+    state: &mut CssRunnerState,
+    panel_id: &str,
+    edge_name: &str,
+    max_radius_m: f64,
+) -> bool {
+    let eff_r = (state.corner_radius_mm / 1000.0).clamp(0.0005, max_radius_m * 0.98);
+    let tension = if state.corner_mode_radius {
+        CIRCLE_TENSION
+    } else {
+        state.corner_tension
+    };
+    let ok = commit_authoring_command(
+        state,
+        Command::RoundCornerShape {
+            panel: panel_id.to_owned(),
+            edge: edge_name.to_owned(),
+            radius_m: eff_r,
+            tension,
+            rule: state.corner_rule,
+        },
+        format!(
+            "Rounded corner on {edge_name} (R={:.1} mm, T={tension:.2})",
+            eff_r * 1000.0
+        ),
+    );
+    if ok {
+        // Select the newly created fillet curve edge for immediate Bézier inspection
+        if let Some(p) = state
+            .project
+            .template
+            .panels
+            .iter()
+            .find(|p| p.id == panel_id)
+            && let Some(ref poly) = p.polygon
+            && let Some(idx) = poly.edges.iter().position(|e| e == edge_name)
+        {
+            let fillet_idx = (idx + poly.edges.len() - 1) % poly.edges.len();
+            state.selected_2d_edge = Some((panel_id.to_owned(), poly.edges[fillet_idx].clone()));
+            state.selected_2d_point = None;
+        }
+    }
+    ok
+}
+
+fn round_selected_corner(state: &mut CssRunnerState) -> bool {
+    let target = if let Some((ref pid, pt_idx)) = state.selected_2d_point {
+        state
+            .project
+            .template
+            .panels
+            .iter()
+            .find(|p| &p.id == pid)
+            .and_then(|p| {
+                p.polygon
+                    .as_ref()
+                    .and_then(|poly| poly.edges.get(pt_idx))
+                    .map(|e| (pid.clone(), e.clone()))
+            })
+    } else if let Some((ref pid, ref ename)) = state.selected_2d_edge {
+        Some((pid.clone(), ename.clone()))
+    } else {
+        None
+    };
+
+    let Some((pid, ename)) = target else {
+        state.status_message = "Select a corner point first to round it".into();
+        return false;
+    };
+    match connected_fillet_max_radius_m(&state.project.template, &pid, &ename) {
+        Ok(max_r) if max_r > 0.0005 => round_corner_by_name(state, &pid, &ename, max_r),
+        Ok(_) => {
+            state.status_message = "Incident boundaries too short to round".into();
+            false
+        }
+        Err(err) => {
+            state.status_message = format!("Cannot round corner: {err}");
+            false
+        }
+    }
+}
+
+fn toggle_selected_curve(state: &mut CssRunnerState, curved: bool) -> bool {
+    let target = if let Some((ref pid, pt_idx)) = state.selected_2d_point {
+        Some((pid.clone(), pt_idx))
+    } else if let Some((ref pid, ref ename)) = state.selected_2d_edge {
+        state
+            .project
+            .template
+            .panels
+            .iter()
+            .find(|p| &p.id == pid)
+            .and_then(|p| p.polygon.as_ref())
+            .and_then(|poly| poly.edges.iter().position(|e| e == ename))
+            .map(|idx| (pid.clone(), idx))
+    } else {
+        None
+    };
+    let Some((panel, anchor)) = target else {
+        state.status_message = "Select a point or boundary to toggle Bézier curves".into();
+        return false;
+    };
+    commit_authoring_command(
+        state,
+        Command::CurvePoint {
+            panel,
+            anchor,
+            curved,
+        },
+        if curved {
+            "Converted incident boundaries to cubic Bézier".to_string()
+        } else {
+            "Straightened incident boundaries".to_string()
+        },
+    )
+}
+
+fn update_preview_point(
+    state: &mut CssRunnerState,
+    panel_id: &str,
+    point_idx: usize,
+    local_pos: DVec2,
+) {
+    let mut draft = state.project.template.clone();
+    if preview_move_corner(
+        &state.project.template,
+        &mut draft,
+        panel_id,
+        point_idx,
+        local_pos,
+    )
+    .is_ok()
+    {
+        state.preview_template = Some(draft);
+    }
+}
+
+fn update_preview_bezier_handle(
+    state: &mut CssRunnerState,
+    panel_id: &str,
+    edge_name: &str,
+    handle_index: usize,
+    position: DVec2,
+) {
+    let mut draft = state.project.template.clone();
+    if preview_adjust_handle(
+        &state.project.template,
+        &mut draft,
+        panel_id,
+        edge_name,
+        handle_index,
+        position,
+        state.corner_rule,
+    )
+    .is_ok()
+    {
+        state.preview_template = Some(draft);
+    }
+}
+
+fn finish_pen_draft(state: &mut CssRunnerState) -> bool {
+    let Some(ToolDraft2d::Pen { points_board_m, .. }) = state.draft_2d.take() else {
+        return false;
+    };
+    if points_board_m.len() < 3 {
+        state.status_message = "Pen tool requires at least 3 vertices".into();
+        return true;
+    }
+    let count = points_board_m.len();
+    let fabric = default_fabric_id(state);
+    commit_authoring_command(
+        state,
+        Command::Polygon {
+            points: points_board_m,
+            tangents: vec![],
+            meshing: MeshingSettings::default(),
+            fabric,
+            replace: false,
+        },
+        format!("Created {count}-point polygon pattern"),
+    );
+    true
+}
+
+fn finish_internal_line_draft(state: &mut CssRunnerState) -> bool {
+    let Some(ToolDraft2d::InternalLine {
+        panel_id,
+        points_local_m,
+        ..
+    }) = state.draft_2d.take()
+    else {
+        return false;
+    };
+    if points_local_m.len() < 2 {
+        state.status_message = "Internal Line requires at least 2 points".into();
+        return true;
+    }
+    let count = points_local_m.len();
+    commit_authoring_command(
+        state,
+        Command::InternalLine {
+            panel: panel_id.clone(),
+            points: points_local_m,
+            tangents: vec![DVec2::ZERO; count],
+        },
+        format!("Added {count}-point internal line on {panel_id}"),
+    );
+    true
+}
+
+fn nearest_edge_anchor(
+    template: &GarmentTemplate,
+    board_m: DVec2,
+    max_dist_m: f64,
+) -> Option<(String, String, f64)> {
+    let mut best: Option<(f64, String, String, f64)> = None;
+    for (pidx, panel) in template.panels.iter().enumerate() {
+        let Some(ref poly) = panel.polygon else {
+            continue;
+        };
+        for (eidx, ename) in poly.edges.iter().enumerate() {
+            let Ok(sampled) = poly.edge_points(eidx) else {
+                continue;
+            };
+            let local = board_to_panel_pt(template, pidx, board_m);
+            let mut total_len = 0.0_f64;
+            let mut best_s = 0.0_f64;
+            let mut min_d = f64::INFINITY;
+            for pair in sampled.windows(2) {
+                let seg = pair[1] - pair[0];
+                let seg_l = seg.length();
+                let t = if seg_l > 1e-12 {
+                    ((local - pair[0]).dot(seg) / (seg_l * seg_l)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let d = local.distance(pair[0] + seg * t);
+                if d < min_d {
+                    min_d = d;
+                    best_s = total_len + seg_l * t;
+                }
+                total_len += seg_l;
+            }
+            if min_d <= max_dist_m && total_len > 1e-12 && best.as_ref().is_none_or(|b| min_d < b.0)
+            {
+                best = Some((
+                    min_d,
+                    panel.id.clone(),
+                    ename.clone(),
+                    (best_s / total_len).clamp(0.0, 1.0),
+                ));
+            }
+        }
+    }
+    best.map(|(_, pid, ename, t)| (pid, ename, t))
+}
+
 pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> bool {
     match event {
+        EngineEvent::ViewportChanged(vp) => {
+            let new_size = (vp.width.max(1) as f32, vp.height.max(1) as f32);
+            if state.window_size != new_size {
+                state.window_size = new_size;
+                return true;
+            }
+            false
+        }
         EngineEvent::Key(k) => {
             if k.state == cssimpler::renderer::ButtonState::Pressed {
+                let ctrl = k.modifiers.control || k.modifiers.super_key;
                 if let cssimpler::renderer::KeyIdentity::Character(ref ch) = k.logical_key {
                     if ch == " " {
                         state.playing = !state.playing;
                         state.send_control_state(false);
                         return true;
                     }
-                    if ch == "k" && (k.modifiers.control || k.modifiers.super_key) {
+                    if ch == "k" && ctrl {
                         state.command_palette_open = !state.command_palette_open;
                         return true;
                     }
-                    if ch == "s" && (k.modifiers.control || k.modifiers.super_key) {
+                    if ch == "s" && ctrl {
                         state.save_project();
                         return true;
+                    }
+                    if (ch == "z" || ch == "Z") && ctrl {
+                        if k.modifiers.shift {
+                            undo_redo_2d(state, true);
+                        } else {
+                            undo_redo_2d(state, false);
+                        }
+                        return true;
+                    }
+                    if (ch == "y" || ch == "Y") && ctrl {
+                        undo_redo_2d(state, true);
+                        return true;
+                    }
+                    if !ctrl {
+                        if ch == "z" || ch == "Z" || ch == "a" || ch == "A" {
+                            set_active_2d_tool(state, "Edit");
+                            return true;
+                        }
+                        if ch == "s" || ch == "S" {
+                            set_active_2d_tool(state, "Rect");
+                            return true;
+                        }
+                        if ch == "h" || ch == "H" {
+                            set_active_2d_tool(state, "Pen");
+                            return true;
+                        }
+                        if ch == "f" || ch == "F" {
+                            set_active_2d_tool(state, "Freehand");
+                            return true;
+                        }
+                        if ch == "b" || ch == "B" {
+                            set_active_2d_tool(state, "Sew");
+                            return true;
+                        }
+                        if ch == "x" || ch == "X" {
+                            set_active_2d_tool(state, "Split");
+                            return true;
+                        }
+                        if ch == "g" || ch == "G" {
+                            set_active_2d_tool(state, "Internal Line");
+                            return true;
+                        }
+                        if ch == "m" || ch == "M" {
+                            set_active_2d_tool(state, "Measure");
+                            return true;
+                        }
+                        if ch == "t" || ch == "T" {
+                            set_active_2d_tool(state, "Trim");
+                            return true;
+                        }
+                        if ch == "c" || ch == "C" {
+                            set_active_2d_tool(state, "Corner");
+                            return true;
+                        }
                     }
                     if ch == "]" {
                         let count = state.project.template.panels.len().max(1);
                         state.selected_piece_index = (state.selected_piece_index + 1) % count;
-                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                        state.selected_2d_point = None;
+                        state.selected_2d_edge = None;
+                        if let Some(p) = state
+                            .project
+                            .template
+                            .panels
+                            .get(state.selected_piece_index)
+                        {
                             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                         }
                         return true;
                     }
                     if ch == "[" {
                         let count = state.project.template.panels.len().max(1);
-                        state.selected_piece_index = (state.selected_piece_index + count - 1) % count;
-                        if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
+                        state.selected_piece_index =
+                            (state.selected_piece_index + count - 1) % count;
+                        state.selected_2d_point = None;
+                        state.selected_2d_edge = None;
+                        if let Some(p) = state
+                            .project
+                            .template
+                            .panels
+                            .get(state.selected_piece_index)
+                        {
                             state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
                         }
                         return true;
                     }
                     if ch == "+" || ch == "=" {
-                        state.board_2d_zoom = (state.board_2d_zoom * 1.25).clamp(0.25, 8.0);
+                        state.board_2d_zoom = (state.board_2d_zoom * 1.25).clamp(0.25, 10.0);
                         return true;
                     }
                     if ch == "-" || ch == "_" {
-                        state.board_2d_zoom = (state.board_2d_zoom / 1.25).clamp(0.25, 8.0);
+                        state.board_2d_zoom = (state.board_2d_zoom / 1.25).clamp(0.25, 10.0);
                         return true;
                     }
                     if ch == "0" {
@@ -664,14 +2177,82 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                         return true;
                     }
                 }
-                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key
-                    && name == "Escape"
-                    && (state.command_palette_open || state.solver_menu_open)
-                {
-                    state.command_palette_open = false;
-                    state.solver_menu_open = false;
-                    return true;
+                if let cssimpler::renderer::KeyIdentity::Named(ref name) = k.logical_key {
+                    if name == "Escape" {
+                        if state.command_palette_open || state.solver_menu_open {
+                            state.command_palette_open = false;
+                            state.solver_menu_open = false;
+                            return true;
+                        }
+                        if state.draft_2d.is_some() {
+                            state.draft_2d = None;
+                            state.status_message = "Cancelled 2D tool draft".into();
+                            return true;
+                        }
+                        if state.drag_2d.is_some()
+                            || state.selected_2d_point.is_some()
+                            || state.selected_2d_edge.is_some()
+                        {
+                            state.drag_2d = None;
+                            state.preview_template = None;
+                            state.selected_2d_point = None;
+                            state.selected_2d_edge = None;
+                            return true;
+                        }
+                    }
+                    if (name == "Delete" || name == "Backspace")
+                        && let Some((panel, point)) = state.selected_2d_point.clone()
+                    {
+                        commit_authoring_command(
+                            state,
+                            Command::RemovePoint { panel, point },
+                            format!("Removed point #{point}"),
+                        );
+                        return true;
+                    }
+                    if name == "Enter" {
+                        if matches!(state.draft_2d, Some(ToolDraft2d::Pen { .. })) {
+                            return finish_pen_draft(state);
+                        }
+                        if matches!(state.draft_2d, Some(ToolDraft2d::InternalLine { .. })) {
+                            return finish_internal_line_draft(state);
+                        }
+                        if state.active_2d_tool == "Corner" {
+                            round_selected_corner(state);
+                            return true;
+                        }
+                    }
                 }
+            }
+            false
+        }
+        EngineEvent::PointerButton {
+            button:
+                cssimpler::renderer::PointerButton::Secondary
+                | cssimpler::renderer::PointerButton::Middle,
+            state: btn_state,
+            ..
+        } => {
+            if state.command_palette_open || state.solver_menu_open {
+                return false;
+            }
+            let (canvas_2d, _svg_2d) = compute_2d_viewport_rects(state);
+            let (px, py) = state.last_pointer_pos;
+            if *btn_state == cssimpler::renderer::ButtonState::Pressed && canvas_2d.contains(px, py)
+            {
+                state.pointer_down = true;
+                state.drag_2d = Some(Drag2d::Pan {
+                    start_pan: state.board_2d_pan,
+                    start_pointer: (px, py),
+                });
+                return true;
+            }
+            if *btn_state == cssimpler::renderer::ButtonState::Released
+                && matches!(state.drag_2d, Some(Drag2d::Pan { .. }))
+            {
+                state.pointer_down = false;
+                state.drag_2d = None;
+                return true;
             }
             false
         }
@@ -680,20 +2261,865 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
             state: btn_state,
             ..
         } => {
+            if state.command_palette_open || state.solver_menu_open {
+                return false;
+            }
             let was_down = state.pointer_down;
             state.pointer_down = *btn_state == cssimpler::renderer::ButtonState::Pressed;
+            let (px, py) = state.last_pointer_pos;
+            let (canvas_2d, svg_2d) = compute_2d_viewport_rects(state);
+            let rect_3d = viewport_3d_rect(state);
+
             if state.pointer_down && !was_down {
-                let is_2d_side = match state.layout_mode {
-                    ViewLayoutMode::TwoDOnly => true,
-                    ViewLayoutMode::ThreeDOnly => false,
-                    ViewLayoutMode::Split => state.last_pointer_pos.0 >= 800.0,
-                };
-                if is_2d_side && state.last_pointer_pos.1 >= 50.0 {
-                    let count = state.project.template.panels.len().max(1);
-                    state.selected_piece_index = (state.selected_piece_index + 1) % count;
-                    if let Some(p) = state.project.template.panels.get(state.selected_piece_index) {
-                        state.status_message = format!("Selected piece: {} ({})", p.name, p.id);
+                if canvas_2d.contains(px, py) {
+                    if let Some(board_m) = screen_to_board_m(state, px, py) {
+                        let (_vbx, _vby, view_span) = compute_2d_view_box_m(state);
+                        let px_m = view_span / (svg_2d.w.max(1.0) as f64);
+
+                        match state.active_2d_tool.as_str() {
+                            "Rect" => {
+                                state.draft_2d = Some(ToolDraft2d::Rect {
+                                    start_board_m: board_m,
+                                    current_board_m: board_m,
+                                });
+                                state.status_message =
+                                    "Rect: drag to size new rectangle pattern".into();
+                                return true;
+                            }
+                            "Freehand" => {
+                                state.draft_2d = Some(ToolDraft2d::Freehand {
+                                    samples_board_m: vec![board_m],
+                                });
+                                state.status_message =
+                                    "Freehand: drag to sketch contour, release to create".into();
+                                return true;
+                            }
+                            "Pen" => {
+                                let should_close = matches!(
+                                    &state.draft_2d,
+                                    Some(ToolDraft2d::Pen { points_board_m, .. })
+                                        if points_board_m.len() >= 3
+                                            && points_board_m[0].distance(board_m) <= 12.0 * px_m
+                                );
+                                if should_close {
+                                    return finish_pen_draft(state);
+                                }
+                                let count = match &mut state.draft_2d {
+                                    Some(ToolDraft2d::Pen {
+                                        points_board_m,
+                                        hover_board_m,
+                                    }) => {
+                                        points_board_m.push(board_m);
+                                        *hover_board_m = Some(board_m);
+                                        points_board_m.len()
+                                    }
+                                    _ => {
+                                        state.draft_2d = Some(ToolDraft2d::Pen {
+                                            points_board_m: vec![board_m],
+                                            hover_board_m: Some(board_m),
+                                        });
+                                        1
+                                    }
+                                };
+                                state.status_message = format!(
+                                    "Pen: {count} vertex{} — Enter or click start point to close",
+                                    if count == 1 { "" } else { "es" }
+                                );
+                                return true;
+                            }
+                            "Internal Line" => {
+                                let existing_panel = match &state.draft_2d {
+                                    Some(ToolDraft2d::InternalLine { panel_id, .. }) => {
+                                        Some(panel_id.clone())
+                                    }
+                                    _ => None,
+                                };
+                                let panel_idx = existing_panel
+                                    .as_deref()
+                                    .and_then(|pid| {
+                                        state
+                                            .project
+                                            .template
+                                            .panels
+                                            .iter()
+                                            .position(|p| p.id == pid)
+                                    })
+                                    .or_else(|| match hit_test_2d(state, board_m) {
+                                        Some(Hover2dTarget::Panel(i))
+                                        | Some(Hover2dTarget::Point { panel_idx: i, .. })
+                                        | Some(Hover2dTarget::Edge { panel_idx: i, .. }) => Some(i),
+                                        _ => Some(state.selected_piece_index),
+                                    })
+                                    .filter(|&i| i < state.project.template.panels.len());
+                                if let Some(pidx) = panel_idx {
+                                    let pid = state.project.template.panels[pidx].id.clone();
+                                    state.selected_piece_index = pidx;
+                                    let local =
+                                        board_to_panel_pt(&state.project.template, pidx, board_m);
+                                    let close_double = matches!(
+                                        &state.draft_2d,
+                                        Some(ToolDraft2d::InternalLine {
+                                            panel_id,
+                                            points_local_m,
+                                            ..
+                                        }) if panel_id == &pid
+                                            && points_local_m.len() >= 2
+                                            && points_local_m
+                                                .last()
+                                                .is_some_and(|p| p.distance(local) <= 6.0 * px_m)
+                                    );
+                                    if close_double {
+                                        return finish_internal_line_draft(state);
+                                    }
+                                    let count = match &mut state.draft_2d {
+                                        Some(ToolDraft2d::InternalLine {
+                                            panel_id,
+                                            points_local_m,
+                                            hover_local_m,
+                                        }) if panel_id == &pid => {
+                                            points_local_m.push(local);
+                                            *hover_local_m = Some(local);
+                                            points_local_m.len()
+                                        }
+                                        _ => {
+                                            state.draft_2d = Some(ToolDraft2d::InternalLine {
+                                                panel_id: pid.clone(),
+                                                points_local_m: vec![local],
+                                                hover_local_m: Some(local),
+                                            });
+                                            1
+                                        }
+                                    };
+                                    state.status_message = format!(
+                                        "Internal Line on {pid}: {count} point{} (Enter to finish)",
+                                        if count == 1 { "" } else { "s" }
+                                    );
+                                    return true;
+                                }
+                            }
+                            "Sew" => {
+                                let hit = hit_test_2d(state, board_m);
+                                state.hovered_2d = hit.clone();
+                                if let Some(Hover2dTarget::Edge {
+                                    panel_idx,
+                                    edge_idx,
+                                }) = hit
+                                    && let Some(p) = state.project.template.panels.get(panel_idx)
+                                    && let Some(ref poly) = p.polygon
+                                    && let Some(ename) = poly.edges.get(edge_idx)
+                                {
+                                    let pid = p.id.clone();
+                                    let edge_name = ename.clone();
+                                    state.selected_piece_index = panel_idx;
+                                    state.selected_2d_edge = Some((pid.clone(), edge_name.clone()));
+                                    state.selected_2d_point = None;
+                                    state.accordion_open[1] = true;
+                                    state.open_accordion_idx = 1;
+                                    if let Some(ToolDraft2d::Sew {
+                                        first_edge: Some((ref first_pid, ref first_edge)),
+                                    }) = state.draft_2d.clone()
+                                    {
+                                        if first_pid == &pid && first_edge == &edge_name {
+                                            state.status_message =
+                                                "Pick a second different boundary edge to sew"
+                                                    .into();
+                                            return true;
+                                        }
+                                        state.draft_2d = None;
+                                        commit_authoring_command(
+                                            state,
+                                            Command::Sew {
+                                                a: BoundaryRef {
+                                                    reversed: false,
+                                                    panel: first_pid.clone(),
+                                                    side: Side::Right,
+                                                    edge: Some(first_edge.clone()),
+                                                    range: [0.0, 1.0],
+                                                },
+                                                b: BoundaryRef {
+                                                    reversed: false,
+                                                    panel: pid.clone(),
+                                                    side: Side::Left,
+                                                    edge: Some(edge_name.clone()),
+                                                    range: [0.0, 1.0],
+                                                },
+                                                reverse: false,
+                                                ease: true,
+                                            },
+                                            format!(
+                                                "Sewed {first_pid}.{first_edge} ↔ {pid}.{edge_name}"
+                                            ),
+                                        );
+                                        return true;
+                                    } else {
+                                        state.draft_2d = Some(ToolDraft2d::Sew {
+                                            first_edge: Some((pid.clone(), edge_name.clone())),
+                                        });
+                                        state.status_message = format!(
+                                            "Sew: selected {pid}.{edge_name} — click second edge"
+                                        );
+                                        return true;
+                                    }
+                                }
+                            }
+                            "Measure" => {
+                                let anchor = nearest_edge_anchor(
+                                    &state.project.template,
+                                    board_m,
+                                    12.0 * px_m,
+                                );
+                                match state.draft_2d.clone() {
+                                    Some(ToolDraft2d::Measure {
+                                        first_board_m: Some(p0),
+                                        second_board_m: None,
+                                        first_anchor,
+                                        ..
+                                    }) => {
+                                        let dist_mm = p0.distance(board_m) * 1000.0;
+                                        state.draft_2d = Some(ToolDraft2d::Measure {
+                                            first_board_m: Some(p0),
+                                            second_board_m: Some(board_m),
+                                            hover_board_m: None,
+                                            first_anchor: first_anchor.clone(),
+                                            last_distance_mm: Some(dist_mm),
+                                        });
+                                        if let (Some((pa, ea, ta)), Some((pb, eb, tb))) =
+                                            (first_anchor, anchor)
+                                            && pa == pb
+                                            && (ea != eb || (ta - tb).abs() > 1e-4)
+                                            && let Some(p) = state
+                                                .project
+                                                .template
+                                                .panels
+                                                .iter()
+                                                .find(|p| p.id == pa)
+                                            && let Some(ref poly) = p.polygon
+                                        {
+                                            let mid =
+                                                format!("measure_{}", poly.measurements.len() + 1);
+                                            let measurement = PatternMeasurement {
+                                                id: mid.clone(),
+                                                label: format!("{dist_mm:.1} mm"),
+                                                a: MeasurementAnchor { edge: ea, t: ta },
+                                                b: MeasurementAnchor { edge: eb, t: tb },
+                                            };
+                                            if commit_authoring_command(
+                                                state,
+                                                Command::SetMeasurement {
+                                                    panel: pa,
+                                                    measurement,
+                                                },
+                                                format!("Measured & saved: {dist_mm:.1} mm"),
+                                            ) {
+                                                return true;
+                                            }
+                                        }
+                                        state.status_message =
+                                            format!("Measured distance: {dist_mm:.1} mm");
+                                        return true;
+                                    }
+                                    _ => {
+                                        state.draft_2d = Some(ToolDraft2d::Measure {
+                                            first_board_m: Some(board_m),
+                                            second_board_m: None,
+                                            hover_board_m: Some(board_m),
+                                            first_anchor: anchor,
+                                            last_distance_mm: None,
+                                        });
+                                        state.status_message =
+                                            "Measure: click second point to measure distance"
+                                                .into();
+                                        return true;
+                                    }
+                                }
+                            }
+                            "Trim" => {
+                                let hit = hit_test_2d(state, board_m);
+                                state.hovered_2d = hit.clone();
+                                match hit {
+                                    Some(Hover2dTarget::Point {
+                                        panel_idx,
+                                        point_idx,
+                                    }) => {
+                                        if let Some(p) =
+                                            state.project.template.panels.get(panel_idx)
+                                        {
+                                            let pid = p.id.clone();
+                                            let pname = p.name.clone();
+                                            commit_authoring_command(
+                                                state,
+                                                Command::RemovePoint {
+                                                    panel: pid,
+                                                    point: point_idx,
+                                                },
+                                                format!("Removed corner #{point_idx} on {pname}"),
+                                            );
+                                            return true;
+                                        }
+                                    }
+                                    Some(Hover2dTarget::Edge {
+                                        panel_idx,
+                                        edge_idx,
+                                    }) => {
+                                        if let Some(p) =
+                                            state.project.template.panels.get(panel_idx)
+                                            && let Some(ref poly) = p.polygon
+                                            && let Some(ename) = poly.edges.get(edge_idx)
+                                        {
+                                            let pid = p.id.clone();
+                                            let edge_name = ename.clone();
+                                            if let Some(seam_id) = state
+                                                .project
+                                                .template
+                                                .seams
+                                                .iter()
+                                                .find(|s| {
+                                                    s.references().any(|r| {
+                                                        r.panel == pid
+                                                            && r.edge.as_deref()
+                                                                == Some(edge_name.as_str())
+                                                    })
+                                                })
+                                                .map(|s| s.id.clone())
+                                            {
+                                                commit_authoring_command(
+                                                    state,
+                                                    Command::RemoveSeam { seam: seam_id },
+                                                    format!("Removed seam on {pid}.{edge_name}"),
+                                                );
+                                                return true;
+                                            }
+                                            if poly.curves.contains_key(&edge_name) {
+                                                commit_authoring_command(
+                                                    state,
+                                                    Command::CurvePoint {
+                                                        panel: pid,
+                                                        anchor: edge_idx,
+                                                        curved: false,
+                                                    },
+                                                    format!(
+                                                        "Straightened curved boundary {edge_name}"
+                                                    ),
+                                                );
+                                                return true;
+                                            }
+                                            state.status_message = format!(
+                                                "Trim: {edge_name} has no seam or curve to trim"
+                                            );
+                                            return true;
+                                        }
+                                    }
+                                    _ => {
+                                        // Check internal lines near click
+                                        let hit_r = 10.0 * px_m;
+                                        let mut found_line: Option<(String, String)> = None;
+                                        for (pidx, p) in
+                                            state.project.template.panels.iter().enumerate()
+                                        {
+                                            if let Some(ref poly) = p.polygon {
+                                                let local = board_to_panel_pt(
+                                                    &state.project.template,
+                                                    pidx,
+                                                    board_m,
+                                                );
+                                                for line in &poly.lines {
+                                                    if line.points.windows(2).any(|w| {
+                                                        dist_point_to_segment(local, w[0], w[1])
+                                                            <= hit_r
+                                                    }) {
+                                                        found_line =
+                                                            Some((p.id.clone(), line.id.clone()));
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            if found_line.is_some() {
+                                                break;
+                                            }
+                                        }
+                                        if let Some((pid, line_id)) = found_line {
+                                            commit_authoring_command(
+                                                state,
+                                                Command::RemoveLine {
+                                                    panel: pid,
+                                                    line: line_id.clone(),
+                                                },
+                                                format!("Removed internal line {line_id}"),
+                                            );
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        let hit = hit_test_2d(state, board_m);
+                        state.hovered_2d = hit.clone();
+                        match hit {
+                            Some(Hover2dTarget::CornerPreviewHandle {
+                                panel_idx,
+                                edge_name,
+                            }) => {
+                                let tension = if state.corner_mode_radius {
+                                    CIRCLE_TENSION
+                                } else {
+                                    state.corner_tension
+                                };
+                                if let Some(preview) = {
+                                    let tmpl = state.active_template();
+                                    tmpl.panels.get(panel_idx).and_then(|p| {
+                                        let max_r =
+                                            connected_fillet_max_radius_m(tmpl, &p.id, &edge_name)
+                                                .ok()?;
+                                        let eff_r = (state.corner_radius_mm / 1000.0)
+                                            .clamp(0.0005, max_r * 0.98);
+                                        let prev = validate_fillet_preview(
+                                            tmpl, &p.id, &edge_name, eff_r, tension,
+                                        )
+                                        .ok()?;
+                                        Some((p.id.clone(), prev, max_r))
+                                    })
+                                } {
+                                    let (pid, prev, max_r) = preview;
+                                    let half_turn = prev.turn_radians.abs() * 0.5;
+                                    let denom = (half_turn.tan() * half_turn.sin()).max(1e-4);
+                                    let corner_board_m = panel_to_board_pt(
+                                        &state.project.template,
+                                        panel_idx,
+                                        prev.corner,
+                                    );
+                                    let bisector = authoring::rotate_2d(
+                                        prev.bisector,
+                                        state.project.template.panels[panel_idx]
+                                            .layout_rotation_degrees,
+                                    );
+                                    state.selected_piece_index = panel_idx;
+                                    state.selected_2d_point =
+                                        Some((pid.clone(), prev.corner_index));
+                                    state.selected_2d_edge = None;
+                                    state.accordion_open[1] = true;
+                                    state.open_accordion_idx = 1;
+                                    state.drag_2d = Some(Drag2d::CornerRadius {
+                                        panel_id: pid,
+                                        edge_name,
+                                        corner_board_m,
+                                        bisector,
+                                        denom,
+                                        max_radius_m: max_r,
+                                        start_pointer: (px, py),
+                                        moved: false,
+                                    });
+                                    return true;
+                                }
+                            }
+                            Some(Hover2dTarget::BezierHandle {
+                                panel_idx,
+                                edge_idx,
+                                handle_index,
+                            }) => {
+                                if let Some(p) = state.project.template.panels.get(panel_idx)
+                                    && let Some(ref poly) = p.polygon
+                                    && let Some(edge_name) = poly.edges.get(edge_idx)
+                                {
+                                    let pid = p.id.clone();
+                                    let ename = edge_name.clone();
+                                    let local = board_to_panel_pt(
+                                        &state.project.template,
+                                        panel_idx,
+                                        board_m,
+                                    );
+                                    let partners: Vec<String> =
+                                        connected_edges(&state.project.template, &pid, &ename)
+                                            .into_iter()
+                                            .filter(|ce| ce.panel != pid)
+                                            .map(|ce| ce.panel)
+                                            .collect();
+                                    state.selected_piece_index = panel_idx;
+                                    state.selected_2d_edge = Some((pid.clone(), ename.clone()));
+                                    state.selected_2d_point = None;
+                                    state.accordion_open[1] = true;
+                                    state.open_accordion_idx = 1;
+                                    state.drag_2d = Some(Drag2d::BezierHandle {
+                                        panel_id: pid,
+                                        edge_name: ename.clone(),
+                                        handle_index,
+                                        start_pointer: (px, py),
+                                        moved: false,
+                                        last_local: local,
+                                    });
+                                    state.status_message = if partners.is_empty() {
+                                        format!("Editing Bézier handle {handle_index} on {ename}")
+                                    } else {
+                                        format!(
+                                            "Editing Bézier handle {handle_index} on {ename} (linked: {})",
+                                            partners.join(", ")
+                                        )
+                                    };
+                                    return true;
+                                }
+                            }
+                            Some(Hover2dTarget::Point {
+                                panel_idx,
+                                point_idx,
+                            }) => {
+                                if let Some(p) = state.project.template.panels.get(panel_idx) {
+                                    let pid = p.id.clone();
+                                    let pname = p.name.clone();
+                                    let local = board_to_panel_pt(
+                                        &state.project.template,
+                                        panel_idx,
+                                        board_m,
+                                    );
+                                    let partners: Vec<String> =
+                                        connected_corners(&state.project.template, &pid, point_idx)
+                                            .into_iter()
+                                            .filter(|c| c.panel != pid)
+                                            .map(|c| c.panel)
+                                            .collect();
+                                    let link_suffix = if partners.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(" (linked: {})", partners.join(", "))
+                                    };
+                                    state.selected_piece_index = panel_idx;
+                                    state.selected_2d_point = Some((pid.clone(), point_idx));
+                                    state.selected_2d_edge = None;
+                                    state.accordion_open[1] = true;
+                                    state.open_accordion_idx = 1;
+                                    if state.active_2d_tool == "Corner" {
+                                        if let Some(ref poly) = p.polygon
+                                            && let Some(edge_name) = poly.edges.get(point_idx)
+                                        {
+                                            match connected_fillet_max_radius_m(
+                                                &state.project.template,
+                                                &pid,
+                                                edge_name,
+                                            ) {
+                                                Ok(max_r) => {
+                                                    let eff_r = (state.corner_radius_mm / 1000.0)
+                                                        .clamp(0.0005, max_r * 0.98);
+                                                    match validate_fillet_preview(
+                                                        &state.project.template,
+                                                        &pid,
+                                                        edge_name,
+                                                        eff_r,
+                                                        if state.corner_mode_radius {
+                                                            CIRCLE_TENSION
+                                                        } else {
+                                                            state.corner_tension
+                                                        },
+                                                    ) {
+                                                        Ok(prev) => {
+                                                            let half_turn =
+                                                                prev.turn_radians.abs() * 0.5;
+                                                            let denom = (half_turn.tan()
+                                                                * half_turn.sin())
+                                                            .max(1e-4);
+                                                            let corner_board_m = panel_to_board_pt(
+                                                                &state.project.template,
+                                                                panel_idx,
+                                                                prev.corner,
+                                                            );
+                                                            let bisector = authoring::rotate_2d(
+                                                                prev.bisector,
+                                                                p.layout_rotation_degrees,
+                                                            );
+                                                            state.drag_2d =
+                                                                Some(Drag2d::CornerRadius {
+                                                                    panel_id: pid,
+                                                                    edge_name: edge_name.clone(),
+                                                                    corner_board_m,
+                                                                    bisector,
+                                                                    denom,
+                                                                    max_radius_m: max_r,
+                                                                    start_pointer: (px, py),
+                                                                    moved: false,
+                                                                });
+                                                            return true;
+                                                        }
+                                                        Err(err) => {
+                                                            state.status_message = err;
+                                                            return true;
+                                                        }
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    state.status_message = err;
+                                                    return true;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        state.drag_2d = Some(Drag2d::Point {
+                                            panel_id: pid,
+                                            point_idx,
+                                            start_pointer: (px, py),
+                                            moved: false,
+                                            last_local: local,
+                                        });
+                                        state.status_message = format!(
+                                            "Selected corner #{point_idx} on {pname}{link_suffix}"
+                                        );
+                                        return true;
+                                    }
+                                }
+                            }
+                            Some(Hover2dTarget::Edge {
+                                panel_idx,
+                                edge_idx,
+                            }) => {
+                                if let Some(p) = state.project.template.panels.get(panel_idx)
+                                    && let Some(ref poly) = p.polygon
+                                    && let Some(edge_name) = poly.edges.get(edge_idx)
+                                {
+                                    let pid = p.id.clone();
+                                    let ename = edge_name.clone();
+                                    let partners: Vec<String> =
+                                        connected_edges(&state.project.template, &pid, &ename)
+                                            .into_iter()
+                                            .filter(|ce| ce.panel != pid)
+                                            .map(|ce| ce.panel)
+                                            .collect();
+                                    state.selected_piece_index = panel_idx;
+                                    state.selected_2d_edge = Some((pid.clone(), ename.clone()));
+                                    state.selected_2d_point = None;
+                                    state.accordion_open[1] = true;
+                                    state.open_accordion_idx = 1;
+                                    if state.active_2d_tool == "Split" {
+                                        if let Ok(sampled) = poly.edge_points(edge_idx) {
+                                            let local = board_to_panel_pt(
+                                                &state.project.template,
+                                                panel_idx,
+                                                board_m,
+                                            );
+                                            let mut acc_s = 0.0_f64;
+                                            let mut best_s = 0.0_f64;
+                                            let mut best_d = f64::INFINITY;
+                                            for pair in sampled.windows(2) {
+                                                let seg = pair[1] - pair[0];
+                                                let seg_l = seg.length();
+                                                let t = if seg_l > 1e-12 {
+                                                    ((local - pair[0]).dot(seg) / (seg_l * seg_l))
+                                                        .clamp(0.0, 1.0)
+                                                } else {
+                                                    0.0
+                                                };
+                                                let proj = pair[0] + seg * t;
+                                                let d = local.distance(proj);
+                                                if d < best_d {
+                                                    best_d = d;
+                                                    best_s = acc_s + seg_l * t;
+                                                }
+                                                acc_s += seg_l;
+                                            }
+                                            if acc_s > 0.002 {
+                                                let at_m = best_s.clamp(0.001, acc_s - 0.001);
+                                                commit_authoring_command(
+                                                    state,
+                                                    Command::SplitBoundary {
+                                                        panel: pid,
+                                                        edge: ename.clone(),
+                                                        at_m,
+                                                    },
+                                                    format!("Split boundary {ename}"),
+                                                );
+                                            }
+                                        }
+                                        return true;
+                                    }
+                                    state.status_message = if partners.is_empty() {
+                                        format!("Selected edge {ename} on {}", p.name)
+                                    } else {
+                                        format!(
+                                            "Selected edge {ename} on {} (linked: {})",
+                                            p.name,
+                                            partners.join(", ")
+                                        )
+                                    };
+                                    return true;
+                                }
+                            }
+                            Some(Hover2dTarget::Panel(panel_idx)) => {
+                                state.selected_piece_index = panel_idx;
+                                state.selected_2d_point = None;
+                                state.selected_2d_edge = None;
+                                state.drag_2d = Some(Drag2d::Pan {
+                                    start_pan: state.board_2d_pan,
+                                    start_pointer: (px, py),
+                                });
+                                if let Some(p) = state.project.template.panels.get(panel_idx) {
+                                    state.status_message =
+                                        format!("Selected piece: {} ({})", p.name, p.id);
+                                }
+                                return true;
+                            }
+                            None => {
+                                state.selected_2d_point = None;
+                                state.selected_2d_edge = None;
+                                state.drag_2d = Some(Drag2d::Pan {
+                                    start_pan: state.board_2d_pan,
+                                    start_pointer: (px, py),
+                                });
+                                return true;
+                            }
+                        }
+                    } else {
+                        // Inside canvas_2d padding outside square svg_2d: pan only
+                        state.drag_2d = Some(Drag2d::Pan {
+                            start_pan: state.board_2d_pan,
+                            start_pointer: (px, py),
+                        });
+                        return true;
                     }
+                } else if rect_3d.contains(px, py) {
+                    state.dragging_3d = true;
+                }
+            } else if !state.pointer_down {
+                state.dragging_3d = false;
+                if matches!(state.draft_2d, Some(ToolDraft2d::Rect { .. }))
+                    && let Some(ToolDraft2d::Rect {
+                        start_board_m,
+                        current_board_m,
+                    }) = state.draft_2d.take()
+                {
+                    let final_b =
+                        screen_to_board_unclamped_m(state, px, py).unwrap_or(current_board_m);
+                    let lo = start_board_m.min(final_b);
+                    let hi = start_board_m.max(final_b);
+                    let size = hi - lo;
+                    if size.x >= 0.03 && size.y >= 0.03 {
+                        let fabric = default_fabric_id(state);
+                        commit_authoring_command(
+                            state,
+                            Command::Primitive {
+                                kind: Primitive::Rectangle,
+                                size,
+                                sweep_degrees: 360.0,
+                                origin: lo,
+                                meshing: MeshingSettings::default(),
+                                fabric,
+                                replace: false,
+                            },
+                            format!(
+                                "Created rectangle {:.0}×{:.0} mm",
+                                size.x * 1000.0,
+                                size.y * 1000.0
+                            ),
+                        );
+                    } else {
+                        state.status_message =
+                            "Drag at least 30×30 mm to create a rectangle".into();
+                    }
+                    return true;
+                }
+                if matches!(state.draft_2d, Some(ToolDraft2d::Freehand { .. }))
+                    && let Some(ToolDraft2d::Freehand { samples_board_m }) = state.draft_2d.take()
+                {
+                    if samples_board_m.len() >= 3 {
+                        let fabric = default_fabric_id(state);
+                        commit_authoring_command(
+                            state,
+                            Command::Freehand {
+                                samples: samples_board_m,
+                                tolerance_m: 0.008,
+                                meshing: MeshingSettings::default(),
+                                fabric,
+                            },
+                            "Created freehand pattern piece",
+                        );
+                    } else {
+                        state.status_message =
+                            "Draw a closed freehand loop to create a pattern piece".into();
+                    }
+                    return true;
+                }
+                if let Some(drag) = state.drag_2d.take() {
+                    match drag {
+                        Drag2d::Point {
+                            panel_id,
+                            point_idx,
+                            moved,
+                            last_local,
+                            ..
+                        } => {
+                            state.preview_template = None;
+                            if moved {
+                                let local = screen_to_board_unclamped_m(state, px, py)
+                                    .and_then(|board_m| {
+                                        state
+                                            .project
+                                            .template
+                                            .panels
+                                            .iter()
+                                            .position(|p| p.id == panel_id)
+                                            .map(|panel_idx| {
+                                                board_to_panel_pt(
+                                                    &state.project.template,
+                                                    panel_idx,
+                                                    board_m,
+                                                )
+                                            })
+                                    })
+                                    .unwrap_or(last_local);
+                                commit_authoring_command(
+                                    state,
+                                    Command::Anchor {
+                                        panel: panel_id,
+                                        anchor: point_idx,
+                                        position: local,
+                                    },
+                                    format!(
+                                        "Moved point #{point_idx} to ({:.1}, {:.1}) mm",
+                                        local.x * 1000.0,
+                                        local.y * 1000.0
+                                    ),
+                                );
+                            }
+                            return true;
+                        }
+                        Drag2d::BezierHandle {
+                            panel_id,
+                            edge_name,
+                            handle_index,
+                            moved,
+                            last_local,
+                            ..
+                        } => {
+                            state.preview_template = None;
+                            if moved {
+                                commit_authoring_command(
+                                    state,
+                                    Command::AdjustCornerHandle {
+                                        panel: panel_id,
+                                        edge: edge_name.clone(),
+                                        handle_index,
+                                        position: last_local,
+                                        rule: state.corner_rule,
+                                    },
+                                    format!("Adjusted Bézier handle on {edge_name}"),
+                                );
+                            }
+                            return true;
+                        }
+                        Drag2d::CornerRadius {
+                            panel_id,
+                            edge_name,
+                            max_radius_m,
+                            ..
+                        } => {
+                            state.preview_template = None;
+                            round_corner_by_name(state, &panel_id, &edge_name, max_radius_m);
+                            return true;
+                        }
+                        Drag2d::Pan { .. } => {
+                            return true;
+                        }
+                    }
+                }
+                if state.draft_2d.is_some()
+                    || (was_down && (canvas_2d.contains(px, py) || rect_3d.contains(px, py)))
+                {
                     return true;
                 }
             }
@@ -701,55 +3127,263 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
         }
         EngineEvent::PointerMoved { position, .. } => {
             let (px, py) = (position.x, position.y);
-            if state.pointer_down {
-                let dx = px - state.last_pointer_pos.0;
-                let dy = py - state.last_pointer_pos.1;
-                let is_2d_side = match state.layout_mode {
-                    ViewLayoutMode::TwoDOnly => true,
-                    ViewLayoutMode::ThreeDOnly => false,
-                    ViewLayoutMode::Split => px >= 800.0,
-                };
-                if is_2d_side {
-                    let speed = 0.003 / state.board_2d_zoom.clamp(0.2, 10.0);
-                    state.board_2d_pan.0 -= dx as f64 * speed;
-                    state.board_2d_pan.1 -= dy as f64 * speed;
-                    state.last_pointer_pos = (px, py);
-                    return true;
-                } else {
-                    state.camera.yaw += dx * 0.008;
-                    state.camera.pitch = (state.camera.pitch + dy * 0.008).clamp(-1.45, 1.45);
+            let dx = px - state.last_pointer_pos.0;
+            let dy = py - state.last_pointer_pos.1;
+            state.last_pointer_pos = (px, py);
+
+            if state.draft_2d.is_some() {
+                let pointer_down = state.pointer_down;
+                let unclamped_b = screen_to_board_unclamped_m(state, px, py);
+                let clamped_b = screen_to_board_m(state, px, py);
+                let internal_next_local =
+                    if let Some(ToolDraft2d::InternalLine { panel_id, .. }) =
+                        state.draft_2d.as_ref()
+                    {
+                        clamped_b.and_then(|b| {
+                            state
+                                .project
+                                .template
+                                .panels
+                                .iter()
+                                .position(|p| &p.id == panel_id)
+                                .map(|pidx| board_to_panel_pt(&state.project.template, pidx, b))
+                        })
+                    } else {
+                        None
+                    };
+                match state.draft_2d.as_mut() {
+                    Some(ToolDraft2d::Rect {
+                        current_board_m, ..
+                    }) if pointer_down => {
+                        if let Some(b) = unclamped_b {
+                            *current_board_m = b;
+                            return true;
+                        }
+                    }
+                    Some(ToolDraft2d::Freehand { samples_board_m }) if pointer_down => {
+                        if let Some(b) = unclamped_b
+                            && samples_board_m
+                                .last()
+                                .is_none_or(|last| last.distance(b) >= 0.005)
+                        {
+                            samples_board_m.push(b);
+                            return true;
+                        }
+                    }
+                    Some(ToolDraft2d::Pen { hover_board_m, .. }) => {
+                        *hover_board_m = clamped_b;
+                        return true;
+                    }
+                    Some(ToolDraft2d::InternalLine { hover_local_m, .. }) => {
+                        *hover_local_m = internal_next_local;
+                        return true;
+                    }
+                    Some(ToolDraft2d::Measure {
+                        second_board_m: None,
+                        hover_board_m,
+                        ..
+                    }) => {
+                        *hover_board_m = clamped_b;
+                        return true;
+                    }
+                    _ => {}
                 }
             }
-            state.last_pointer_pos = (px, py);
+
+            if state.drag_2d.is_some() {
+                let (_canvas, svg_rect) = compute_2d_viewport_rects(state);
+                let (_vbx, _vby, view_span) = compute_2d_view_box_m(state);
+                let px_m = view_span / (svg_rect.w.max(1.0) as f64);
+
+                let drag = state.drag_2d.take().unwrap();
+                match drag {
+                    Drag2d::Pan {
+                        start_pan,
+                        start_pointer,
+                    } => {
+                        let dpx = (px - start_pointer.0) as f64;
+                        let dpy = (py - start_pointer.1) as f64;
+                        state.board_2d_pan.0 = start_pan.0 - dpx * px_m;
+                        state.board_2d_pan.1 = start_pan.1 - dpy * px_m;
+                        state.drag_2d = Some(Drag2d::Pan {
+                            start_pan,
+                            start_pointer,
+                        });
+                        return true;
+                    }
+                    Drag2d::Point {
+                        panel_id,
+                        point_idx,
+                        start_pointer,
+                        mut moved,
+                        mut last_local,
+                    } => {
+                        if (px - start_pointer.0).hypot(py - start_pointer.1) >= 2.5 {
+                            moved = true;
+                        }
+                        if let Some(board_m) = screen_to_board_unclamped_m(state, px, py)
+                            && let Some(panel_idx) = state
+                                .project
+                                .template
+                                .panels
+                                .iter()
+                                .position(|p| p.id == panel_id)
+                        {
+                            last_local =
+                                board_to_panel_pt(&state.project.template, panel_idx, board_m);
+                            if moved {
+                                update_preview_point(state, &panel_id, point_idx, last_local);
+                            }
+                        }
+                        state.drag_2d = Some(Drag2d::Point {
+                            panel_id,
+                            point_idx,
+                            start_pointer,
+                            moved,
+                            last_local,
+                        });
+                        return true;
+                    }
+                    Drag2d::BezierHandle {
+                        panel_id,
+                        edge_name,
+                        handle_index,
+                        start_pointer,
+                        mut moved,
+                        mut last_local,
+                    } => {
+                        if (px - start_pointer.0).hypot(py - start_pointer.1) >= 2.0 {
+                            moved = true;
+                        }
+                        if let Some(board_m) = screen_to_board_unclamped_m(state, px, py)
+                            && let Some(panel_idx) = state
+                                .project
+                                .template
+                                .panels
+                                .iter()
+                                .position(|p| p.id == panel_id)
+                        {
+                            last_local =
+                                board_to_panel_pt(&state.project.template, panel_idx, board_m);
+                            if moved {
+                                update_preview_bezier_handle(
+                                    state,
+                                    &panel_id,
+                                    &edge_name,
+                                    handle_index,
+                                    last_local,
+                                );
+                            }
+                        }
+                        state.drag_2d = Some(Drag2d::BezierHandle {
+                            panel_id,
+                            edge_name,
+                            handle_index,
+                            start_pointer,
+                            moved,
+                            last_local,
+                        });
+                        return true;
+                    }
+                    Drag2d::CornerRadius {
+                        panel_id,
+                        edge_name,
+                        corner_board_m,
+                        bisector,
+                        denom,
+                        max_radius_m,
+                        start_pointer,
+                        mut moved,
+                    } => {
+                        if (px - start_pointer.0).hypot(py - start_pointer.1) >= 2.0 {
+                            moved = true;
+                        }
+                        if moved && let Some(board_m) = screen_to_board_unclamped_m(state, px, py) {
+                            let proj = (board_m - corner_board_m).dot(bisector).max(0.0005);
+                            let radius_m = (proj / denom).clamp(0.001, max_radius_m * 0.98);
+                            state.corner_radius_mm = radius_m * 1000.0;
+                            state.status_message =
+                                format!("Corner preview radius: {:.1} mm", state.corner_radius_mm);
+                        }
+                        state.drag_2d = Some(Drag2d::CornerRadius {
+                            panel_id,
+                            edge_name,
+                            corner_board_m,
+                            bisector,
+                            denom,
+                            max_radius_m,
+                            start_pointer,
+                            moved,
+                        });
+                        return true;
+                    }
+                }
+            }
+
+            if state.pointer_down && state.dragging_3d {
+                state.camera.yaw -= dx * 0.008;
+                state.camera.pitch = (state.camera.pitch + dy * 0.008).clamp(-1.45, 1.45);
+                state.sync_usd_camera();
+                return true;
+            }
+
+            // Passive hover feedback in 2D viewport
+            if !state.pointer_down && !state.command_palette_open && !state.solver_menu_open {
+                let new_hover = screen_to_board_m(state, px, py)
+                    .and_then(|board_m| hit_test_2d(state, board_m));
+                if new_hover != state.hovered_2d {
+                    state.hovered_2d = new_hover;
+                    return true;
+                }
+            }
             false
         }
         EngineEvent::Scroll { delta, .. } => {
+            if state.command_palette_open || state.solver_menu_open {
+                return false;
+            }
             let dy = match delta {
                 cssimpler::renderer::ScrollDelta::Lines { y, .. } => *y * 0.2,
                 cssimpler::renderer::ScrollDelta::Pixels { y, .. } => *y * 0.005,
             };
-            let is_2d_side = match state.layout_mode {
-                ViewLayoutMode::TwoDOnly => true,
-                ViewLayoutMode::ThreeDOnly => false,
-                ViewLayoutMode::Split => state.last_pointer_pos.0 >= 800.0,
-            };
-            if is_2d_side {
-                let factor = 1.0 + dy as f64 * 0.15;
-                state.board_2d_zoom = (state.board_2d_zoom * factor).clamp(0.25, 8.0);
+            let (px, py) = state.last_pointer_pos;
+            let (canvas_2d, svg_2d) = compute_2d_viewport_rects(state);
+            let rect_3d = viewport_3d_rect(state);
+            if canvas_2d.contains(px, py) {
+                let (vbx, vby, old_span) = compute_2d_view_box_m(state);
+                let u = if svg_2d.w > 0.0 {
+                    ((px - svg_2d.x) / svg_2d.w) as f64 - 0.5
+                } else {
+                    0.0
+                };
+                let v = if svg_2d.h > 0.0 {
+                    ((py - svg_2d.y) / svg_2d.h) as f64 - 0.5
+                } else {
+                    0.0
+                };
+                let anchor_x = vbx + (0.5 + u) * old_span;
+                let anchor_y = vby + (0.5 + v) * old_span;
+                let center_x = vbx + 0.5 * old_span - state.board_2d_pan.0;
+                let center_y = vby + 0.5 * old_span - state.board_2d_pan.1;
+
+                let old_zoom = state.board_2d_zoom.clamp(0.25, 10.0);
+                let factor = (1.0 + dy as f64 * 0.15).clamp(0.5, 2.0);
+                let new_zoom = (old_zoom * factor).clamp(0.25, 10.0);
+                let new_span = old_span * (old_zoom / new_zoom);
+                state.board_2d_zoom = new_zoom;
+                if svg_2d.contains(px, py) {
+                    state.board_2d_pan.0 = anchor_x - center_x - u * new_span;
+                    state.board_2d_pan.1 = anchor_y - center_y - v * new_span;
+                }
                 return true;
-            } else {
+            } else if rect_3d.contains(px, py) {
                 state.camera.distance = (state.camera.distance - dy).clamp(0.5, 15.0);
+                state.sync_usd_camera();
+                return true;
             }
             false
         }
         _ => false,
-    }
-}
-
-fn queue_action(actions: &Arc<AtomicU64>, action: u64) -> impl Fn() + Send + Sync + 'static {
-    let actions = Arc::clone(actions);
-    move || {
-        actions.fetch_or(action, Ordering::Relaxed);
     }
 }
 
@@ -944,7 +3578,7 @@ fn build_runner_3d_rail(state: &CssRunnerState) -> Node {
 
 fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
     if state.clean_view {
-        return ui! { <aside class="tool-rail tool-rail-2d" style="display:none"></aside> };
+        return ui! { <aside id="rail-2d" class="tool-rail tool-rail-2d collapsed"></aside> };
     }
 
     let edit_class = if state.active_2d_tool == "Edit" {
@@ -1050,65 +3684,37 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
     }
 
     let panels = &state.project.template.panels;
+    let connected = compute_connected_2d_highlight(state);
     let mut piece_cards = Vec::new();
 
     for (idx, p) in panels.iter().enumerate() {
         let is_selected = idx == state.selected_piece_index;
+        let is_connected = !is_selected && connected.connected_panels.contains(&p.id);
         let card_class = if is_selected {
             "piece-card active"
+        } else if is_connected {
+            "piece-card connected"
         } else {
             "piece-card"
         };
         let label = p.name.clone();
-        let id_str = p.id.clone();
-        let meta_str = format!("Fabric: {} · Grain: {:.0}°", p.fabric, p.grain_degrees);
-        let card_node = match idx {
-            0 => ui! {
-                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_0)}>
-                    <div class="piece-header">
-                        <span class="piece-name">{label}</span>
-                        <span class="piece-id">{id_str}</span>
-                    </div>
-                    <div class="piece-meta">
-                        <span>{meta_str}</span>
-                    </div>
-                </div>
-            },
-            1 => ui! {
-                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_1)}>
-                    <div class="piece-header">
-                        <span class="piece-name">{label}</span>
-                        <span class="piece-id">{id_str}</span>
-                    </div>
-                    <div class="piece-meta">
-                        <span>{meta_str}</span>
-                    </div>
-                </div>
-            },
-            2 => ui! {
-                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_2)}>
-                    <div class="piece-header">
-                        <span class="piece-name">{label}</span>
-                        <span class="piece-id">{id_str}</span>
-                    </div>
-                    <div class="piece-meta">
-                        <span>{meta_str}</span>
-                    </div>
-                </div>
-            },
-            _ => ui! {
-                <div class={card_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_3)}>
-                    <div class="piece-header">
-                        <span class="piece-name">{label}</span>
-                        <span class="piece-id">{id_str}</span>
-                    </div>
-                    <div class="piece-meta">
-                        <span>{meta_str}</span>
-                    </div>
-                </div>
-            },
+        let id_str = if is_connected {
+            format!("{} · linked", p.id)
+        } else {
+            p.id.clone()
         };
-        piece_cards.push(card_node);
+        let meta_str = format!("Fabric: {} · Grain: {:.0}°", p.fabric, p.grain_degrees);
+        piece_cards.push(ui! {
+            <div class={card_class} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SelectPiece(idx))}>
+                <div class="piece-header">
+                    <span class="piece-name">{label}</span>
+                    <span class="piece-id">{id_str}</span>
+                </div>
+                <div class="piece-meta">
+                    <span>{meta_str}</span>
+                </div>
+            </div>
+        });
     }
 
     ui! {
@@ -1124,21 +3730,21 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                         <span class="section-subtitle">"Engineering fixtures (metres)"</span>
                     </div>
                     <div class="template-cards-container">
-                        <div class="template-entry">
+                        <div class="template-entry pointer-item" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::LoadPreset(GarmentKind::Tshirt))}>
                             <div class="template-header">
                                 <span class="template-title">"T-shirt"</span>
                                 <span class="template-meta">"2 panels · 4 seams"</span>
                             </div>
                             <span class="template-description">"Two-panel engineering fixture for MakeHuman mannequin."</span>
                         </div>
-                        <div class="template-entry">
+                        <div class="template-entry pointer-item" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::LoadPreset(GarmentKind::Dress))}>
                             <div class="template-header">
                                 <span class="template-title">"Dress"</span>
                                 <span class="template-meta">"2 panels · 4 seams"</span>
                             </div>
                             <span class="template-description">"Two-panel dress fixture with curved seams."</span>
                         </div>
-                        <div class="template-entry">
+                        <div class="template-entry pointer-item" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::StatusNote("Apron fixture is planned (use T-shirt or Dress)".into()))}>
                             <div class="template-header">
                                 <span class="template-title">"Apron"</span>
                                 <span class="template-meta">"3 panels · 4 seams"</span>
@@ -1155,9 +3761,9 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                     <div class="quick-action-group">
                         <span class="group-label">"Import"</span>
                         <div class="quick-actions-row">
-                            <button class="btn-action">"DXF"</button>
-                            <button class="btn-action">"SVG"</button>
-                            <button class="btn-action">"Avatar"</button>
+                            <button class="btn-action" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::StatusNote("Use CLI --project or File menu to import DXF".into()))}>"DXF"</button>
+                            <button class="btn-action" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::StatusNote("Use CLI or File menu to import SVG".into()))}>"SVG"</button>
+                            <button class="btn-action" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::StatusNote("Use CLI --avatar to swap mannequin OBJ".into()))}>"Avatar"</button>
                         </div>
                     </div>
                     <div class="quick-action-group">
@@ -1215,16 +3821,36 @@ fn build_runner_3d_viewport(_state: &CssRunnerState) -> Node {
 
 pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
     let (svg_nodes, view_box) = render_runner_2d_svg(state);
+    let (_canvas_rect, svg_rect) = compute_2d_viewport_rects(state);
+    let svg_w = format!("{:.1}px", svg_rect.w);
+    let svg_h = format!("{:.1}px", svg_rect.h);
+    let connected = compute_connected_2d_highlight(state);
 
     let panels = &state.project.template.panels;
     let selected_panel = panels.get(state.selected_piece_index);
     let selected_name = selected_panel.map_or("None", |p| p.name.as_str());
     let (w_mm, h_mm) = selected_panel.map_or((0.0, 0.0), |p| {
         let (w, h) = if let Some(poly) = &p.polygon {
-            let min_x = poly.points.iter().map(|pt| pt.x).fold(f64::INFINITY, f64::min);
-            let max_x = poly.points.iter().map(|pt| pt.x).fold(f64::NEG_INFINITY, f64::max);
-            let min_y = poly.points.iter().map(|pt| pt.y).fold(f64::INFINITY, f64::min);
-            let max_y = poly.points.iter().map(|pt| pt.y).fold(f64::NEG_INFINITY, f64::max);
+            let min_x = poly
+                .points
+                .iter()
+                .map(|pt| pt.x)
+                .fold(f64::INFINITY, f64::min);
+            let max_x = poly
+                .points
+                .iter()
+                .map(|pt| pt.x)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let min_y = poly
+                .points
+                .iter()
+                .map(|pt| pt.y)
+                .fold(f64::INFINITY, f64::min);
+            let max_y = poly
+                .points
+                .iter()
+                .map(|pt| pt.y)
+                .fold(f64::NEG_INFINITY, f64::max);
             (max_x - min_x, max_y - min_y)
         } else {
             (p.pattern.width, p.pattern.height)
@@ -1233,10 +3859,234 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
     });
 
     let zoom_pct = (state.board_2d_zoom * 100.0).round() as i32;
+    let linked_str = if connected.connected_panels.is_empty() {
+        String::new()
+    } else {
+        let ids: Vec<&str> = connected
+            .connected_panels
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        format!(" +{}", ids.join(","))
+    };
+    let sub_detail = if let Some((ref pid, pt_idx)) = state.selected_2d_point {
+        let edge_label = state
+            .project
+            .template
+            .panels
+            .iter()
+            .find(|p| &p.id == pid)
+            .and_then(|p| p.polygon.as_ref())
+            .and_then(|poly| poly.edges.get(pt_idx))
+            .map_or("?", |e| e.as_str());
+        format!(" · Corner #{pt_idx} ({edge_label}){linked_str}")
+    } else if let Some((ref _pid, ref ename)) = state.selected_2d_edge {
+        format!(" · Edge {ename}{linked_str}")
+    } else {
+        String::new()
+    };
     let sub_text = format!(
-        "Tool: {} · Zoom: {}% · Selected: {} ({:.0}×{:.0} mm)",
-        state.active_2d_tool, zoom_pct, selected_name, w_mm, h_mm
+        "Tool: {} · Zoom: {}% · Selected: {} ({:.0}×{:.0} mm){}",
+        state.active_2d_tool, zoom_pct, selected_name, w_mm, h_mm, sub_detail
     );
+
+    let radius_mode_class = if state.corner_mode_radius {
+        "cad-2d-pill active"
+    } else {
+        "cad-2d-pill"
+    };
+    let shape_mode_class = if !state.corner_mode_radius {
+        "cad-2d-pill active"
+    } else {
+        "cad-2d-pill"
+    };
+    let sharp_class = if state.corner_rule == CornerRule::Sharp {
+        "cad-2d-pill active"
+    } else {
+        "cad-2d-pill"
+    };
+    let smooth_class = if state.corner_rule == CornerRule::Smooth {
+        "cad-2d-pill active"
+    } else {
+        "cad-2d-pill"
+    };
+    let sym_class = if state.corner_rule == CornerRule::Symmetric {
+        "cad-2d-pill active"
+    } else {
+        "cad-2d-pill"
+    };
+    let undo_label = if state.history.can_undo() {
+        "Undo"
+    } else {
+        "Undo ·"
+    };
+    let redo_label = if state.history.can_redo() {
+        "Redo"
+    } else {
+        "Redo ·"
+    };
+
+    let undo_btn = ui! {
+        <button id="cad-undo-btn" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::Undo2d)} title="Undo (Ctrl+Z)">{undo_label}</button>
+    };
+    let redo_btn = ui! {
+        <button id="cad-redo-btn" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::Redo2d)} title="Redo (Ctrl+Shift+Z)">{redo_label}</button>
+    };
+    let mode_radius_btn = ui! {
+        <button id="cad-corner-radius-mode" class={radius_mode_class} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerMode(true))} title="Circular fillet mode">"Radius"</button>
+    };
+    let mode_shape_btn = ui! {
+        <button id="cad-corner-shape-mode" class={shape_mode_class} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerMode(false))} title="Shaped tension fillet mode">"Shape"</button>
+    };
+    let radius_dec_btn = ui! {
+        <button id="cad-radius-dec" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerRadiusMm(-2.0))} title="Decrease corner radius">"-2"</button>
+    };
+    let radius_val = ui! {
+        <span id="cad-radius-readout" class="cad-2d-value">{format!("{:.1} mm", state.corner_radius_mm)}</span>
+    };
+    let radius_inc_btn = ui! {
+        <button id="cad-radius-inc" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerRadiusMm(2.0))} title="Increase corner radius">"+2"</button>
+    };
+    let tension_dec_btn = ui! {
+        <button id="cad-tension-dec" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerTension(-0.05))} title="Decrease tension">"T-"</button>
+    };
+    let tension_val = ui! {
+        <span id="cad-tension-readout" class="cad-2d-value">{format!("{:.2}", state.corner_tension)}</span>
+    };
+    let tension_inc_btn = ui! {
+        <button id="cad-tension-inc" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerTension(0.05))} title="Increase tension">"T+"</button>
+    };
+    let apply_round_btn = ui! {
+        <button id="cad-apply-round-btn" class="cad-2d-pill primary" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ApplyCornerRoundSelected)} title="Round selected corner (Enter)">"Round"</button>
+    };
+    let rule_sharp_btn = ui! {
+        <button id="cad-rule-sharp" class={sharp_class} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Sharp))} title="Sharp independent handles">"Sharp"</button>
+    };
+    let rule_smooth_btn = ui! {
+        <button id="cad-rule-smooth" class={smooth_class} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Smooth))} title="Smooth G1 collinear handles">"Smooth"</button>
+    };
+    let rule_sym_btn = ui! {
+        <button id="cad-rule-sym" class={sym_class} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Symmetric))} title="Symmetric equal-length handles">"Sym"</button>
+    };
+    let curve_on_btn = ui! {
+        <button id="cad-curve-on-btn" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(true))} title="Convert selected boundary/corner to cubic Bézier">"Curve"</button>
+    };
+    let curve_off_btn = ui! {
+        <button id="cad-curve-off-btn" class="cad-2d-pill" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(false))} title="Straighten selected boundary/corner">"Straight"</button>
+    };
+
+    let (_vp2d_x, vp2d_w) = viewport_2d_span_x(state);
+    let (cad_rows, _bar_h) = cad_2d_bar_layout(vp2d_w);
+    let cad_bar = match cad_rows {
+        1 => ui! {
+            <div id="cad-2d-bar" class="cad-2d-bar">
+                <div class="cad-2d-group">
+                    {undo_btn}
+                    {redo_btn}
+                </div>
+                <div class="cad-2d-group">
+                    <span class="cad-2d-label">"Corner"</span>
+                    {mode_radius_btn}
+                    {mode_shape_btn}
+                    {radius_dec_btn}
+                    {radius_val}
+                    {radius_inc_btn}
+                    {tension_dec_btn}
+                    {tension_val}
+                    {tension_inc_btn}
+                    {apply_round_btn}
+                </div>
+                <div class="cad-2d-group">
+                    <span class="cad-2d-label">"Rule"</span>
+                    {rule_sharp_btn}
+                    {rule_smooth_btn}
+                    {rule_sym_btn}
+                    {curve_on_btn}
+                    {curve_off_btn}
+                </div>
+            </div>
+        },
+        2 => ui! {
+            <div id="cad-2d-bar" class="cad-2d-bar rows-2">
+                <div class="cad-2d-row">
+                    {undo_btn}
+                    {redo_btn}
+                    <span class="cad-2d-label">"Rule"</span>
+                    {rule_sharp_btn}
+                    {rule_smooth_btn}
+                    {rule_sym_btn}
+                    {curve_on_btn}
+                    {curve_off_btn}
+                </div>
+                <div class="cad-2d-row">
+                    <span class="cad-2d-label">"Corner"</span>
+                    {mode_radius_btn}
+                    {mode_shape_btn}
+                    {radius_dec_btn}
+                    {radius_val}
+                    {radius_inc_btn}
+                    {tension_dec_btn}
+                    {tension_val}
+                    {tension_inc_btn}
+                    {apply_round_btn}
+                </div>
+            </div>
+        },
+        3 => ui! {
+            <div id="cad-2d-bar" class="cad-2d-bar rows-3">
+                <div class="cad-2d-row">
+                    {undo_btn}
+                    {redo_btn}
+                    {mode_radius_btn}
+                    {mode_shape_btn}
+                    {apply_round_btn}
+                </div>
+                <div class="cad-2d-row">
+                    {radius_dec_btn}
+                    {radius_val}
+                    {radius_inc_btn}
+                    {tension_dec_btn}
+                    {tension_val}
+                    {tension_inc_btn}
+                </div>
+                <div class="cad-2d-row">
+                    {rule_sharp_btn}
+                    {rule_smooth_btn}
+                    {rule_sym_btn}
+                    {curve_on_btn}
+                    {curve_off_btn}
+                </div>
+            </div>
+        },
+        _ => ui! {
+            <div id="cad-2d-bar" class="cad-2d-bar rows-4">
+                <div class="cad-2d-row">
+                    {undo_btn}
+                    {redo_btn}
+                    {mode_radius_btn}
+                    {mode_shape_btn}
+                </div>
+                <div class="cad-2d-row">
+                    {radius_dec_btn}
+                    {radius_val}
+                    {radius_inc_btn}
+                    {apply_round_btn}
+                </div>
+                <div class="cad-2d-row">
+                    {tension_dec_btn}
+                    {tension_val}
+                    {tension_inc_btn}
+                    {curve_on_btn}
+                    {curve_off_btn}
+                </div>
+                <div class="cad-2d-row">
+                    {rule_sharp_btn}
+                    {rule_smooth_btn}
+                    {rule_sym_btn}
+                </div>
+            </div>
+        },
+    };
 
     ui! {
         <div id="viewport-2d" class="viewport-container">
@@ -1252,8 +4102,9 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
                     <button class="viewport-tool-btn" onclick_shared={queue_action(&state.actions, ACT_RUN_2D_NEXT_PIECE)} title="Cycle Piece (])">"Next Piece ▾"</button>
                 </div>
             </div>
+            {cad_bar}
             <div class="canvas-area">
-                <svg viewBox={view_box} preserveAspectRatio="xMidYMid meet" class="svg-canvas">
+                <svg id="svg-2d-board" viewBox={view_box} preserveAspectRatio="xMidYMid meet" width={svg_w} height={svg_h} class="svg-2d-board">
                     {svg_nodes}
                 </svg>
             </div>
@@ -1337,6 +4188,7 @@ fn build_runner_right_dock(state: &CssRunnerState) -> Node {
 
 fn build_cat_pattern_2d(state: &CssRunnerState) -> Node {
     let panels = &state.project.template.panels;
+    let connected = compute_connected_2d_highlight(state);
     let selected = panels.get(state.selected_piece_index);
     let name = selected.map_or("None", |p| p.id.as_str());
     let fabric = selected.map_or("Default", |p| p.fabric.as_str());
@@ -1346,40 +4198,26 @@ fn build_cat_pattern_2d(state: &CssRunnerState) -> Node {
     let mut piece_rows = Vec::new();
     for (idx, p) in panels.iter().enumerate() {
         let is_sel = idx == state.selected_piece_index;
+        let is_conn = !is_sel && connected.connected_panels.contains(&p.id);
         let item_class = if is_sel {
-            "tree-item active"
+            "tree-item active pointer-item"
+        } else if is_conn {
+            "tree-item connected pointer-item"
         } else {
-            "tree-item"
+            "tree-item pointer-item"
         };
         let label = format!("{}: {}", p.id, p.name);
-        let grain_str = format!("{:.0}°", p.grain_degrees);
-        let row_node = match idx {
-            0 => ui! {
-                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_0)} style="cursor:pointer">
-                    <span>{label}</span>
-                    <span>{grain_str}</span>
-                </div>
-            },
-            1 => ui! {
-                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_1)} style="cursor:pointer">
-                    <span>{label}</span>
-                    <span>{grain_str}</span>
-                </div>
-            },
-            2 => ui! {
-                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_2)} style="cursor:pointer">
-                    <span>{label}</span>
-                    <span>{grain_str}</span>
-                </div>
-            },
-            _ => ui! {
-                <div class={item_class} onclick_shared={queue_action(&state.actions, ACT_RUN_PIECE_3)} style="cursor:pointer">
-                    <span>{label}</span>
-                    <span>{grain_str}</span>
-                </div>
-            },
+        let grain_str = if is_conn {
+            format!("{:.0}° · linked", p.grain_degrees)
+        } else {
+            format!("{:.0}°", p.grain_degrees)
         };
-        piece_rows.push(row_node);
+        piece_rows.push(ui! {
+            <div class={item_class} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SelectPiece(idx))}>
+                <span>{label}</span>
+                <span>{grain_str}</span>
+            </div>
+        });
     }
 
     ui! {
@@ -1401,7 +4239,7 @@ fn build_cat_pattern_2d(state: &CssRunnerState) -> Node {
                 <span class="prop-label">"Grain Angle"</span>
                 <span class="prop-value">{format!("{grain:.1}°")}</span>
             </div>
-            <div class="browser-tree" style="margin-top:6px">
+            <div class="browser-tree browser-tree-spaced">
                 {piece_rows}
             </div>
         </div>
@@ -1419,7 +4257,7 @@ fn build_cat_sewing(state: &CssRunnerState) -> Node {
         seam_rows.push(ui! {
             <div class="tree-item">
                 <span>{label}</span>
-                <span style="color:var(--accent);font-size:10px">{format!("#{idx}{rev_badge}")}</span>
+                <span class="badge-accent">{format!("#{idx}{rev_badge}")}</span>
             </div>
         });
     }
@@ -1435,7 +4273,7 @@ fn build_cat_sewing(state: &CssRunnerState) -> Node {
                 <span class="prop-label">"Active Tool"</span>
                 <span class="prop-value">{state.active_2d_tool.clone()}</span>
             </div>
-            <div class="browser-tree" style="margin-top:6px">
+            <div class="browser-tree browser-tree-spaced">
                 {seam_rows}
             </div>
         </div>
@@ -1486,7 +4324,7 @@ fn build_cat_material(state: &CssRunnerState) -> Node {
         fabric_rows.push(ui! {
             <div class="tree-item">
                 <span>{f.name.clone()}</span>
-                <span style="color:var(--text-muted);font-size:10px">{dens}</span>
+                <span class="text-muted-sm">{dens}</span>
             </div>
         });
     }
@@ -1506,7 +4344,7 @@ fn build_cat_material(state: &CssRunnerState) -> Node {
                 <span class="prop-label">"Albedo Maps"</span>
                 <span class="prop-value">"Portable Linear-Light"</span>
             </div>
-            <div class="browser-tree" style="margin-top:6px">
+            <div class="browser-tree browser-tree-spaced">
                 {fabric_rows}
             </div>
         </div>
@@ -1646,7 +4484,99 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
         </div>
     };
 
-    // Accordion 1: Selected Line & Seam Allowance
+    // Accordion 1: Selected Line, Corner & Seam Allowance
+    let template = state.active_template();
+    let connected = compute_connected_2d_highlight(state);
+    let connected_label = if connected.connected_panels.is_empty() {
+        "None".to_string()
+    } else {
+        connected
+            .connected_panels
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let sel_info: (String, String, String, String) = if let Some((ref pid, pt_idx)) =
+        state.selected_2d_point
+    {
+        if let Some(p) = template.panels.iter().find(|p| &p.id == pid)
+            && let Some(ref poly) = p.polygon
+            && let Some(edge_name) = poly.edges.get(pt_idx)
+        {
+            let prev_name = &poly.edges[(pt_idx + poly.edges.len() - 1) % poly.edges.len()];
+            let curved = poly.curves.contains_key(edge_name) || poly.curves.contains_key(prev_name);
+            let ctype = if curved { "Cubic Bézier" } else { "Straight" }.to_string();
+            let len_str = panel_edge_length_m(p, edge_name)
+                .map_or("—".into(), |m| format!("{:.1} mm", m * 1000.0));
+            let sa_str = format!("{:.1} mm", poly.allowance_of(edge_name) * 1000.0);
+            (
+                format!("Corner #{pt_idx} ({edge_name})"),
+                ctype,
+                len_str,
+                sa_str,
+            )
+        } else {
+            (
+                format!("Corner #{pt_idx}"),
+                "—".into(),
+                "—".into(),
+                "0.0 mm".into(),
+            )
+        }
+    } else if let Some((ref pid, ref ename)) = state.selected_2d_edge {
+        if let Some(p) = template.panels.iter().find(|p| &p.id == pid)
+            && let Some(ref poly) = p.polygon
+        {
+            let ctype = if poly.curves.contains_key(ename) {
+                "Cubic Bézier"
+            } else {
+                "Straight"
+            }
+            .to_string();
+            let len_str = panel_edge_length_m(p, ename)
+                .map_or("—".into(), |m| format!("{:.1} mm", m * 1000.0));
+            let sa_str = format!("{:.1} mm", poly.allowance_of(ename) * 1000.0);
+            (format!("Edge {ename}"), ctype, len_str, sa_str)
+        } else {
+            (
+                format!("Edge {ename}"),
+                "—".into(),
+                "—".into(),
+                "0.0 mm".into(),
+            )
+        }
+    } else {
+        let curve_count = selected_panel
+            .and_then(|p| p.polygon.as_ref())
+            .map_or(0, |poly| poly.curves.len());
+        (
+            "Click point or edge".into(),
+            if curve_count > 0 {
+                format!("{curve_count} Bézier curves")
+            } else {
+                "Straight contour".into()
+            },
+            "—".into(),
+            "0.0 mm".into(),
+        )
+    };
+    let rule_sharp_btn = if state.corner_rule == CornerRule::Sharp {
+        "cad-prop-btn active"
+    } else {
+        "cad-prop-btn"
+    };
+    let rule_smooth_btn = if state.corner_rule == CornerRule::Smooth {
+        "cad-prop-btn active"
+    } else {
+        "cad-prop-btn"
+    };
+    let rule_sym_btn = if state.corner_rule == CornerRule::Symmetric {
+        "cad-prop-btn active"
+    } else {
+        "cad-prop-btn"
+    };
+
     let acc_line = ui! {
         <div class={if open_1 { "accordion open" } else { "accordion collapsed" }}>
             <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_1)}>
@@ -1657,20 +4587,38 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                 ui! {
                     <div class="accordion-content">
                         <div class="prop-row">
+                            <span class="prop-label">"2D Selection"</span>
+                            <span class="prop-value">{sel_info.0}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Linked Pieces"</span>
+                            <span class="prop-value">{connected_label}</span>
+                        </div>
+                        <div class="prop-row">
                             <span class="prop-label">"Curvature Type"</span>
-                            <span class="prop-value">"Cubic Bézier"</span>
+                            <span class="prop-value">{sel_info.1}</span>
+                        </div>
+                        <div class="prop-row">
+                            <span class="prop-label">"Boundary Length"</span>
+                            <span class="prop-value">{sel_info.2}</span>
                         </div>
                         <div class="prop-row">
                             <span class="prop-label">"Seam Allowance"</span>
-                            <span class="prop-value">"10.0 mm"</span>
+                            <span class="prop-value">{sel_info.3}</span>
                         </div>
                         <div class="prop-row">
-                            <span class="prop-label">"Cutting Line Offset"</span>
-                            <span class="prop-value">"+10.0 mm"</span>
+                            <span class="prop-label">"Fillet Radius"</span>
+                            <span class="prop-value">{format!("{:.1} mm (T {:.2})", state.corner_radius_mm, state.corner_tension)}</span>
                         </div>
-                        <div class="prop-row">
-                            <span class="prop-label">"Notches"</span>
-                            <span class="prop-value">"Stored (V-Cut)"</span>
+                        <div class="cad-prop-actions">
+                            <button class={rule_sharp_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Sharp))}>"Sharp"</button>
+                            <button class={rule_smooth_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Smooth))}>"Smooth"</button>
+                            <button class={rule_sym_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Symmetric))}>"Sym"</button>
+                        </div>
+                        <div class="cad-prop-actions">
+                            <button class="cad-prop-btn primary" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ApplyCornerRoundSelected)}>{format!("Round ({:.0} mm)", state.corner_radius_mm)}</button>
+                            <button class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(true))}>"To Bézier"</button>
+                            <button class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(false))}>"To Straight"</button>
                         </div>
                     </div>
                 }
@@ -1974,19 +4922,21 @@ fn build_runner_command_palette(state: &CssRunnerState) -> Node {
 
 pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
     let mut nodes = Vec::new();
-    let panels = &state.project.template.panels;
+    let template = state.active_template();
+    let panels = &template.panels;
 
     struct PanelCurve {
         edge_idx: usize,
+        edge_name: String,
         c1: (f64, f64),
         c2: (f64, f64),
     }
 
     struct PanelGeo {
+        panel_idx: usize,
         id: String,
-        name: String,
-        fabric: String,
         points: Vec<(f64, f64)>,
+        edge_names: Vec<String>,
         curves: Vec<PanelCurve>,
         internal_lines: Vec<Vec<(f64, f64)>>,
         holes: Vec<Vec<(f64, f64)>>,
@@ -1997,124 +4947,85 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
         center: (f64, f64),
         grain_deg: f64,
         is_selected: bool,
+        is_connected: bool,
     }
 
-    let mut panel_geos = Vec::new();
-    let mut auto_x = 0.0_f64;
+    let to_mm = |p: DVec2| -> (f64, f64) { (p.x * 1000.0, p.y * 1000.0) };
+    let connected = compute_connected_2d_highlight(state);
 
+    let mut panel_geos = Vec::with_capacity(panels.len());
     for (idx, panel) in panels.iter().enumerate() {
         let is_selected = idx == state.selected_piece_index;
-        let mut raw_points = Vec::new();
-        let mut raw_curves = Vec::new();
+        let is_connected = !is_selected && connected.connected_panels.contains(&panel.id);
+        let raw_pts = panel_raw_points(panel);
+        let points: Vec<(f64, f64)> = raw_pts
+            .iter()
+            .map(|&pt| to_mm(panel_to_board_pt(template, idx, pt)))
+            .collect();
+
+        let mut edge_names = Vec::new();
+        let mut curves = Vec::new();
         let mut internal_lines = Vec::new();
         let mut holes = Vec::new();
 
         if let Some(ref poly) = panel.polygon {
-            for pt in &poly.points {
-                raw_points.push((pt.x, pt.y));
-            }
+            edge_names = poly.edges.clone();
             for (edge_idx, edge_name) in poly.edges.iter().enumerate() {
                 if let Some([c1, c2]) = poly.curves.get(edge_name) {
-                    raw_curves.push((edge_idx, (c1.x, c1.y), (c2.x, c2.y)));
+                    curves.push(PanelCurve {
+                        edge_idx,
+                        edge_name: edge_name.clone(),
+                        c1: to_mm(panel_to_board_pt(template, idx, *c1)),
+                        c2: to_mm(panel_to_board_pt(template, idx, *c2)),
+                    });
                 }
             }
             for line in &poly.lines {
-                let pts: Vec<(f64, f64)> = line.points.iter().map(|p| (p.x, p.y)).collect();
-                if !pts.is_empty() {
+                let pts: Vec<(f64, f64)> = line
+                    .points
+                    .iter()
+                    .map(|&p| to_mm(panel_to_board_pt(template, idx, p)))
+                    .collect();
+                if pts.len() >= 2 {
                     internal_lines.push(pts);
                 }
             }
             for hole in &poly.holes {
-                let pts: Vec<(f64, f64)> = hole.points.iter().map(|p| (p.x, p.y)).collect();
-                if !pts.is_empty() {
+                let pts: Vec<(f64, f64)> = hole
+                    .points
+                    .iter()
+                    .map(|&p| to_mm(panel_to_board_pt(template, idx, p)))
+                    .collect();
+                if pts.len() >= 3 {
                     holes.push(pts);
                 }
             }
-        }
-        if raw_points.is_empty() {
-            let w = panel.pattern.width.max(0.1);
-            let h = panel.pattern.height.max(0.1);
-            raw_points.push((0.0, 0.0));
-            raw_points.push((w, 0.0));
-            raw_points.push((w, h));
-            raw_points.push((0.0, h));
-        }
-
-        let p_min_x = raw_points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-        let p_max_x = raw_points
-            .iter()
-            .map(|p| p.0)
-            .fold(f64::NEG_INFINITY, f64::max);
-        let width = (p_max_x - p_min_x).max(0.05);
-
-        let (offset_x, offset_y) = if let Some(l2d) = panel.layout_2d {
-            (l2d.x, l2d.y)
         } else {
-            let ox = auto_x - p_min_x;
-            auto_x += width + 0.12;
-            (ox, 0.0)
-        };
+            for i in 0..points.len() {
+                edge_names.push(format!("edge_{i}"));
+            }
+        }
 
-        let shifted: Vec<(f64, f64)> = raw_points
-            .iter()
-            .map(|&(x, y)| (x + offset_x, y + offset_y))
-            .collect();
-
-        let shifted_curves: Vec<PanelCurve> = raw_curves
-            .into_iter()
-            .map(|(edge_idx, c1, c2)| PanelCurve {
-                edge_idx,
-                c1: (c1.0 + offset_x, c1.1 + offset_y),
-                c2: (c2.0 + offset_x, c2.1 + offset_y),
-            })
-            .collect();
-
-        let shifted_internal_lines: Vec<Vec<(f64, f64)>> = internal_lines
-            .into_iter()
-            .map(|pts| {
-                pts.into_iter()
-                    .map(|(x, y)| (x + offset_x, y + offset_y))
-                    .collect()
-            })
-            .collect();
-
-        let shifted_holes: Vec<Vec<(f64, f64)>> = holes
-            .into_iter()
-            .map(|pts| {
-                pts.into_iter()
-                    .map(|(x, y)| (x + offset_x, y + offset_y))
-                    .collect()
-            })
-            .collect();
-
-        let mut s_min_x = shifted.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-        let mut s_max_x = shifted
-            .iter()
-            .map(|p| p.0)
-            .fold(f64::NEG_INFINITY, f64::max);
-        let mut s_min_y = shifted.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-        let mut s_max_y = shifted
-            .iter()
-            .map(|p| p.1)
-            .fold(f64::NEG_INFINITY, f64::max);
-
-        for c in &shifted_curves {
+        let mut s_min_x = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+        let mut s_max_x = points.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+        let mut s_min_y = points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+        let mut s_max_y = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+        for c in &curves {
             s_min_x = s_min_x.min(c.c1.0).min(c.c2.0);
             s_max_x = s_max_x.max(c.c1.0).max(c.c2.0);
             s_min_y = s_min_y.min(c.c1.1).min(c.c2.1);
             s_max_y = s_max_y.max(c.c1.1).max(c.c2.1);
         }
-
         let center = ((s_min_x + s_max_x) * 0.5, (s_min_y + s_max_y) * 0.5);
 
         panel_geos.push(PanelGeo {
+            panel_idx: idx,
             id: panel.id.clone(),
-            name: panel.name.clone(),
-            fabric: panel.fabric.clone(),
-            points: shifted,
-            curves: shifted_curves,
-            internal_lines: shifted_internal_lines,
-            holes: shifted_holes,
+            points,
+            edge_names,
+            curves,
+            internal_lines,
+            holes,
             min_x: s_min_x,
             min_y: s_min_y,
             max_x: s_max_x,
@@ -2122,277 +5033,701 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
             center,
             grain_deg: panel.grain_degrees,
             is_selected,
+            is_connected,
         });
     }
 
-    let global_min_x = panel_geos.iter().map(|p| p.min_x).fold(0.0_f64, f64::min);
-    let global_max_x = panel_geos.iter().map(|p| p.max_x).fold(0.6_f64, f64::max);
-    let global_min_y = panel_geos.iter().map(|p| p.min_y).fold(0.0_f64, f64::min);
-    let global_max_y = panel_geos.iter().map(|p| p.max_y).fold(0.6_f64, f64::max);
-
-    // Isotropic aspect ratio with interactive pan & zoom
-    let span_x = (global_max_x - global_min_x).max(0.2);
-    let span_y = (global_max_y - global_min_y).max(0.2);
-    let max_span = span_x.max(span_y).max(0.4);
-    let center_x = (global_min_x + global_max_x) * 0.5;
-    let center_y = (global_min_y + global_max_y) * 0.5;
-    let margin = (max_span * 0.12).max(0.06);
-    let half_span = max_span * 0.5 + margin;
-
-    let zoom = state.board_2d_zoom.clamp(0.2, 10.0);
-    let view_span = (half_span * 2.0) / zoom;
-    let vb_min_x = center_x + state.board_2d_pan.0 - view_span * 0.5;
-    let vb_min_y = center_y + state.board_2d_pan.1 - view_span * 0.5;
-    let vb_w = view_span;
-    let vb_h = view_span;
+    // Millimetre SVG user space gives cssimpler flatten_cubic ~0.25 mm accuracy and crisp geometry
+    let (vb_min_x_m, vb_min_y_m, view_span_m) = compute_2d_view_box_m(state);
+    let vb_min_x = vb_min_x_m * 1000.0;
+    let vb_min_y = vb_min_y_m * 1000.0;
+    let vb_w = view_span_m * 1000.0;
+    let vb_h = vb_w;
     let view_box = format!("{vb_min_x:.3} {vb_min_y:.3} {vb_w:.3} {vb_h:.3}");
 
-    // Theme-matched styling colors
+    let (_canvas_rect, svg_rect) = compute_2d_viewport_rects(state);
+    let px = (vb_w / (svg_rect.w.max(1.0) as f64)).max(0.25);
+
+    // Theme colors (use rgba directly since cssimpler ignores stroke-opacity)
     let is_dark = state.theme == Theme::Dark;
     let bg_color = if is_dark { "#0d0f17" } else { "#f8fafc" };
     let grid_minor = if is_dark { "#161c28" } else { "#e2e8f0" };
-    let grid_major = if is_dark { "#253147" } else { "#cbd5e1" };
+    let grid_major = if is_dark { "#232e42" } else { "#cbd5e1" };
+    let origin_color = if is_dark {
+        "rgba(56, 189, 248, 0.28)"
+    } else {
+        "rgba(37, 99, 235, 0.24)"
+    };
     let unsel_stroke = if is_dark { "#38bdf8" } else { "#2563eb" };
-    let unsel_fill = if is_dark { "rgba(56, 189, 248, 0.08)" } else { "rgba(37, 99, 235, 0.06)" };
+    let unsel_fill = if is_dark {
+        "rgba(56, 189, 248, 0.08)"
+    } else {
+        "rgba(37, 99, 235, 0.06)"
+    };
     let sel_stroke = if is_dark { "#f59e0b" } else { "#d97706" };
-    let sel_fill = if is_dark { "rgba(245, 158, 11, 0.18)" } else { "rgba(217, 119, 6, 0.14)" };
-    let badge_fill = if is_dark { "rgba(15, 23, 42, 0.90)" } else { "rgba(255, 255, 255, 0.92)" };
-    let badge_border = if is_dark { "#334155" } else { "#cbd5e1" };
-    let grain_color = if is_dark { "#60a5fa" } else { "#3b82f6" };
+    let sel_fill = if is_dark {
+        "rgba(245, 158, 11, 0.14)"
+    } else {
+        "rgba(217, 119, 6, 0.11)"
+    };
+    let conn_fill = "rgba(16, 185, 129, 0.10)";
+    let handle_color = if is_dark { "#38bdf8" } else { "#0284c7" };
+    let handle_soft = if is_dark {
+        "rgba(56, 189, 248, 0.45)"
+    } else {
+        "rgba(2, 132, 199, 0.40)"
+    };
+    let vertex_fill = if is_dark { "#0f172a" } else { "#ffffff" };
+    let grain_color = if is_dark {
+        "rgba(96, 165, 250, 0.72)"
+    } else {
+        "rgba(59, 130, 246, 0.70)"
+    };
+    let accent_gold = "#facc15";
+    let accent_emerald = "#10b981";
+    let hover_cyan = "#7dd3fc";
 
     // Background rect
     nodes.push(ui! {
-        <rect x={format!("{vb_min_x:.3}")} y={format!("{vb_min_y:.3}")} width={format!("{vb_w:.3}")} height={format!("{vb_h:.3}")} fill={bg_color} />
+        <rect x={format!("{vb_min_x:.2}")} y={format!("{vb_min_y:.2}")} width={format!("{vb_w:.2}")} height={format!("{vb_h:.2}")} fill={bg_color} />
     });
 
-    // Drafting grid (minor 0.10m / 100mm, major 0.50m / 500mm)
-    let grid_step = 0.10_f64;
+    // Drafting grid (minor 100 mm, major 500 mm)
+    let grid_step = 100.0_f64;
     let start_gx = (vb_min_x / grid_step).floor() * grid_step;
     let mut gx = start_gx;
     while gx <= vb_min_x + vb_w {
-        let is_major = (gx.abs() % 0.5).abs() < 0.01;
+        let is_major = ((gx / 500.0) - (gx / 500.0).round()).abs() < 1e-4;
         let stroke = if is_major { grid_major } else { grid_minor };
-        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
-        let pts = format!("{gx:.3},{:.3} {gx:.3},{:.3}", vb_min_y, vb_min_y + vb_h);
+        let sw = if is_major { 1.1 * px } else { 0.7 * px };
+        let pts = format!("{gx:.1},{:.1} {gx:.1},{:.1}", vb_min_y, vb_min_y + vb_h);
         nodes.push(ui! {
-            <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
+            <polyline points={pts} fill="none" stroke={stroke} stroke-width={format!("{sw:.2}")} />
         });
         gx += grid_step;
     }
     let start_gy = (vb_min_y / grid_step).floor() * grid_step;
     let mut gy = start_gy;
     while gy <= vb_min_y + vb_h {
-        let is_major = (gy.abs() % 0.5).abs() < 0.01;
+        let is_major = ((gy / 500.0) - (gy / 500.0).round()).abs() < 1e-4;
         let stroke = if is_major { grid_major } else { grid_minor };
-        let sw = if is_major { vb_w * 0.0025 } else { vb_w * 0.0012 };
-        let pts = format!("{:.3},{gy:.3} {:.3},{gy:.3}", vb_min_x, vb_min_x + vb_w);
+        let sw = if is_major { 1.1 * px } else { 0.7 * px };
+        let pts = format!("{:.1},{gy:.1} {:.1},{gy:.1}", vb_min_x, vb_min_x + vb_w);
         nodes.push(ui! {
-            <polyline points={pts} stroke={stroke} stroke-width={format!("{sw:.4}")} />
+            <polyline points={pts} fill="none" stroke={stroke} stroke-width={format!("{sw:.2}")} />
         });
         gy += grid_step;
     }
 
-    // Origin crosshair reference
+    // Origin axes reference
     if vb_min_x <= 0.0 && vb_min_x + vb_w >= 0.0 {
         nodes.push(ui! {
-            <polyline points={format!("0.0,{:.3} 0.0,{:.3}", vb_min_y, vb_min_y + vb_h)} stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={format!("{:.4}", vb_w * 0.002)} stroke-opacity="0.3" />
+            <polyline points={format!("0.0,{:.1} 0.0,{:.1}", vb_min_y, vb_min_y + vb_h)} fill="none" stroke={origin_color} stroke-width={format!("{:.2}", 1.2 * px)} />
         });
     }
     if vb_min_y <= 0.0 && vb_min_y + vb_h >= 0.0 {
         nodes.push(ui! {
-            <polyline points={format!("{:.3},0.0 {:.3},0.0", vb_min_x, vb_min_x + vb_w)} stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={format!("{:.4}", vb_w * 0.002)} stroke-opacity="0.3" />
+            <polyline points={format!("{:.1},0.0 {:.1},0.0", vb_min_x, vb_min_x + vb_w)} fill="none" stroke={origin_color} stroke-width={format!("{:.2}", 1.2 * px)} />
         });
     }
 
+    let fillet_previews = active_fillet_previews(state);
+    let corner_tool_active = state.active_2d_tool == "Corner";
+
     // Panels rendering
     for p in &panel_geos {
-        let stroke_color = if p.is_selected { sel_stroke } else { unsel_stroke };
-        let fill_color = if p.is_selected { sel_fill } else { unsel_fill };
-        let stroke_w = if p.is_selected {
-            vb_w * 0.0055
+        let is_hovered_panel =
+            matches!(state.hovered_2d, Some(Hover2dTarget::Panel(i)) if i == p.panel_idx);
+        let stroke_color = if p.is_selected {
+            sel_stroke
+        } else if p.is_connected {
+            accent_emerald
+        } else if is_hovered_panel {
+            hover_cyan
         } else {
-            vb_w * 0.0028
+            unsel_stroke
+        };
+        let fill_color = if p.is_selected {
+            sel_fill
+        } else if p.is_connected {
+            conn_fill
+        } else {
+            unsel_fill
+        };
+        let stroke_w = if p.is_selected {
+            2.0 * px
+        } else if p.is_connected {
+            1.8 * px
+        } else {
+            1.3 * px
+        };
+        let piece_class = if p.is_selected {
+            "pattern-piece active"
+        } else if p.is_connected {
+            "pattern-piece connected"
+        } else {
+            "pattern-piece"
         };
 
-        // Construct SVG path following straight edges and cubic Bézier curves
+        // Outer boundary path (with cubic Bézier curves)
         let n_pts = p.points.len();
         if n_pts > 0 {
-            let mut path_d = String::new();
-            let (x0, y0) = p.points[0];
-            path_d.push_str(&format!("M {x0:.4},{y0:.4}"));
-
+            let mut path_d = format!("M {:.2},{:.2}", p.points[0].0, p.points[0].1);
             for i in 0..n_pts {
                 let next_idx = (i + 1) % n_pts;
                 let (next_x, next_y) = p.points[next_idx];
                 if let Some(c) = p.curves.iter().find(|c| c.edge_idx == i) {
                     path_d.push_str(&format!(
-                        " C {:.4},{:.4} {:.4},{:.4} {next_x:.4},{next_y:.4}",
+                        " C {:.2},{:.2} {:.2},{:.2} {next_x:.2},{next_y:.2}",
                         c.c1.0, c.c1.1, c.c2.0, c.c2.1
                     ));
                 } else {
-                    path_d.push_str(&format!(" L {next_x:.4},{next_y:.4}"));
+                    path_d.push_str(&format!(" L {next_x:.2},{next_y:.2}"));
                 }
             }
             path_d.push_str(" Z");
 
             nodes.push(ui! {
-                <path d={path_d} fill={fill_color} stroke={stroke_color} stroke-width={format!("{stroke_w:.4}")} class="pattern-piece" />
+                <path d={path_d} fill={fill_color} stroke={stroke_color} stroke-width={format!("{stroke_w:.2}")} class={piece_class} />
             });
         }
 
-        // Internal lines (fold lines, darts, styling marks)
-        for line_pts in &p.internal_lines {
-            let mut l_pts_str = String::new();
-            for (x, y) in line_pts {
-                if !l_pts_str.is_empty() {
-                    l_pts_str.push(' ');
-                }
-                l_pts_str.push_str(&format!("{x:.4},{y:.4}"));
+        // Hovered, selected, or connected partner edge overlay
+        for (edge_idx, edge_name) in p.edge_names.iter().enumerate() {
+            let is_primary_sel_edge = state
+                .selected_2d_edge
+                .as_ref()
+                .is_some_and(|(pid, en)| pid == &p.id && en == edge_name);
+            let is_conn_sel_edge = !is_primary_sel_edge
+                && connected
+                    .selected_edges
+                    .contains(&(p.id.clone(), edge_name.clone()));
+            let is_hov_edge = connected
+                .hovered_edges
+                .contains(&(p.id.clone(), edge_name.clone()));
+            if is_primary_sel_edge || is_conn_sel_edge || is_hov_edge {
+                let (a_x, a_y) = p.points[edge_idx];
+                let (b_x, b_y) = p.points[(edge_idx + 1) % n_pts];
+                let seg_d = if let Some(c) = p.curves.iter().find(|c| c.edge_idx == edge_idx) {
+                    format!(
+                        "M {a_x:.2},{a_y:.2} C {:.2},{:.2} {:.2},{:.2} {b_x:.2},{b_y:.2}",
+                        c.c1.0, c.c1.1, c.c2.0, c.c2.1
+                    )
+                } else {
+                    format!("M {a_x:.2},{a_y:.2} L {b_x:.2},{b_y:.2}")
+                };
+                let e_col = if is_primary_sel_edge {
+                    accent_gold
+                } else if is_conn_sel_edge {
+                    accent_emerald
+                } else {
+                    hover_cyan
+                };
+                let e_w = if is_primary_sel_edge {
+                    3.0 * px
+                } else if is_conn_sel_edge {
+                    2.6 * px
+                } else {
+                    2.4 * px
+                };
+                nodes.push(ui! {
+                    <path d={seg_d} fill="none" stroke={e_col} stroke-width={format!("{e_w:.2}")} />
+                });
             }
-            nodes.push(ui! {
-                <polyline points={l_pts_str} fill="none" stroke={if is_dark { "#64748b" } else { "#94a3b8" }} stroke-dasharray={format!("{:.4},{:.4}", vb_w * 0.006, vb_w * 0.004)} stroke-width={format!("{:.4}", vb_w * 0.002)} />
-            });
+        }
+
+        // Internal lines (dashed M..L path)
+        let il_col = if is_dark { "#64748b" } else { "#94a3b8" };
+        for line_pts in &p.internal_lines {
+            let d = dashed_path_d(line_pts, 5.0 * px, 4.0 * px);
+            if !d.is_empty() {
+                nodes.push(ui! {
+                    <path d={d} fill="none" stroke={il_col} stroke-width={format!("{:.2}", 1.1 * px)} />
+                });
+            }
         }
 
         // Holes
         for hole_pts in &p.holes {
-            let mut h_pts_str = String::new();
-            for (x, y) in hole_pts {
-                if !h_pts_str.is_empty() {
-                    h_pts_str.push(' ');
-                }
-                h_pts_str.push_str(&format!("{x:.4},{y:.4}"));
-            }
+            let h_pts_str: String = hole_pts
+                .iter()
+                .map(|(x, y)| format!("{x:.2},{y:.2}"))
+                .collect::<Vec<_>>()
+                .join(" ");
             nodes.push(ui! {
-                <polygon points={h_pts_str} fill={bg_color} stroke={stroke_color} stroke-width={format!("{:.4}", stroke_w * 0.8)} />
+                <polygon points={h_pts_str} fill={bg_color} stroke={stroke_color} stroke-width={format!("{:.2}", 1.1 * px)} />
             });
         }
 
-        // Bézier Control Handles & Tangent Stalks (for selected piece)
-        if p.is_selected {
-            for c in &p.curves {
-                let (p0_x, p0_y) = p.points[c.edge_idx];
-                let (p3_x, p3_y) = p.points[(c.edge_idx + 1) % n_pts];
+        // Bézier Indicators, Tangent Stalks & Handles
+        let show_full_handles = p.is_selected
+            || p.is_connected
+            || matches!(
+                state.hovered_2d,
+                Some(Hover2dTarget::BezierHandle { panel_idx, .. }) if panel_idx == p.panel_idx
+            );
+        for c in &p.curves {
+            let (p0_x, p0_y) = p.points[c.edge_idx];
+            let (p3_x, p3_y) = p.points[(c.edge_idx + 1) % n_pts];
+            let stalk_col = if show_full_handles {
+                handle_color
+            } else {
+                handle_soft
+            };
+            let d1 = dashed_path_d(&[(p0_x, p0_y), c.c1], 3.5 * px, 2.5 * px);
+            let d2 = dashed_path_d(&[(p3_x, p3_y), c.c2], 3.5 * px, 2.5 * px);
+            nodes.push(ui! {
+                <path d={d1} fill="none" stroke={stalk_col} stroke-width={format!("{:.2}", 1.0 * px)} />
+            });
+            nodes.push(ui! {
+                <path d={d2} fill="none" stroke={stalk_col} stroke-width={format!("{:.2}", 1.0 * px)} />
+            });
 
-                let stalk1 = format!("{p0_x:.4},{p0_y:.4} {:.4},{:.4}", c.c1.0, c.c1.1);
-                let stalk2 = format!("{p3_x:.4},{p3_y:.4} {:.4},{:.4}", c.c2.0, c.c2.1);
-                let stalk_w = format!("{:.4}", vb_w * 0.0016);
-                let dash = format!("{:.4},{:.4}", vb_w * 0.004, vb_w * 0.003);
+            let h0_active = matches!(
+                state.hovered_2d,
+                Some(Hover2dTarget::BezierHandle { panel_idx, edge_idx, handle_index: 0 })
+                    if panel_idx == p.panel_idx && edge_idx == c.edge_idx
+            );
+            let h1_active = matches!(
+                state.hovered_2d,
+                Some(Hover2dTarget::BezierHandle { panel_idx, edge_idx, handle_index: 1 })
+                    if panel_idx == p.panel_idx && edge_idx == c.edge_idx
+            );
+            let hr0 = if h0_active {
+                4.8 * px
+            } else if show_full_handles {
+                3.6 * px
+            } else {
+                2.5 * px
+            };
+            let hr1 = if h1_active {
+                4.8 * px
+            } else if show_full_handles {
+                3.6 * px
+            } else {
+                2.5 * px
+            };
+            let h0_stroke = if h0_active { accent_gold } else { "#ffffff" };
+            let h1_stroke = if h1_active { accent_gold } else { "#ffffff" };
 
-                nodes.push(ui! {
-                    <polyline points={stalk1} fill="none" stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={stalk_w.clone()} stroke-dasharray={dash.clone()} />
-                });
-                nodes.push(ui! {
-                    <polyline points={stalk2} fill="none" stroke={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke-width={stalk_w} stroke-dasharray={dash} />
-                });
-
-                // Tangent control knobs
-                let handle_r = format!("{:.4}", vb_w * 0.006);
-                let handle_sw = format!("{:.4}", vb_w * 0.0015);
-                nodes.push(ui! {
-                    <circle cx={format!("{:.4}", c.c1.0)} cy={format!("{:.4}", c.c1.1)} r={handle_r.clone()} fill={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke="#ffffff" stroke-width={handle_sw.clone()} class="bezier-handle" />
-                });
-                nodes.push(ui! {
-                    <circle cx={format!("{:.4}", c.c2.0)} cy={format!("{:.4}", c.c2.1)} r={handle_r} fill={if is_dark { "#38bdf8" } else { "#2563eb" }} stroke="#ffffff" stroke-width={handle_sw} class="bezier-handle" />
-                });
-            }
+            nodes.push(ui! {
+                <circle cx={format!("{:.2}", c.c1.0)} cy={format!("{:.2}", c.c1.1)} r={format!("{hr0:.2}")} fill={stalk_col} stroke={h0_stroke} stroke-width={format!("{:.2}", 1.1 * px)} class="bezier-handle" />
+            });
+            nodes.push(ui! {
+                <circle cx={format!("{:.2}", c.c2.0)} cy={format!("{:.2}", c.c2.1)} r={format!("{hr1:.2}")} fill={stalk_col} stroke={h1_stroke} stroke-width={format!("{:.2}", 1.1 * px)} class="bezier-handle" />
+            });
         }
 
-        // Contour Edge Points (CAD vertices)
-        let vertex_r = format!(
-            "{:.4}",
-            if p.is_selected {
-                vb_w * 0.0065
-            } else {
-                vb_w * 0.0045
-            }
-        );
-        let vertex_sw = format!(
-            "{:.4}",
-            if p.is_selected {
-                vb_w * 0.0025
-            } else {
-                vb_w * 0.0015
-            }
-        );
-        let vertex_stroke = if p.is_selected { sel_stroke } else { unsel_stroke };
+        // Sleek Corner & Curve Anchor Indicators (with connected weld highlights)
+        let base_stroke = if p.is_selected {
+            sel_stroke
+        } else if p.is_connected {
+            accent_emerald
+        } else {
+            unsel_stroke
+        };
+        let v_sw = if p.is_selected || p.is_connected {
+            1.4 * px
+        } else {
+            1.1 * px
+        };
 
-        for (pt_x, pt_y) in &p.points {
-            nodes.push(ui! {
-                <circle cx={format!("{pt_x:.4}")} cy={format!("{pt_y:.4}")} r={vertex_r.clone()} fill="#ffffff" stroke={vertex_stroke} stroke-width={vertex_sw.clone()} class="cad-vertex" />
-            });
+        for (pt_idx, &(pt_x, pt_y)) in p.points.iter().enumerate() {
+            let prev_idx = (pt_idx + n_pts - 1) % n_pts;
+            let has_incident_curve = p
+                .curves
+                .iter()
+                .any(|c| c.edge_idx == pt_idx || c.edge_idx == prev_idx);
+
+            let is_primary_sel_pt = state
+                .selected_2d_point
+                .as_ref()
+                .is_some_and(|(pid, pi)| pid == &p.id && *pi == pt_idx);
+            let is_conn_sel_pt =
+                !is_primary_sel_pt && connected.selected_corners.contains(&(p.id.clone(), pt_idx));
+            let is_hov_pt = connected.hovered_corners.contains(&(p.id.clone(), pt_idx));
+
+            // Corner tool highlight ring on roundable vertices of active/connected/hovered panel
+            if corner_tool_active
+                && (p.is_selected || p.is_connected || is_hovered_panel || is_hov_pt)
+                && let Some(edge_name) = p.edge_names.get(pt_idx)
+                && let Ok(mr) = connected_fillet_max_radius_m(template, &p.id, edge_name)
+                && mr > 0.0005
+                && validate_fillet_preview(
+                    template,
+                    &p.id,
+                    edge_name,
+                    (state.corner_radius_mm / 1000.0).min(mr * 0.5).max(0.0005),
+                    CIRCLE_TENSION,
+                )
+                .is_ok()
+            {
+                nodes.push(ui! {
+                    <circle cx={format!("{pt_x:.2}")} cy={format!("{pt_y:.2}")} r={format!("{:.2}", 5.0 * px)} fill="none" stroke={accent_emerald} stroke-width={format!("{:.2}", 1.2 * px)} />
+                });
+            }
+
+            if is_primary_sel_pt {
+                nodes.push(ui! {
+                    <circle cx={format!("{pt_x:.2}")} cy={format!("{pt_y:.2}")} r={format!("{:.2}", 6.4 * px)} fill="none" stroke={accent_gold} stroke-width={format!("{:.2}", 1.6 * px)} />
+                });
+            } else if is_conn_sel_pt {
+                nodes.push(ui! {
+                    <circle cx={format!("{pt_x:.2}")} cy={format!("{pt_y:.2}")} r={format!("{:.2}", 6.0 * px)} fill="none" stroke={accent_emerald} stroke-width={format!("{:.2}", 1.5 * px)} />
+                });
+            } else if is_hov_pt {
+                nodes.push(ui! {
+                    <circle cx={format!("{pt_x:.2}")} cy={format!("{pt_y:.2}")} r={format!("{:.2}", 5.5 * px)} fill="none" stroke={hover_cyan} stroke-width={format!("{:.2}", 1.3 * px)} />
+                });
+            }
+
+            let v_fill = if is_primary_sel_pt {
+                accent_gold
+            } else if is_conn_sel_pt {
+                accent_emerald
+            } else {
+                vertex_fill
+            };
+            let v_stroke = if is_primary_sel_pt {
+                accent_gold
+            } else if is_conn_sel_pt {
+                accent_emerald
+            } else {
+                base_stroke
+            };
+
+            if has_incident_curve {
+                // Smooth / curved anchor indicator (sleek small circle)
+                let r = if is_primary_sel_pt || is_conn_sel_pt || is_hov_pt {
+                    3.2 * px
+                } else if p.is_selected || p.is_connected {
+                    2.5 * px
+                } else {
+                    1.9 * px
+                };
+                nodes.push(ui! {
+                    <circle cx={format!("{pt_x:.2}")} cy={format!("{pt_y:.2}")} r={format!("{r:.2}")} fill={v_fill} stroke={v_stroke} stroke-width={format!("{v_sw:.2}")} class="cad-vertex" />
+                });
+            } else {
+                // Sharp G0 CAD corner indicator (crisp small square)
+                let half = if is_primary_sel_pt || is_conn_sel_pt || is_hov_pt {
+                    3.0 * px
+                } else if p.is_selected || p.is_connected {
+                    2.4 * px
+                } else {
+                    1.8 * px
+                };
+                nodes.push(ui! {
+                    <rect x={format!("{:.2}", pt_x - half)} y={format!("{:.2}", pt_y - half)} width={format!("{:.2}", half * 2.0)} height={format!("{:.2}", half * 2.0)} fill={v_fill} stroke={v_stroke} stroke-width={format!("{v_sw:.2}")} class="cad-vertex" />
+                });
+            }
         }
 
         // Grainline with bidirectional arrowheads
         let rad = p.grain_deg.to_radians();
-        let grain_len = ((p.max_x - p.min_x).min(p.max_y - p.min_y) * 0.35).max(0.06);
+        let grain_len = ((p.max_x - p.min_x).min(p.max_y - p.min_y) * 0.28).max(40.0);
         let (cx, cy) = p.center;
         let gx0 = cx - grain_len * rad.sin();
         let gy0 = cy - grain_len * rad.cos();
         let gx1 = cx + grain_len * rad.sin();
         let gy1 = cy + grain_len * rad.cos();
-        let g_pts = format!("{gx0:.4},{gy0:.4} {gx1:.4},{gy1:.4}");
+        let g_pts = format!("{gx0:.2},{gy0:.2} {gx1:.2},{gy1:.2}");
         nodes.push(ui! {
-            <polyline points={g_pts} stroke={grain_color} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
+            <polyline points={g_pts} fill="none" stroke={grain_color} stroke-width={format!("{:.2}", 1.2 * px)} />
         });
-
-        // Arrowheads for grainline
-        let wing = vb_w * 0.008;
+        let wing = 5.0 * px;
         let w_cos = rad.cos() * wing;
         let w_sin = rad.sin() * wing;
         let ah1 = format!(
-            "{:.4},{:.4} {gx1:.4},{gy1:.4} {:.4},{:.4}",
+            "{:.2},{:.2} {gx1:.2},{gy1:.2} {:.2},{:.2}",
             gx1 - w_sin - w_cos,
             gy1 - w_cos + w_sin,
             gx1 - w_sin + w_cos,
             gy1 - w_cos - w_sin
         );
-        nodes.push(ui! {
-            <polyline points={ah1} fill="none" stroke={grain_color} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
-        });
         let ah0 = format!(
-            "{:.4},{:.4} {gx0:.4},{gy0:.4} {:.4},{:.4}",
+            "{:.2},{:.2} {gx0:.2},{gy0:.2} {:.2},{:.2}",
             gx0 + w_sin - w_cos,
             gy0 + w_cos + w_sin,
             gx0 + w_sin + w_cos,
             gy0 + w_cos - w_sin
         );
         nodes.push(ui! {
-            <polyline points={ah0} fill="none" stroke={grain_color} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
+            <polyline points={ah1} fill="none" stroke={grain_color} stroke-width={format!("{:.2}", 1.2 * px)} />
+        });
+        nodes.push(ui! {
+            <polyline points={ah0} fill="none" stroke={grain_color} stroke-width={format!("{:.2}", 1.2 * px)} />
         });
 
-        // Center CAD Piece Badge and orientation crosshair
-        let badge_w = vb_w * 0.075;
-        let badge_h = vb_w * 0.038;
-        let bx = cx - badge_w * 0.5;
-        let by = cy - badge_h * 0.5;
-        let badge_border_color = if p.is_selected { sel_stroke } else { badge_border };
+        // Clean center crosshair
+        let ch_len = 5.5 * px;
+        let ch_stroke = if p.is_selected {
+            sel_stroke
+        } else if p.is_connected {
+            accent_emerald
+        } else {
+            grid_major
+        };
         nodes.push(ui! {
-            <rect x={format!("{bx:.4}")} y={format!("{by:.4}")} width={format!("{badge_w:.4}")} height={format!("{badge_h:.4}")} fill={badge_fill} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.002)} rx={format!("{:.4}", vb_w * 0.005)} ry={format!("{:.4}", vb_w * 0.005)} />
-        });
-        let ch_len = badge_w * 0.28;
-        let ch_h = format!("{:.4},{cy:.4} {:.4},{cy:.4}", cx - ch_len, cx + ch_len);
-        let ch_v = format!("{cx:.4},{:.4} {cx:.4},{:.4}", cy - ch_len, cy + ch_len);
-        nodes.push(ui! {
-            <polyline points={ch_h} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.0018)} />
+            <polyline points={format!("{:.2},{cy:.2} {:.2},{cy:.2}", cx - ch_len, cx + ch_len)} fill="none" stroke={ch_stroke} stroke-width={format!("{:.2}", 1.0 * px)} />
         });
         nodes.push(ui! {
-            <polyline points={ch_v} stroke={badge_border_color} stroke-width={format!("{:.4}", vb_w * 0.0018)} />
+            <polyline points={format!("{cx:.2},{:.2} {cx:.2},{:.2}", cy - ch_len, cy + ch_len)} fill="none" stroke={ch_stroke} stroke-width={format!("{:.2}", 1.0 * px)} />
         });
     }
 
-    // Seam links
-    for seam in &state.project.template.seams {
+    // Welded / sewn corner link lines across connected pieces
+    for ((pid_a, pt_a), (pid_b, pt_b)) in &connected.weld_links {
+        if let (Some(ga), Some(gb)) = (
+            panel_geos.iter().find(|g| &g.id == pid_a),
+            panel_geos.iter().find(|g| &g.id == pid_b),
+        ) && let (Some(&pa), Some(&pb)) = (ga.points.get(*pt_a), gb.points.get(*pt_b))
+        {
+            let wd = dashed_path_d(&[pa, pb], 4.0 * px, 3.0 * px);
+            if !wd.is_empty() {
+                nodes.push(ui! {
+                    <path d={wd} fill="none" stroke="rgba(250, 204, 21, 0.72)" stroke-width={format!("{:.2}", 1.4 * px)} class="weld-link" />
+                });
+            }
+        }
+    }
+
+    // Live Corner Fillet Preview Overlays (simultaneously across all connected pieces)
+    for (panel_idx, _edge_name, preview, _eff_r) in fillet_previews {
+        if let Ok(arc_local) = curves::flatten(
+            [
+                preview.start,
+                preview.control_1,
+                preview.control_2,
+                preview.end,
+            ],
+            curves::FLATNESS_M,
+        ) {
+            let arc_mm: Vec<(f64, f64)> = arc_local
+                .into_iter()
+                .map(|pt| to_mm(panel_to_board_pt(template, panel_idx, pt)))
+                .collect();
+            let arc_d = dashed_path_d(&arc_mm, 4.5 * px, 2.5 * px);
+            if !arc_d.is_empty() {
+                nodes.push(ui! {
+                    <path d={arc_d} fill="none" stroke={accent_emerald} stroke-width={format!("{:.2}", 2.4 * px)} />
+                });
+            }
+        }
+        let s_mm = to_mm(panel_to_board_pt(template, panel_idx, preview.start));
+        let e_mm = to_mm(panel_to_board_pt(template, panel_idx, preview.end));
+        let c_mm = to_mm(panel_to_board_pt(template, panel_idx, preview.corner));
+        let k_mm = to_mm(panel_to_board_pt(
+            template,
+            panel_idx,
+            fillet_drag_handle_local(&preview),
+        ));
+        let guide_d = dashed_path_d(&[c_mm, k_mm], 3.0 * px, 2.5 * px);
+        if !guide_d.is_empty() {
+            nodes.push(ui! {
+                <path d={guide_d} fill="none" stroke="rgba(16, 185, 129, 0.55)" stroke-width={format!("{:.2}", 1.0 * px)} />
+            });
+        }
+        nodes.push(ui! {
+            <circle cx={format!("{:.2}", s_mm.0)} cy={format!("{:.2}", s_mm.1)} r={format!("{:.2}", 2.8 * px)} fill={accent_emerald} stroke="#ffffff" stroke-width={format!("{:.2}", 0.9 * px)} />
+        });
+        nodes.push(ui! {
+            <circle cx={format!("{:.2}", e_mm.0)} cy={format!("{:.2}", e_mm.1)} r={format!("{:.2}", 2.8 * px)} fill={accent_emerald} stroke="#ffffff" stroke-width={format!("{:.2}", 0.9 * px)} />
+        });
+        let knob_active = matches!(
+            state.hovered_2d,
+            Some(Hover2dTarget::CornerPreviewHandle { panel_idx: hi, .. }) if hi == panel_idx
+        ) || matches!(state.drag_2d, Some(Drag2d::CornerRadius { .. }));
+        nodes.push(ui! {
+            <circle cx={format!("{:.2}", k_mm.0)} cy={format!("{:.2}", k_mm.1)} r={format!("{:.2}", if knob_active { 5.4 * px } else { 4.4 * px })} fill={accent_emerald} stroke={if knob_active { accent_gold } else { "#ffffff" }} stroke-width={format!("{:.2}", 1.4 * px)} class="bezier-handle" />
+        });
+    }
+
+    // Seam links between actual sewn boundary midpoints
+    let edge_anchor_mm = |panel_id: &str, edge: Option<&str>, fallback: (f64, f64)| -> (f64, f64) {
+        if let Some(edge_name) = edge
+            && let Some(pidx) = panels.iter().position(|p| p.id == panel_id)
+            && let Some(ref poly) = panels[pidx].polygon
+            && let Some(eidx) = poly.edges.iter().position(|e| e == edge_name)
+            && let Ok(pts) = poly.edge_points(eidx)
+            && pts.len() >= 2
+        {
+            let total: f64 = pts.windows(2).map(|w| w[0].distance(w[1])).sum();
+            let mut target = total * 0.5;
+            for pair in pts.windows(2) {
+                let len = pair[0].distance(pair[1]);
+                if len > 1e-12 && target <= len {
+                    let mid = pair[0].lerp(pair[1], target / len);
+                    return to_mm(panel_to_board_pt(template, pidx, mid));
+                }
+                target -= len;
+            }
+            return to_mm(panel_to_board_pt(template, pidx, pts[pts.len() / 2]));
+        }
+        fallback
+    };
+
+    for seam in &template.seams {
         let p_a = panel_geos.iter().find(|p| p.id == seam.a.panel);
         let p_b = panel_geos.iter().find(|p| p.id == seam.b.panel);
         if let (Some(a), Some(b)) = (p_a, p_b) {
-            let pts = format!(
-                "{:.4},{:.4} {:.4},{:.4}",
-                a.center.0, a.center.1, b.center.0, b.center.1
-            );
-            nodes.push(ui! {
-                <polyline points={pts} stroke="#10b981" stroke-dasharray={format!("{:.4},{:.4}", vb_w * 0.01, vb_w * 0.008)} stroke-width={format!("{:.4}", vb_w * 0.0025)} />
-            });
+            let pt_a = edge_anchor_mm(&a.id, seam.a.edge.as_deref(), a.center);
+            let pt_b = edge_anchor_mm(&b.id, seam.b.edge.as_deref(), b.center);
+            let d = dashed_path_d(&[pt_a, pt_b], 5.5 * px, 4.5 * px);
+            if !d.is_empty() {
+                nodes.push(ui! {
+                    <path d={d} fill="none" stroke="rgba(16, 185, 129, 0.55)" stroke-width={format!("{:.2}", 1.1 * px)} />
+                });
+            }
+        }
+    }
+
+    // Active 2D tool draft overlays (Rect, Pen, Freehand, InternalLine, Measure, Sew)
+    if let Some(ref draft) = state.draft_2d {
+        match draft {
+            ToolDraft2d::Rect {
+                start_board_m,
+                current_board_m,
+            } => {
+                let a = to_mm(*start_board_m);
+                let b = to_mm(*current_board_m);
+                let rx = a.0.min(b.0);
+                let ry = a.1.min(b.1);
+                let rw = (a.0 - b.0).abs().max(0.5);
+                let rh = (a.1 - b.1).abs().max(0.5);
+                let outline = vec![
+                    (rx, ry),
+                    (rx + rw, ry),
+                    (rx + rw, ry + rh),
+                    (rx, ry + rh),
+                    (rx, ry),
+                ];
+                let d = dashed_path_d(&outline, 5.0 * px, 3.0 * px);
+                nodes.push(ui! {
+                    <rect x={format!("{rx:.2}")} y={format!("{ry:.2}")} width={format!("{rw:.2}")} height={format!("{rh:.2}")} fill="rgba(59, 130, 246, 0.14)" stroke="none" class="tool-draft-rect" />
+                });
+                if !d.is_empty() {
+                    nodes.push(ui! {
+                        <path d={d} fill="none" stroke={hover_cyan} stroke-width={format!("{:.2}", 1.8 * px)} />
+                    });
+                }
+            }
+            ToolDraft2d::Pen {
+                points_board_m,
+                hover_board_m,
+            } => {
+                let mut pts_mm: Vec<(f64, f64)> =
+                    points_board_m.iter().map(|&pt| to_mm(pt)).collect();
+                if let Some(h) = hover_board_m {
+                    pts_mm.push(to_mm(*h));
+                }
+                if pts_mm.len() >= 2 {
+                    let pts_str: String = pts_mm
+                        .iter()
+                        .map(|(x, y)| format!("{x:.2},{y:.2}"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    nodes.push(ui! {
+                        <polyline points={pts_str} fill="none" stroke={hover_cyan} stroke-width={format!("{:.2}", 1.8 * px)} class="tool-draft-pen" />
+                    });
+                }
+                for (idx, pt) in points_board_m.iter().enumerate() {
+                    let (px_mm, py_mm) = to_mm(*pt);
+                    let r = if idx == 0 { 4.2 * px } else { 3.0 * px };
+                    let fill = if idx == 0 { accent_emerald } else { hover_cyan };
+                    nodes.push(ui! {
+                        <circle cx={format!("{px_mm:.2}")} cy={format!("{py_mm:.2}")} r={format!("{r:.2}")} fill={fill} stroke="#ffffff" stroke-width={format!("{:.2}", 1.0 * px)} />
+                    });
+                }
+            }
+            ToolDraft2d::Freehand { samples_board_m } => {
+                if samples_board_m.len() >= 2 {
+                    let pts_str: String = samples_board_m
+                        .iter()
+                        .map(|&pt| {
+                            let m = to_mm(pt);
+                            format!("{:.2},{:.2}", m.0, m.1)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    nodes.push(ui! {
+                        <polyline points={pts_str} fill="none" stroke={accent_gold} stroke-width={format!("{:.2}", 1.8 * px)} class="tool-draft-freehand" />
+                    });
+                }
+            }
+            ToolDraft2d::Sew {
+                first_edge: Some((pid, ename)),
+            } => {
+                if let Some(pg) = panel_geos.iter().find(|g| &g.id == pid)
+                    && let Some(eidx) = pg.edge_names.iter().position(|e| e == ename)
+                {
+                    let (ax, ay) = pg.points[eidx];
+                    let (bx, by) = pg.points[(eidx + 1) % pg.points.len()];
+                    let seg_d = if let Some(c) = pg.curves.iter().find(|c| c.edge_idx == eidx) {
+                        format!(
+                            "M {ax:.2},{ay:.2} C {:.2},{:.2} {:.2},{:.2} {bx:.2},{by:.2}",
+                            c.c1.0, c.c1.1, c.c2.0, c.c2.1
+                        )
+                    } else {
+                        format!("M {ax:.2},{ay:.2} L {bx:.2},{by:.2}")
+                    };
+                    nodes.push(ui! {
+                        <path d={seg_d} fill="none" stroke={accent_gold} stroke-width={format!("{:.2}", 3.2 * px)} class="tool-draft-sew" />
+                    });
+                }
+            }
+            ToolDraft2d::Sew { first_edge: None } => {}
+            ToolDraft2d::InternalLine {
+                panel_id,
+                points_local_m,
+                hover_local_m,
+            } => {
+                if let Some(pidx) = panels.iter().position(|p| &p.id == panel_id) {
+                    let mut pts_mm: Vec<(f64, f64)> = points_local_m
+                        .iter()
+                        .map(|&pt| to_mm(panel_to_board_pt(template, pidx, pt)))
+                        .collect();
+                    if let Some(h) = hover_local_m {
+                        pts_mm.push(to_mm(panel_to_board_pt(template, pidx, *h)));
+                    }
+                    let d = dashed_path_d(&pts_mm, 4.0 * px, 3.0 * px);
+                    if !d.is_empty() {
+                        nodes.push(ui! {
+                            <path d={d} fill="none" stroke={accent_gold} stroke-width={format!("{:.2}", 1.8 * px)} class="tool-draft-internal" />
+                        });
+                    }
+                    for &(mx, my) in &pts_mm {
+                        nodes.push(ui! {
+                            <circle cx={format!("{mx:.2}")} cy={format!("{my:.2}")} r={format!("{:.2}", 2.8 * px)} fill={accent_gold} stroke="#ffffff" stroke-width={format!("{:.2}", 0.9 * px)} />
+                        });
+                    }
+                }
+            }
+            ToolDraft2d::Measure {
+                first_board_m,
+                second_board_m,
+                hover_board_m,
+                ..
+            } => {
+                if let Some(a) = first_board_m {
+                    let am = to_mm(*a);
+                    if let Some(b) = second_board_m.or(*hover_board_m) {
+                        let bm = to_mm(b);
+                        let d = dashed_path_d(&[am, bm], 4.0 * px, 3.0 * px);
+                        if !d.is_empty() {
+                            nodes.push(ui! {
+                                <path d={d} fill="none" stroke={hover_cyan} stroke-width={format!("{:.2}", 2.0 * px)} class="tool-draft-measure" />
+                            });
+                        }
+                        nodes.push(ui! {
+                            <circle cx={format!("{:.2}", bm.0)} cy={format!("{:.2}", bm.1)} r={format!("{:.2}", 3.5 * px)} fill={hover_cyan} stroke="#ffffff" stroke-width={format!("{:.2}", 1.0 * px)} />
+                        });
+                    }
+                    nodes.push(ui! {
+                        <circle cx={format!("{:.2}", am.0)} cy={format!("{:.2}", am.1)} r={format!("{:.2}", 3.8 * px)} fill={accent_gold} stroke="#ffffff" stroke-width={format!("{:.2}", 1.1 * px)} />
+                    });
+                }
+            }
         }
     }
 
@@ -2427,6 +5762,9 @@ pub fn create_runner_app<'a>(
 
     let usd_scene = cssimpler::renderer::gpu::usd::UsdScene::open(&preview_path)
         .expect("load generated USD viewport scene");
+    if let Err(err) = marvelous_cloth::usd_scene::init_viewport_camera(&usd_scene, &state.camera) {
+        state.status_message = format!("USD camera init error: {err}");
+    }
     state.usd_scene = Some(usd_scene.clone());
 
     let smoke = state.smoke;
@@ -2443,17 +5781,17 @@ pub fn create_runner_app<'a>(
     .with_continuous_updates(true)
     .with_exit_when(|state| state.smoke_done.get() || state.should_exit);
 
+    let cam_mode = cssimpler::renderer::gpu::usd::UsdCameraMode::Authored(
+        marvelous_cloth::usd_scene::VIEWPORT_CAMERA_PATH.into(),
+    );
     if smoke {
         app.with_gpu_viewport(
             "runner-viewport-3d-scene",
             Default::default(),
             move |init| {
                 let redraw = init.redraw.clone();
-                let renderer = cssimpler::renderer::gpu::usd::UsdRenderer::new(
-                    init,
-                    usd_scene,
-                    cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
-                )?;
+                let renderer =
+                    cssimpler::renderer::gpu::usd::UsdRenderer::new(init, usd_scene, cam_mode)?;
                 Ok(Box::new(super::usd_smoke::SmokeViewport {
                     renderer,
                     output: smoke_output,
@@ -2464,11 +5802,7 @@ pub fn create_runner_app<'a>(
             },
         )
     } else {
-        app.with_usd_viewport(
-            "runner-viewport-3d-scene",
-            usd_scene,
-            cssimpler::renderer::gpu::usd::UsdCameraMode::Orbit,
-        )
+        app.with_usd_viewport("runner-viewport-3d-scene", usd_scene, cam_mode)
     }
 }
 
@@ -2988,5 +6322,1149 @@ mod tests {
         // Test Tool Switching
         app.state_mut().active_2d_tool = "Corner".to_string();
         assert_eq!(app.state().active_2d_tool, "Corner");
+    }
+
+    fn board_to_screen_px(state: &CssRunnerState, board_m: DVec2) -> (f32, f32) {
+        let (_canvas, svg_rect) = compute_2d_viewport_rects(state);
+        let (vbx, vby, span) = compute_2d_view_box_m(state);
+        let u = ((board_m.x - vbx) / span) as f32;
+        let v = ((board_m.y - vby) / span) as f32;
+        (svg_rect.x + u * svg_rect.w, svg_rect.y + v * svg_rect.h)
+    }
+
+    fn pointer_move_ev(x: f32, y: f32) -> EngineEvent {
+        EngineEvent::PointerMoved {
+            position: cssimpler::renderer::PointerPosition { x, y },
+            modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+        }
+    }
+
+    fn pointer_btn_ev(down: bool) -> EngineEvent {
+        EngineEvent::PointerButton {
+            button: cssimpler::renderer::PointerButton::Primary,
+            state: if down {
+                cssimpler::renderer::ButtonState::Pressed
+            } else {
+                cssimpler::renderer::ButtonState::Released
+            },
+            modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+        }
+    }
+
+    #[test]
+    fn test_2d_svg_square_bounds_and_cad_bar() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out_square"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let state = CssRunnerState::new(project, scene, files, tx, latest);
+        let mut app = create_runner_app(state, &stylesheet);
+
+        let cad_control_ids = [
+            "#cad-undo-btn",
+            "#cad-redo-btn",
+            "#cad-corner-radius-mode",
+            "#cad-corner-shape-mode",
+            "#cad-radius-dec",
+            "#cad-radius-inc",
+            "#cad-tension-dec",
+            "#cad-tension-inc",
+            "#cad-apply-round-btn",
+            "#cad-rule-sharp",
+            "#cad-rule-smooth",
+            "#cad-rule-sym",
+            "#cad-curve-on-btn",
+            "#cad-curve-off-btn",
+        ];
+
+        for (frame_idx, (w, h, mode, view_act, clean_view, drawer_open)) in [
+            (
+                1600,
+                980,
+                ViewLayoutMode::Split,
+                ACT_RUN_VIEW_SPLIT,
+                false,
+                true,
+            ),
+            (
+                1600,
+                980,
+                ViewLayoutMode::Split,
+                ACT_RUN_VIEW_SPLIT,
+                true,
+                false,
+            ),
+            (
+                1600,
+                980,
+                ViewLayoutMode::TwoDOnly,
+                ACT_RUN_VIEW_2D,
+                false,
+                true,
+            ),
+            (
+                1280,
+                800,
+                ViewLayoutMode::Split,
+                ACT_RUN_VIEW_SPLIT,
+                false,
+                true,
+            ),
+            (
+                1024,
+                768,
+                ViewLayoutMode::Split,
+                ACT_RUN_VIEW_SPLIT,
+                false,
+                true,
+            ),
+            (
+                1024,
+                768,
+                ViewLayoutMode::Split,
+                ACT_RUN_VIEW_SPLIT,
+                false,
+                false,
+            ),
+            (
+                1024,
+                768,
+                ViewLayoutMode::TwoDOnly,
+                ACT_RUN_VIEW_2D,
+                false,
+                true,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            app.state_mut().window_size = (w as f32, h as f32);
+            app.state_mut().clean_view = clean_view;
+            app.state_mut().left_drawer_open = drawer_open;
+            app.state_mut()
+                .actions
+                .fetch_or(view_act, Ordering::Relaxed);
+            app.set_viewport(cssimpler::renderer::ViewportSize::new(w, h));
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: frame_idx as u64 + 1,
+            });
+            assert_eq!(app.state().layout_mode, mode);
+            let vp2d = app
+                .find_element_bounds_by_id("#viewport-2d")
+                .expect("#viewport-2d bounds");
+            let svg_bounds = app
+                .find_element_bounds_by_id("#svg-2d-board")
+                .expect("#svg-2d-board bounds");
+            let (_canvas_rect, expected_svg) = compute_2d_viewport_rects(app.state());
+            assert!(
+                (svg_bounds.width - svg_bounds.height).abs() < 1.5,
+                "rendered #svg-2d-board must be square at {w}x{h} ({mode:?}, clean={clean_view}, drawer={drawer_open}): {svg_bounds:?}"
+            );
+            assert!(
+                (svg_bounds.x - expected_svg.x).abs() < 3.0
+                    && (svg_bounds.y - expected_svg.y).abs() < 3.0
+                    && (svg_bounds.width - expected_svg.w).abs() < 3.0,
+                "CSS layout ({svg_bounds:?}) must align with hit-test rect ({expected_svg:?}) at {w}x{h}"
+            );
+            let bar_bounds = app
+                .find_element_bounds_by_id("#cad-2d-bar")
+                .expect("#cad-2d-bar bounds");
+            assert!(bar_bounds.width > 50.0 && bar_bounds.height >= 24.0);
+            assert!(
+                bar_bounds.x >= vp2d.x - 1.0
+                    && bar_bounds.x + bar_bounds.width <= vp2d.x + vp2d.width + 1.0
+                    && bar_bounds.y >= vp2d.y - 1.0
+                    && bar_bounds.y + bar_bounds.height <= vp2d.y + vp2d.height + 1.0,
+                "#cad-2d-bar must fit inside #viewport-2d at {w}x{h} (clean={clean_view}, drawer={drawer_open}): bar={bar_bounds:?} vp2d={vp2d:?}"
+            );
+            for cid in cad_control_ids {
+                let b = app
+                    .find_element_bounds_by_id(cid)
+                    .unwrap_or_else(|| panic!("missing {cid} at {w}x{h}"));
+                assert!(
+                    b.width > 0.0
+                        && b.height > 0.0
+                        && b.x >= vp2d.x - 1.0
+                        && b.x + b.width <= vp2d.x + vp2d.width + 1.0
+                        && b.y >= vp2d.y - 1.0
+                        && b.y + b.height <= vp2d.y + vp2d.height + 1.0,
+                    "control {cid} unclipped inside #viewport-2d at {w}x{h} (clean={clean_view}, drawer={drawer_open}): {b:?} vs {vp2d:?}"
+                );
+            }
+        }
+
+        // Verify clicking #cad-2d-bar controls actually dispatches UI ops & mutates state
+        app.state_mut().window_size = (1280.0, 800.0);
+        app.state_mut().clean_view = false;
+        app.state_mut().left_drawer_open = true;
+        app.state_mut()
+            .actions
+            .fetch_or(ACT_RUN_VIEW_SPLIT, Ordering::Relaxed);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1280, 800));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 20,
+        });
+
+        for (idx, selector) in ["#cad-corner-shape-mode", "#cad-radius-inc", "#cad-rule-sym"]
+            .into_iter()
+            .enumerate()
+        {
+            let btn = app.find_element_bounds_by_id(selector).unwrap();
+            assert!(
+                cssimpler::renderer::dispatch_click(
+                    app.scene(),
+                    btn.x + btn.width * 0.5,
+                    btn.y + btn.height * 0.5,
+                ),
+                "click on {selector} must hit"
+            );
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: 21 + idx as u64,
+            });
+        }
+        assert!(!app.state().corner_mode_radius);
+        assert!((app.state().corner_radius_mm - 12.0).abs() < 1e-6);
+        assert_eq!(app.state().corner_rule, CornerRule::Symmetric);
+    }
+
+    #[test]
+    fn test_2d_canvas_click_corner_round_bezier_drag_and_undo() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out_2d_edit"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let mut state = CssRunnerState::new(project, scene, files, tx, latest);
+        assert_eq!(state.selected_piece_index, 0);
+
+        fn count_class(nodes: &[Node], target: &str) -> usize {
+            nodes
+                .iter()
+                .map(|n| match n {
+                    Node::Element(el) => {
+                        usize::from(el.classes.iter().any(|c| c == target))
+                            + count_class(&el.children, target)
+                    }
+                    _ => 0,
+                })
+                .sum()
+        }
+
+        // 1. Click interior of panel 1 ("back") -> switches selection to panel 1
+        let back_center = DVec2::new(0.5, 0.35);
+        let back_board = panel_to_board_pt(&state.project.template, 1, back_center);
+        let (bx, by) = board_to_screen_px(&state, back_board);
+        handle_runner_event(&mut state, &pointer_move_ev(bx, by));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.selected_piece_index, 1);
+
+        // 2. Click interior of panel 0 ("front") -> switches back to panel 0
+        let front_center = DVec2::new(0.5, 0.35);
+        let front_board = panel_to_board_pt(&state.project.template, 0, front_center);
+        let (fx, fy) = board_to_screen_px(&state, front_board);
+        handle_runner_event(&mut state, &pointer_move_ev(fx, fy));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.selected_piece_index, 0);
+
+        // 3. Click point #1 ("neck-bottom") -> selects corner sub-element
+        let neck_pt = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[1];
+        let neck_board = panel_to_board_pt(&state.project.template, 0, neck_pt);
+        let (nx, ny) = board_to_screen_px(&state, neck_board);
+        handle_runner_event(&mut state, &pointer_move_ev(nx, ny));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.selected_2d_point, Some(("front".into(), 1)));
+
+        // 4. Switch to Corner tool and click neck-bottom corner to round it
+        state.corner_radius_mm = 35.0;
+        state.active_2d_tool = "Corner".into();
+        handle_runner_event(&mut state, &pointer_move_ev(nx, ny));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+
+        let rounded_poly = state.project.template.panels[0].polygon.as_ref().unwrap();
+        let curve_name = rounded_poly
+            .curves
+            .keys()
+            .find(|k| k.starts_with("corner_round_"))
+            .expect("Corner tool click must produce a corner_round_* Bézier curve")
+            .clone();
+        let initial_c1 = rounded_poly.curves[&curve_name][0];
+
+        // 5. Render SVG and verify Bézier curve and handle elements appear
+        let (svg_nodes, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg_nodes, "bezier-handle") >= 2);
+        assert!(count_class(&svg_nodes, "cad-vertex") >= 10);
+
+        // 6. Drag Bézier handle 0 of the rounded corner and release -> commits AdjustCornerHandle
+        state.active_2d_tool = "Edit".into();
+        let h0_board = panel_to_board_pt(&state.project.template, 0, initial_c1);
+        let (hx, hy) = board_to_screen_px(&state, h0_board);
+        handle_runner_event(&mut state, &pointer_move_ev(hx, hy));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        handle_runner_event(&mut state, &pointer_move_ev(hx + 3.0, hy - 1.5));
+        assert!(
+            state.preview_template.is_some(),
+            "live preview template must update while dragging Bézier handle"
+        );
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        let updated_c1 = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves[&curve_name][0];
+        assert!(
+            updated_c1.distance(initial_c1) > 1e-4,
+            "dragging Bézier handle must modify control point (initial={initial_c1:?}, updated={updated_c1:?}, status={:?})",
+            state.status_message
+        );
+
+        // 7. Undo restores pre-drag handle and pre-round corner; Redo brings them back
+        assert!(undo_redo_2d(&mut state, false));
+        let undone_c1 = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves[&curve_name][0];
+        assert!(undone_c1.distance(initial_c1) < 1e-9);
+        assert!(undo_redo_2d(&mut state, false));
+        assert!(
+            state.project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .is_empty()
+        );
+        assert!(undo_redo_2d(&mut state, true));
+        assert!(
+            !state.project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .is_empty()
+        );
+        assert!(undo_redo_2d(&mut state, false));
+
+        // 8. Click sewn corner #3 ("shoulder-right") -> highlights connected panel "back" + weld-link
+        let sh_pt = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[3];
+        let sh_board = panel_to_board_pt(&state.project.template, 0, sh_pt);
+        let (sx, sy) = board_to_screen_px(&state, sh_board);
+        handle_runner_event(&mut state, &pointer_move_ev(sx, sy));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.selected_2d_point, Some(("front".into(), 3)));
+        let conn = compute_connected_2d_highlight(&state);
+        assert!(conn.connected_panels.contains("back"));
+        assert!(conn.selected_corners.contains(&("back".into(), 3)));
+        let (sewn_svg, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&sewn_svg, "connected") >= 1);
+        assert!(count_class(&sewn_svg, "weld-link") >= 1);
+
+        // 9. Select double-sewn corner #4 ("sleeve-top-right") and apply Round via UI op
+        let c4_idx = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .edges
+            .iter()
+            .position(|e| e == "sleeve-top-right")
+            .unwrap();
+        let c4_pt = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[c4_idx];
+        let (c4x, c4y) =
+            board_to_screen_px(&state, panel_to_board_pt(&state.project.template, 0, c4_pt));
+        handle_runner_event(&mut state, &pointer_move_ev(c4x, c4y));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        state.corner_radius_mm = 8.0;
+        assert!(round_selected_corner(&mut state));
+        assert!(
+            state.project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .keys()
+                .any(|k| k.starts_with("corner_round_"))
+        );
+        assert!(
+            state.project.template.panels[1]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .keys()
+                .any(|k| k.starts_with("corner_round_"))
+        );
+        assert!(
+            state
+                .project
+                .template
+                .seams
+                .iter()
+                .any(|s| s.id.contains("corner_round_"))
+        );
+        state.project.template.compile().unwrap();
+        assert!(undo_redo_2d(&mut state, false));
+
+        // 10. Toggle CurvePoint on sewn corner #3 and drag Bézier handle -> mirrors live & on commit
+        state.selected_piece_index = 0;
+        state.selected_2d_point = Some(("front".into(), 3));
+        assert!(toggle_selected_curve(&mut state, true));
+        assert!(
+            state.project.template.panels[1]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .contains_key("shoulder-right")
+        );
+        let front_sh_c0 = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][0];
+        let back_sh_c0_before = state.project.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][0];
+        let (sh_hx, sh_hy) = board_to_screen_px(
+            &state,
+            panel_to_board_pt(&state.project.template, 0, front_sh_c0),
+        );
+        state.active_2d_tool = "Edit".into();
+        handle_runner_event(&mut state, &pointer_move_ev(sh_hx, sh_hy));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        handle_runner_event(&mut state, &pointer_move_ev(sh_hx + 3.0, sh_hy + 4.0));
+        let preview = state
+            .preview_template
+            .as_ref()
+            .expect("live preview must update across sewn Bezier handle drag");
+        let back_preview_c0 =
+            preview.panels[1].polygon.as_ref().unwrap().curves["shoulder-right"][0];
+        assert!(back_preview_c0.distance(back_sh_c0_before) > 1e-4);
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        let back_sh_c0_after = state.project.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][0];
+        assert!(back_sh_c0_after.distance(back_sh_c0_before) > 1e-4);
+        state.project.template.compile().unwrap();
+
+        // 11. Drag sewn corner #3 in Edit tool -> keeps front and back shoulder seams equal length
+        let pt3_before = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[3];
+        let (p3x, p3y) = board_to_screen_px(
+            &state,
+            panel_to_board_pt(&state.project.template, 0, pt3_before),
+        );
+        handle_runner_event(&mut state, &pointer_move_ev(p3x, p3y));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        handle_runner_event(&mut state, &pointer_move_ev(p3x + 5.0, p3y + 4.0));
+        assert!(state.preview_template.is_some());
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        let fp_after = state.project.template.panels[0].polygon.as_ref().unwrap();
+        let bp_after = state.project.template.panels[1].polygon.as_ref().unwrap();
+        assert!(fp_after.points[3].distance(pt3_before) > 1e-4);
+        assert!(
+            (authoring::edge_length(fp_after, "shoulder-right").unwrap()
+                - authoring::edge_length(bp_after, "shoulder-right").unwrap())
+            .abs()
+                < 1e-9
+        );
+        state.project.template.compile().unwrap();
+
+        // 12. Undo/Redo restores/reapplies corner drag atomically on both panels
+        assert!(undo_redo_2d(&mut state, false));
+        assert!(
+            state.project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .points[3]
+                .distance(pt3_before)
+                < 1e-9
+        );
+        assert!(undo_redo_2d(&mut state, true));
+        assert!(
+            state.project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .points[3]
+                .distance(pt3_before)
+                > 1e-4
+        );
+    }
+
+    #[test]
+    fn test_2d_offboard_drag_and_mixed_mirror_seam_propagation() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let mut project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+
+        // Build mixed topology: front <--(LinkedMirror X)--> mirror_panel, and front.shoulder-right <--(Seam)--> back.shoulder-right
+        let front_id = project.template.panels[0].id.clone();
+        let back_id = project.template.panels[1].id.clone();
+        project.template = authoring::apply(
+            &project.template,
+            Command::LinkedMirror {
+                panel: front_id.clone(),
+                axis: marvelous_cloth::garment::shapes::MirrorAxis::X,
+            },
+        )
+        .unwrap()
+        .template;
+        let mirror_idx = project
+            .template
+            .panels
+            .iter()
+            .position(|p| p.id != front_id && p.id != back_id)
+            .expect("linked mirror panel");
+        let mirror_id = project.template.panels[mirror_idx].id.clone();
+
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out_mixed"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let mut state = CssRunnerState::new(project, scene, files, tx, latest);
+        state.active_2d_tool = "Edit".into();
+
+        // Pick shoulder-right corner (index 3) on front panel, which is BOTH sewn to back AND mirror-linked to mirror_panel
+        let sh_idx = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .edges
+            .iter()
+            .position(|e| e == "shoulder-right")
+            .unwrap();
+        let fp_pt_before = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[sh_idx];
+        let bp_pt_before = state.project.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[sh_idx];
+        let mp_pt_before = state.project.template.panels[mirror_idx]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[sh_idx];
+
+        let (sx, sy) = board_to_screen_px(
+            &state,
+            panel_to_board_pt(&state.project.template, 0, fp_pt_before),
+        );
+        let (canvas_2d, _svg_2d) = compute_2d_viewport_rects(&state);
+        let off_x = sx + 22.0;
+        let off_y = (canvas_2d.y - 45.0).min(-20.0);
+        assert!(!canvas_2d.contains(off_x, off_y));
+
+        handle_runner_event(&mut state, &pointer_move_ev(sx, sy));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+
+        // Drag completely outside the 2D SVG canvas bounds (off-board above canvas_2d)
+        handle_runner_event(&mut state, &pointer_move_ev(off_x, off_y));
+        assert!(
+            state.preview_template.is_some(),
+            "off-board pointer drag must keep updating live preview"
+        );
+        let prev_bp = state.preview_template.as_ref().unwrap().panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[sh_idx];
+        let prev_mp = state.preview_template.as_ref().unwrap().panels[mirror_idx]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[sh_idx];
+        assert!(prev_bp.distance(bp_pt_before) > 1e-4);
+        assert!(prev_mp.distance(mp_pt_before) > 1e-4);
+
+        // Release off-board -> must commit to front, back (sewn), and mirror_panel (mirror-linked)
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        let fp_after = state.project.template.panels[0].polygon.as_ref().unwrap();
+        let bp_after = state.project.template.panels[1].polygon.as_ref().unwrap();
+        let mp_after = state.project.template.panels[mirror_idx]
+            .polygon
+            .as_ref()
+            .unwrap();
+        assert!(fp_after.points[sh_idx].distance(fp_pt_before) > 1e-2);
+        assert!(bp_after.points[sh_idx].distance(bp_pt_before) > 1e-4);
+        assert!(mp_after.points[sh_idx].distance(mp_pt_before) > 1e-4);
+        assert!(
+            (authoring::edge_length(fp_after, "shoulder-right").unwrap()
+                - authoring::edge_length(bp_after, "shoulder-right").unwrap())
+            .abs()
+                < 1e-9
+        );
+
+        // Undo restores cleanly across all 3 connected panels, then test CurvePoint + off-board Bezier handle drag
+        assert!(undo_redo_2d(&mut state, false));
+        state.selected_piece_index = 0;
+        state.selected_2d_point = Some((front_id.clone(), sh_idx));
+        assert!(toggle_selected_curve(&mut state, true));
+        let h0 = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][0];
+        let mp_h1_before = state.project.template.panels[mirror_idx]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][1];
+        let bp_h0_before = state.project.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][0];
+        let (hx, hy) =
+            board_to_screen_px(&state, panel_to_board_pt(&state.project.template, 0, h0));
+        let off_hy = (canvas_2d.y - 10.0).min(hy - 35.0);
+        assert!(!canvas_2d.contains(hx + 12.0, off_hy));
+        handle_runner_event(&mut state, &pointer_move_ev(hx, hy));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        handle_runner_event(&mut state, &pointer_move_ev(hx + 12.0, off_hy));
+        assert!(state.preview_template.is_some());
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        let mp_h1_after = state.project.template.panels[mirror_idx]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][1];
+        let bp_h0_after = state.project.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves["shoulder-right"][0];
+        assert!(mp_h1_after.distance(mp_h1_before) > 1e-3);
+        assert!(bp_h0_after.distance(bp_h0_before) > 1e-3);
+        assert!(!mirror_id.is_empty());
+    }
+
+    #[test]
+    fn test_2d_interactive_rail_tools_workflow() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out_tools"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let mut state = CssRunnerState::new(project, scene, files, tx, latest);
+        let initial_panels = state.project.template.panels.len();
+
+        fn count_class(nodes: &[Node], target: &str) -> usize {
+            nodes
+                .iter()
+                .map(|n| match n {
+                    Node::Element(el) => {
+                        usize::from(el.classes.iter().any(|c| c == target))
+                            + count_class(&el.children, target)
+                    }
+                    _ => 0,
+                })
+                .sum()
+        }
+
+        // 1. Rect tool: drag empty board space to create a rectangle panel
+        set_active_2d_tool(&mut state, "Rect");
+        let (rx0, ry0) = board_to_screen_px(&state, DVec2::new(2.2, 0.2));
+        let (rx1, ry1) = board_to_screen_px(&state, DVec2::new(2.45, 0.45));
+        handle_runner_event(&mut state, &pointer_move_ev(rx0, ry0));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        handle_runner_event(&mut state, &pointer_move_ev(rx1, ry1));
+        let (svg, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg, "tool-draft-rect") >= 1);
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.project.template.panels.len(), initial_panels + 1);
+
+        // 2. Pen tool: click 4 points + Enter -> creates polygon panel
+        set_active_2d_tool(&mut state, "Pen");
+        for pt in [
+            DVec2::new(2.2, -0.6),
+            DVec2::new(2.45, -0.6),
+            DVec2::new(2.45, -0.35),
+            DVec2::new(2.2, -0.35),
+        ] {
+            let (px, py) = board_to_screen_px(&state, pt);
+            handle_runner_event(&mut state, &pointer_move_ev(px, py));
+            assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+            assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        }
+        let (svg_pen, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg_pen, "tool-draft-pen") >= 1);
+        assert!(handle_runner_event(
+            &mut state,
+            &EngineEvent::Key(cssimpler::renderer::KeyboardEvent {
+                logical_key: cssimpler::renderer::KeyIdentity::Named("Enter".into()),
+                physical_key: None,
+                location: cssimpler::renderer::KeyLocation::Standard,
+                state: cssimpler::renderer::ButtonState::Pressed,
+                repeat: false,
+                modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+            })
+        ));
+        assert_eq!(state.project.template.panels.len(), initial_panels + 2);
+
+        // 3. Freehand tool: stroke loop + release -> creates fitted panel
+        set_active_2d_tool(&mut state, "Freehand");
+        let loop_pts = [
+            DVec2::new(0.15, 0.85),
+            DVec2::new(0.45, 0.85),
+            DVec2::new(0.45, 1.15),
+            DVec2::new(0.15, 1.15),
+        ];
+        let (fx0, fy0) = board_to_screen_px(&state, loop_pts[0]);
+        handle_runner_event(&mut state, &pointer_move_ev(fx0, fy0));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        for pt in &loop_pts[1..] {
+            let (fx, fy) = board_to_screen_px(&state, *pt);
+            handle_runner_event(&mut state, &pointer_move_ev(fx, fy));
+        }
+        let (svg_free, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg_free, "tool-draft-freehand") >= 1);
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.project.template.panels.len(), initial_panels + 3);
+
+        // 4. Internal Line tool on panel 0 + Enter -> adds internal line
+        set_active_2d_tool(&mut state, "Internal Line");
+        for local_pt in [DVec2::new(0.45, 0.25), DVec2::new(0.55, 0.45)] {
+            let b = panel_to_board_pt(&state.project.template, 0, local_pt);
+            let (lx, ly) = board_to_screen_px(&state, b);
+            handle_runner_event(&mut state, &pointer_move_ev(lx, ly));
+            assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+            assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        }
+        let (svg_int, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg_int, "tool-draft-internal") >= 1);
+        assert!(handle_runner_event(
+            &mut state,
+            &EngineEvent::Key(cssimpler::renderer::KeyboardEvent {
+                logical_key: cssimpler::renderer::KeyIdentity::Named("Enter".into()),
+                physical_key: None,
+                location: cssimpler::renderer::KeyLocation::Standard,
+                state: cssimpler::renderer::ButtonState::Pressed,
+                repeat: false,
+                modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+            })
+        ));
+        assert_eq!(
+            state.project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .lines
+                .len(),
+            1
+        );
+
+        // 5. Measure tool: two boundary-anchored clicks on panel 0 -> saves measurement & shows overlay
+        set_active_2d_tool(&mut state, "Measure");
+        let p0 = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[0];
+        let p2 = state.project.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points[2];
+        let (m0x, m0y) =
+            board_to_screen_px(&state, panel_to_board_pt(&state.project.template, 0, p0));
+        let (m1x, m1y) =
+            board_to_screen_px(&state, panel_to_board_pt(&state.project.template, 0, p2));
+        handle_runner_event(&mut state, &pointer_move_ev(m0x, m0y));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        handle_runner_event(&mut state, &pointer_move_ev(m1x, m1y));
+        let (svg_msr, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg_msr, "tool-draft-measure") >= 1);
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert!(state.status_message.contains("mm"));
+
+        // 6. Sew tool: click first edge on rect panel and second edge on pen panel -> creates new seam
+        let seams_before = state.project.template.seams.len();
+        set_active_2d_tool(&mut state, "Sew");
+        let p_rect = state.project.template.panels[initial_panels]
+            .polygon
+            .as_ref()
+            .unwrap();
+        let e_rect_mid = p_rect.points[1].lerp(p_rect.points[2], 0.5);
+        let (srx, sry) = board_to_screen_px(
+            &state,
+            panel_to_board_pt(&state.project.template, initial_panels, e_rect_mid),
+        );
+        handle_runner_event(&mut state, &pointer_move_ev(srx, sry));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        let (svg_sew, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg_sew, "tool-draft-sew") >= 1);
+
+        let p_pen = state.project.template.panels[initial_panels + 1]
+            .polygon
+            .as_ref()
+            .unwrap();
+        let e_pen_mid = p_pen.points[3].lerp(p_pen.points[0], 0.5);
+        let (spx, spy) = board_to_screen_px(
+            &state,
+            panel_to_board_pt(&state.project.template, initial_panels + 1, e_pen_mid),
+        );
+        handle_runner_event(&mut state, &pointer_move_ev(spx, spy));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.project.template.seams.len(), seams_before + 1);
+
+        // 7. Trim tool: click internal line on panel 0 -> removes it
+        set_active_2d_tool(&mut state, "Trim");
+        let mid_line = panel_to_board_pt(&state.project.template, 0, DVec2::new(0.5, 0.35));
+        let (tx, ty) = board_to_screen_px(&state, mid_line);
+        handle_runner_event(&mut state, &pointer_move_ev(tx, ty));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
+        assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert!(
+            state.project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .lines
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_3d_camera_orbit_zoom_and_reset_usd() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out_cam"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let state = CssRunnerState::new(project, scene, files, tx, latest);
+        let mut app = create_runner_app(state, &stylesheet);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 0,
+        });
+
+        let read_xform = |st: &CssRunnerState| {
+            st.usd_scene
+                .as_ref()
+                .unwrap()
+                .stage()
+                .attribute(format!(
+                    "{}.xformOp:transform",
+                    marvelous_cloth::usd_scene::VIEWPORT_CAMERA_PATH
+                ))
+                .unwrap()
+                .get::<cssimpler::renderer::gpu::openusd::gf::Matrix4d>()
+                .unwrap()
+                .unwrap()
+                .0
+        };
+        let initial_xf = read_xform(app.state());
+        let initial_yaw = app.state().camera.yaw;
+        let initial_dist = app.state().camera.distance;
+
+        let vp3d = viewport_3d_rect(app.state());
+        let cx = vp3d.x + vp3d.w * 0.5;
+        let cy = vp3d.y + vp3d.h * 0.5;
+        handle_runner_event(app.state_mut(), &pointer_move_ev(cx, cy));
+        handle_runner_event(app.state_mut(), &pointer_btn_ev(true));
+        assert!(handle_runner_event(
+            app.state_mut(),
+            &pointer_move_ev(cx + 45.0, cy - 20.0)
+        ));
+        handle_runner_event(app.state_mut(), &pointer_btn_ev(false));
+        assert!((app.state().camera.yaw - initial_yaw).abs() > 0.1);
+        assert!(handle_runner_event(
+            app.state_mut(),
+            &EngineEvent::Scroll {
+                delta: cssimpler::renderer::ScrollDelta::Lines { x: 0.0, y: 2.0 },
+                modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+            }
+        ));
+        assert!((app.state().camera.distance - initial_dist).abs() > 0.1);
+        assert_ne!(read_xform(app.state()), initial_xf);
+
+        // Reset via ACT_RUN_CAM_RESET button in #rail-3d
+        app.state_mut()
+            .actions
+            .fetch_or(ACT_RUN_CAM_RESET, Ordering::Relaxed);
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 1,
+        });
+        assert!((app.state().camera.yaw - initial_yaw).abs() < 1e-6);
+        assert!((app.state().camera.distance - initial_dist).abs() < 1e-6);
+        assert_eq!(read_xform(app.state()), initial_xf);
+    }
+
+    #[test]
+    fn test_all_runner_buttons_click_and_layout_bounds() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out_buttons"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let state = CssRunnerState::new(project, scene, files, tx, latest);
+        let mut app = create_runner_app(state, &stylesheet);
+
+        fn check_container_buttons(
+            roots: &[cssimpler::renderer::RenderNode],
+            container_id: &str,
+            win_w: f32,
+            win_h: f32,
+        ) {
+            fn find_node<'a>(
+                nodes: &'a [cssimpler::renderer::RenderNode],
+                id: &str,
+            ) -> Option<&'a cssimpler::renderer::RenderNode> {
+                for n in nodes {
+                    if n.id() == Some(id) {
+                        return Some(n);
+                    }
+                    if let Some(found) = find_node(&n.children, id) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            fn collect_clickable(
+                node: &cssimpler::renderer::RenderNode,
+                out: &mut Vec<cssimpler::core::LayoutBox>,
+            ) {
+                if node.handlers.click().is_some() {
+                    out.push(node.layout);
+                }
+                for child in &node.children {
+                    collect_clickable(child, out);
+                }
+            }
+            let root = find_node(roots, container_id)
+                .unwrap_or_else(|| panic!("missing container #{container_id}"));
+            let mut btns = Vec::new();
+            collect_clickable(root, &mut btns);
+            assert!(
+                !btns.is_empty(),
+                "expected clickable controls inside #{container_id}"
+            );
+            for (i, b) in btns.iter().enumerate() {
+                assert!(
+                    b.width >= 10.0
+                        && b.height >= 10.0
+                        && b.x >= -1.0
+                        && b.y >= -1.0
+                        && b.x + b.width <= win_w + 1.0
+                        && b.y + b.height <= win_h + 1.0,
+                    "button #{i} in #{container_id} out of bounds at {win_w}x{win_h}: {b:?}"
+                );
+            }
+        }
+
+        // 1. Audit layout bounds across 1600x980 and 1280x800
+        for (w, h) in [(1600_usize, 980_usize), (1280_usize, 800_usize)] {
+            app.state_mut().window_size = (w as f32, h as f32);
+            app.set_viewport(cssimpler::renderer::ViewportSize::new(w, h));
+            let roots = app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: w as u64,
+            });
+            for cid in [
+                "top-bar",
+                "rail-3d",
+                "rail-2d",
+                "left-browser",
+                "right-dock",
+            ] {
+                check_container_buttons(&roots, cid, w as f32, h as f32);
+            }
+        }
+
+        // 2. Click buttons across #rail-3d, #rail-2d, #right-dock, and #command-palette-trigger
+        app.state_mut().window_size = (1600.0, 980.0);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        let mut frame = 100_u64;
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: frame,
+        });
+
+        // Verify clicking all 2D tools via actions
+        for (act, expected) in [
+            (ACT_RUN_TOOL_RECT2D, "Rect"),
+            (ACT_RUN_TOOL_PEN2D, "Pen"),
+            (ACT_RUN_TOOL_FREE2D, "Freehand"),
+            (ACT_RUN_TOOL_SEW2D, "Sew"),
+            (ACT_RUN_TOOL_SPLIT2D, "Split"),
+            (ACT_RUN_TOOL_INTERNAL2D, "Internal Line"),
+            (ACT_RUN_TOOL_MEASURE2D, "Measure"),
+            (ACT_RUN_TOOL_TRIM2D, "Trim"),
+            (ACT_RUN_TOOL_CORNER2D, "Corner"),
+            (ACT_RUN_TOOL_EDIT2D, "Edit"),
+        ] {
+            frame += 1;
+            app.state_mut().actions.fetch_or(act, Ordering::Relaxed);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: frame,
+            });
+            assert_eq!(app.state().active_2d_tool, expected);
+        }
+
+        // Verify clicking all 3D tools via actions
+        for (act, expected) in [
+            (ACT_RUN_TOOL_GRAB, "Grab"),
+            (ACT_RUN_TOOL_SEW3D, "3D Sew"),
+            (ACT_RUN_TOOL_PIN, "Pin"),
+            (ACT_RUN_TOOL_MEASURE3D, "Measure"),
+            (ACT_RUN_TOOL_AVATAR_DIAG, "Avatar Diagnostics"),
+            (ACT_RUN_TOOL_GIZMO, "Gizmo"),
+        ] {
+            frame += 1;
+            app.state_mut().actions.fetch_or(act, Ordering::Relaxed);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: frame,
+            });
+            assert_eq!(app.state().active_3d_tool, expected);
+        }
+
+        // Verify clicking #command-palette-trigger opens palette and closing works
+        let pal_btn = app
+            .find_element_bounds_by_id("#command-palette-trigger")
+            .unwrap();
+        assert!(cssimpler::renderer::dispatch_click(
+            app.scene(),
+            pal_btn.x + pal_btn.width * 0.5,
+            pal_btn.y + pal_btn.height * 0.5
+        ));
+        frame += 1;
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: frame,
+        });
+        assert!(app.state().command_palette_open);
+        let pal_box = app
+            .find_element_bounds_by_id("#command-palette-container")
+            .unwrap();
+        assert!(pal_box.width > 100.0 && pal_box.height > 100.0);
+
+        // Toggle palette back off
+        frame += 1;
+        app.state_mut()
+            .actions
+            .fetch_or(ACT_RUN_PALETTE_TOGGLE, Ordering::Relaxed);
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: frame,
+        });
+        assert!(!app.state().command_palette_open);
+
+        // Clean view + layout modes + drawer toggle roundtrip
+        for (act, expected_mode) in [
+            (ACT_RUN_VIEW_3D, ViewLayoutMode::ThreeDOnly),
+            (ACT_RUN_VIEW_2D, ViewLayoutMode::TwoDOnly),
+            (ACT_RUN_VIEW_SPLIT, ViewLayoutMode::Split),
+        ] {
+            frame += 1;
+            app.state_mut().actions.fetch_or(act, Ordering::Relaxed);
+            app.frame(FrameInfo {
+                delta: Duration::from_millis(16),
+                frame_index: frame,
+            });
+            assert_eq!(app.state().layout_mode, expected_mode);
+        }
     }
 }
