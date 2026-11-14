@@ -1,17 +1,23 @@
 //! Research-only full garment rod truss compiled from panel rest triangles.
 //!
 //! This welded triangular network uses one explicitly supplied rod material;
-//! it is not a calibrated fabric or a woven yarn model. It has no bending
-//! joints, avatar contact, grab support, production broad phase, or UI adapter.
+//! it is not a calibrated fabric or a woven yarn model. It uses heuristic
+//! bending joints and has no avatar contact, grab support, production broad
+//! phase, or UI adapter.
 use super::{CompiledGarment, rod_sewing::compile_rod_stitches};
 use crate::cosserat::{RodMaterial, RodModel, RodState};
-use glam::{DQuat, DVec3};
-use std::{collections::BTreeSet, sync::Arc};
+use glam::{DMat3, DQuat, DVec3};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 pub struct GarmentRodNetwork {
     garment: Arc<CompiledGarment>,
     pub model: RodModel,
     edges: Vec<[usize; 2]>,
+    edge_faces: Vec<Vec<usize>>,
+    joint_count: usize,
 }
 
 impl GarmentRodNetwork {
@@ -67,6 +73,78 @@ impl GarmentRodNetwork {
             return Err("Panel ranges do not cover garment".into());
         }
         let edges: Vec<_> = edges.into_iter().collect();
+        let mut index = BTreeMap::new();
+        let mut incident = vec![Vec::new(); n];
+        for (i, &[a, b]) in edges.iter().enumerate() {
+            index.insert([a, b], i);
+            incident[a].push(i);
+            incident[b].push(i);
+        }
+        let mut edge_faces = vec![Vec::new(); edges.len()];
+        for (face_id, face) in garment.mesh.triangles.iter().enumerate() {
+            let [a, b, c] = face.vertices;
+            for (u, v) in [(a, b), (b, c), (c, a)] {
+                edge_faces[*index
+                    .get(&[u.min(v), u.max(v)])
+                    .ok_or("Missing panel edge")?]
+                .push(face_id);
+            }
+        }
+        if edge_faces
+            .iter()
+            .any(|faces| faces.is_empty() || faces.len() > 2)
+            || incident.iter().any(|edges| edges.len() > 64)
+        {
+            return Err("Panel rod topology is nonmanifold or exceeds the joint budget".into());
+        }
+        // Pair near-opposite edges at each vertex into individual rod paths.
+        // The pairing is a deterministic research approximation, not yarns.
+        let mut joints = Vec::new();
+        for (vertex, segments) in incident.iter().enumerate() {
+            let mut candidates = Vec::new();
+            for (i, &a) in segments.iter().enumerate() {
+                let other_a = if edges[a][0] == vertex {
+                    edges[a][1]
+                } else {
+                    edges[a][0]
+                };
+                let da = (garment.mesh.uv[other_a] - garment.mesh.uv[vertex]).normalize_or_zero();
+                for &b in &segments[i + 1..] {
+                    let other_b = if edges[b][0] == vertex {
+                        edges[b][1]
+                    } else {
+                        edges[b][0]
+                    };
+                    let db =
+                        (garment.mesh.uv[other_b] - garment.mesh.uv[vertex]).normalize_or_zero();
+                    let dot = da.dot(db);
+                    if dot < -0.5 {
+                        candidates.push((dot, a, b));
+                    }
+                }
+            }
+            candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+            let mut used = BTreeSet::new();
+            for (_, a, b) in candidates {
+                if !used.contains(&a) && !used.contains(&b) {
+                    used.insert(a);
+                    used.insert(b);
+                    joints.push([a, b]);
+                }
+            }
+        }
+        let rest_frames: Vec<_> = edges
+            .iter()
+            .map(|[a, b]| {
+                let direction = (garment.mesh.uv[*b] - garment.mesh.uv[*a]).extend(0.0);
+                frame_from_tangent_normal(direction, DVec3::Z)
+            })
+            .collect::<Result<_, _>>()?;
+        let joint_count = if material.bend_twist_rigidity > 0.0 {
+            joints.len()
+        } else {
+            0
+        };
         let pins: Vec<_> = garment
             .mesh
             .pins
@@ -79,8 +157,8 @@ impl GarmentRodNetwork {
         let model = RodModel::new(
             garment.mesh.uv.iter().map(|uv| uv.extend(0.0)).collect(),
             edges.clone(),
-            vec![],
-            None,
+            joints,
+            Some(rest_frames),
             &pins,
             &[],
             material,
@@ -90,6 +168,8 @@ impl GarmentRodNetwork {
             garment,
             model,
             edges,
+            edge_faces,
+            joint_count,
         })
     }
 
@@ -110,17 +190,42 @@ impl GarmentRodNetwork {
         state.time_s = source.time;
         for (index, [a, b]) in self.edges.iter().copied().enumerate() {
             let tangent = state.positions[b] - state.positions[a];
-            let length = tangent.length();
-            if !length.is_finite() || length <= 1e-12 {
-                return Err("Placed garment has a collapsed rod".into());
+            let mut normal = DVec3::ZERO;
+            for &face_id in &self.edge_faces[index] {
+                let [i, j, k] = self.garment.mesh.triangles[face_id].vertices;
+                let uv = &self.garment.mesh.uv;
+                let sign = (uv[j] - uv[i]).perp_dot(uv[k] - uv[i]).signum();
+                normal += sign
+                    * (state.positions[j] - state.positions[i])
+                        .cross(state.positions[k] - state.positions[i]);
             }
-            state.orientations[index] = DQuat::from_rotation_arc(DVec3::X, tangent / length);
+            state.orientations[index] = frame_from_tangent_normal(tangent, normal)?;
         }
         self.model.elastic_energy(&state)?;
         Ok(state)
     }
 
+    pub fn bending_joint_count(&self) -> usize {
+        self.joint_count
+    }
+
     pub fn matches(&self, garment: &Arc<CompiledGarment>) -> bool {
         Arc::ptr_eq(&self.garment, garment)
     }
+}
+
+fn frame_from_tangent_normal(tangent: DVec3, normal: DVec3) -> Result<DQuat, String> {
+    let length = tangent.length();
+    if !length.is_finite() || length <= 1e-12 {
+        return Err("Placed garment has a collapsed rod".into());
+    }
+    let x = tangent / length;
+    let z_raw = normal - x * normal.dot(x);
+    let z_length = z_raw.length();
+    if !z_length.is_finite() || z_length <= 1e-18 {
+        return Err("Placed garment has an undefined rod frame".into());
+    }
+    let z = z_raw / z_length;
+    let y = z.cross(x);
+    Ok(DQuat::from_mat3(&DMat3::from_cols(x, y, z)).normalize())
 }

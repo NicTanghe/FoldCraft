@@ -68,7 +68,8 @@ pub struct RodModel {
 
 /// Accepted state, including the orientation and exact-solve history. A state
 /// must be retained between steps; positions alone are not a complete restart.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RodState {
     pub positions: Vec<DVec3>,
     pub velocities: Vec<DVec3>,
@@ -76,6 +77,16 @@ pub struct RodState {
     /// Per-segment fixed-point history; used only by the refined update.
     pub orientation_gamma: Vec<f64>,
     pub time_s: f64,
+}
+
+/// Portable research checkpoint tied to the exact compiled rod model. This is
+/// not a garment project cache and does not store timestep/contact settings.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RodCheckpoint {
+    version: u32,
+    model_signature: Vec<u64>,
+    state: RodState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -383,6 +394,79 @@ impl RodModel {
         {
             return Err("invalid rod state dimensions or non-finite/non-unit state".into());
         }
+        Ok(())
+    }
+
+    // Exact model witness, not a lossy hash. Version changes must accompany
+    // changes to these fields or their physical interpretation.
+    fn model_signature(&self) -> Vec<u64> {
+        fn vector(out: &mut Vec<u64>, v: DVec3) {
+            out.extend([v.x.to_bits(), v.y.to_bits(), v.z.to_bits()]);
+        }
+        fn quat_bits(out: &mut Vec<u64>, q: DQuat) {
+            out.extend([q.x.to_bits(), q.y.to_bits(), q.z.to_bits(), q.w.to_bits()]);
+        }
+        let mut out = Vec::new();
+        out.push(self.rest_positions.len() as u64);
+        for p in &self.rest_positions {
+            vector(&mut out, *p);
+        }
+        for mass in &self.inverse_masses {
+            out.push(mass.to_bits());
+        }
+        out.push(self.segments.len() as u64);
+        for seg in &self.segments {
+            out.extend([
+                seg.vertices[0] as u64,
+                seg.vertices[1] as u64,
+                seg.rest_length.to_bits(),
+                seg.stretch.to_bits(),
+                u64::from(seg.pinned),
+            ]);
+            quat_bits(&mut out, seg.rest_frame);
+        }
+        out.push(self.joints.len() as u64);
+        for joint in &self.joints {
+            out.extend([
+                joint.segments[0] as u64,
+                joint.segments[1] as u64,
+                joint.stiffness.to_bits(),
+            ]);
+            quat_bits(&mut out, joint.rest_relative);
+        }
+        out.push(self.stitches.len() as u64);
+        for stitch in &self.stitches {
+            out.extend([
+                stitch.terms.len() as u64,
+                stitch.stiffness_n_per_m.to_bits(),
+            ]);
+            for (vertex, weight) in &stitch.terms {
+                out.extend([*vertex as u64, weight.to_bits()]);
+            }
+        }
+        out
+    }
+
+    pub fn checkpoint(&self, state: &RodState) -> Result<RodCheckpoint, String> {
+        self.validate_state(state)?;
+        Ok(RodCheckpoint {
+            version: 1,
+            model_signature: self.model_signature(),
+            state: state.clone(),
+        })
+    }
+
+    /// Restores only an exact matching model and leaves `state` unchanged on error.
+    pub fn restore_checkpoint(
+        &self,
+        state: &mut RodState,
+        checkpoint: &RodCheckpoint,
+    ) -> Result<(), String> {
+        if checkpoint.version != 1 || checkpoint.model_signature != self.model_signature() {
+            return Err("Rod checkpoint does not match the compiled model".into());
+        }
+        self.validate_state(&checkpoint.state)?;
+        *state = checkpoint.state.clone();
         Ok(())
     }
 

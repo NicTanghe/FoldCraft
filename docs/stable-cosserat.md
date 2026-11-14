@@ -212,10 +212,21 @@ contact. The general attachment binder's work limit can reject large panels.
 triangle edges into one welded rod truss, uses existing compiled seam samples
 and pin membership, and initializes rod positions and velocities from the
 compiled garment's placed 3D state. Rod rest lengths still come solely from the
-2D material coordinates. Rod rotations initialize along the placed edge
-orientations; this assumes no rod bending joints. Vertex order matches the
-compiled garment mesh, so the state positions can be used for that mesh. The
-harness takes one explicitly supplied isotropic rod material for the entire
-model; it does not convert or calibrate the garment's fabric or grain. It has
-no bending joints, avatar collision, user interaction, cached-state migration or
-UI/worker integration, and is not a complete garment backend.
+2D material coordinates. Near-opposite triangle edges are paired deterministically into approximate rod
+paths, and the explicit rod bending/twist rigidity applies at those joints.
+Their placement and stiffness depend on triangulation and are not a calibrated
+yarn weave or fabric bending model. Rod frames initialize from placed edge
+tangents and adjacent face normals; degenerate or opposing face normals are
+rejected. Vertex order matches the compiled garment mesh. The harness takes one
+explicitly supplied isotropic rod material for the entire model; it does not
+convert or calibrate the garment's fabric or grain. Avatar collision, user
+interaction, project-cache integration and UI/worker integration are absent;
+this is not a complete garment backend.
+
+`RodCheckpoint` serializes the full rod state (including orientations and
+fixed-point history) along with a versioned exact witness of the compiled rod
+model. Restoration rejects a different rest geometry, topology, mass,
+stiffness, pins or stitches and preserves the destination state on error.
+The witness is not a hash. This is a research API, not an existing project
+format; callers must separately persist compatible solver/contact settings and
+invalidate checkpoints when those settings make resumption inappropriate.
