@@ -734,6 +734,21 @@
       "owner": null,
       "vruntime": 3.0,
       "pr": null
+    },
+    {
+      "id": "FC-0055",
+      "title": "Compile actual garment panels to rod support and map seams",
+      "acceptance": "Experimentally compile real panel material triangulations into bounded rod networks with correct support mapping and identify seam attachment requirements; prove boundaries, holes, and physical limitations with CPU tests.",
+      "points": 4.0,
+      "spent": 0,
+      "priority": "urgent",
+      "depends_on": [
+        "FC-0051"
+      ],
+      "status": "active",
+      "owner": "codex-yarn-mapping",
+      "vruntime": 3.1,
+      "pr": null
     }
   ]
 }
