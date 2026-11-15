@@ -501,6 +501,7 @@ impl CornerToolParams {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tool2d {
     Edit,
+    CornerSelect,
     Rect,
     Pen,
     Freehand,
@@ -567,6 +568,7 @@ impl Rail2dState {
 
 pub fn render_2d_rail(state: &Rail2dState) -> Node {
     let edit_active = matches!(state.active_tool, Tool2d::Edit);
+    let corner_select_active = matches!(state.active_tool, Tool2d::CornerSelect);
     let rect_active = matches!(state.active_tool, Tool2d::Rect);
     let pen_active = matches!(state.active_tool, Tool2d::Pen);
     let freehand_active = matches!(state.active_tool, Tool2d::Freehand);
@@ -578,6 +580,10 @@ pub fn render_2d_rail(state: &Rail2dState) -> Node {
     let corner_active = matches!(state.active_tool, Tool2d::Corner(_));
 
     let edit_class = format!("tool-btn {}", if edit_active { "active" } else { "" });
+    let corner_select_class = format!(
+        "tool-btn {}",
+        if corner_select_active { "active" } else { "" }
+    );
     let rect_class = format!("tool-btn {}", if rect_active { "active" } else { "" });
     let pen_class = format!("tool-btn {}", if pen_active { "active" } else { "" });
     let freehand_class = format!("tool-btn {}", if freehand_active { "active" } else { "" });
@@ -649,8 +655,12 @@ pub fn render_2d_rail(state: &Rail2dState) -> Node {
                 {icon_trim_2d()}
                 <span class="tool-label">"Trim"</span>
             </button>
+            <button class={corner_select_class} data-tool="corner-select" title="Select Corners (V / Shift+Click multi)">
+                {icon_corner_select_2d()}
+                <span class="tool-label">"Select Corner"</span>
+            </button>
             <div class="tool-composite corner-composite">
-                <button class={corner_class} data-tool="corner" title="Corner Rounding & Chamfer (C)">
+                <button class={corner_class} data-tool="corner" title="Corner Rounding Menu & Fillet (C)">
                     {icon_corner_2d()}
                     <span class="tool-label">"Corner"</span>
                 </button>
@@ -1031,7 +1041,7 @@ mod tests {
 
         let mut tool_btns = Vec::new();
         find_elements_by_attr(&node, "data-tool", &mut tool_btns);
-        assert_eq!(tool_btns.len(), 10);
+        assert_eq!(tool_btns.len(), 11);
 
         // Edit active by default
         let edit_btn = tool_btns
@@ -1039,6 +1049,17 @@ mod tests {
             .find(|b| b.attribute("data-tool") == Some("edit"))
             .unwrap();
         assert!(edit_btn.classes.contains(&"active".to_string()));
+
+        state.dispatch(Rail2dAction::SelectTool(Tool2d::CornerSelect));
+        let node_sel = render_2d_rail(&state);
+        let mut sel_btns = Vec::new();
+        find_elements_by_attr(&node_sel, "data-tool", &mut sel_btns);
+        let cs_btn = sel_btns
+            .iter()
+            .find(|b| b.attribute("data-tool") == Some("corner-select"))
+            .unwrap();
+        assert!(cs_btn.classes.contains(&"active".to_string()));
+        state.dispatch(Rail2dAction::SelectTool(Tool2d::Edit));
 
         // Corner Tool subcontrols
         let mut mode_btns = Vec::new();

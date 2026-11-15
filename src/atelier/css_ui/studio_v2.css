@@ -421,7 +421,8 @@ button {
   padding: 8px 0;
   gap: 6px;
   flex-shrink: 0;
-  z-index: 10;
+  position: relative;
+  z-index: 25;
 }
 
 .tool-rail-2d, .rail-2d {
@@ -433,6 +434,7 @@ button {
 }
 
 .tool-btn, .rail-tool-btn {
+  position: relative;
   width: 36px;
   height: 36px;
   display: flex;
@@ -450,6 +452,54 @@ button {
   background-color: var(--surface-raised);
   color: var(--text);
   border-color: var(--border);
+}
+
+.tool-btn[title]:hover::after,
+.rail-tool-btn[title]:hover::after,
+.top-bar button[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  background-color: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  z-index: 60;
+}
+
+.tool-btn[title]:hover::after,
+.rail-tool-btn[title]:hover::after {
+  top: 6px;
+}
+
+.tool-rail-3d .tool-btn[title]:hover::after,
+.rail-3d .tool-btn[title]:hover::after {
+  left: 44px;
+}
+
+.tool-rail-2d .tool-btn[title]:hover::after,
+.rail-2d .tool-btn[title]:hover::after {
+  right: 44px;
+}
+
+.top-bar button[title] {
+  position: relative;
+}
+
+.top-bar button[title]:hover::after {
+  top: 30px;
+}
+
+.transport-controls button[title]:hover::after {
+  left: 0;
+}
+
+.top-bar-right button[title]:hover::after {
+  right: 0;
 }
 
 .tool-btn.active, .rail-tool-btn.active {
@@ -1191,6 +1241,45 @@ button {
 .cad-prop-btn.primary:hover {
   background-color: #10b981;
   color: #ffffff;
+}
+
+.cad-2d-group.corner-menu-active,
+.cad-2d-row.corner-menu-active {
+  background-color: var(--accent-subtle);
+  border-radius: 4px;
+}
+
+.cad-corner-menu-box {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background-color: var(--surface-raised);
+}
+
+.cad-corner-menu-box.active {
+  border-color: var(--accent);
+  background-color: var(--accent-subtle);
+}
+
+.cad-corner-menu-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cad-corner-menu-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #10b981;
 }
 
 .pattern-piece {

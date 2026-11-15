@@ -121,6 +121,7 @@ pub const ACT_RUN_2D_ZOOM_IN: u64 = 1 << 56;
 pub const ACT_RUN_2D_ZOOM_OUT: u64 = 1 << 57;
 pub const ACT_RUN_2D_FIT: u64 = 1 << 58;
 pub const ACT_RUN_2D_NEXT_PIECE: u64 = 1 << 59;
+pub const ACT_RUN_TOOL_CORNER_SELECT2D: u64 = 1 << 60;
 
 // ============================================================================
 // Object Browser Category & 2D Interactive Types
@@ -320,6 +321,7 @@ pub struct CssRunnerState {
     pub corner_radius_mm: f64,
     pub corner_tension: f64,
     pub corner_rule: CornerRule,
+    pub corner_preview_active: bool,
     pub open_accordion_idx: usize,
     pub accordion_open: [bool; 6],
     pub board_2d_pan: (f64, f64),
@@ -397,6 +399,7 @@ impl CssRunnerState {
             corner_radius_mm: 10.0,
             corner_tension: CIRCLE_TENSION,
             corner_rule: CornerRule::Smooth,
+            corner_preview_active: false,
             open_accordion_idx: 0,
             accordion_open: [true, false, true, false, false, false],
             board_2d_pan: (0.0, 0.0),
@@ -438,6 +441,7 @@ impl CssRunnerState {
         self.selected_2d_points.clear();
         self.selected_2d_point = None;
         self.selected_2d_edge = None;
+        self.corner_preview_active = false;
     }
 
     pub fn active_template(&self) -> &GarmentTemplate {
@@ -769,6 +773,9 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     if actions & ACT_RUN_TOOL_TRIM2D != 0 {
         set_active_2d_tool(state, "Trim");
     }
+    if actions & ACT_RUN_TOOL_CORNER_SELECT2D != 0 {
+        set_active_2d_tool(state, "Corner Select");
+    }
     if actions & ACT_RUN_TOOL_CORNER2D != 0 || actions & ACT_RUN_TOOL_CORNER != 0 {
         set_active_2d_tool(state, "Corner");
     }
@@ -777,6 +784,7 @@ pub fn update_runner(state: &mut CssRunnerState, frame: FrameInfo) -> Invalidati
     }
     if actions & ACT_RUN_CORNER_MODE_TOGGLE != 0 {
         state.corner_mode_radius = !state.corner_mode_radius;
+        state.corner_preview_active = true;
     }
     if actions & ACT_RUN_ACC_0 != 0 {
         state.accordion_open[0] = !state.accordion_open[0];
@@ -884,41 +892,57 @@ fn set_active_2d_tool(state: &mut CssRunnerState, tool: &str) {
             state.status_message =
                 "2D Tool: Edit — click/drag corners, edges, or Bézier handles".into();
         }
+        "Corner Select" => {
+            state.accordion_open[1] = true;
+            state.open_accordion_idx = 1;
+            state.status_message =
+                "2D Tool: Select Corners — click or Shift+click corners to multi-select".into();
+        }
         "Rect" => {
+            state.corner_preview_active = false;
             state.status_message = "2D Tool: Rect — drag on board to create rectangle".into();
         }
         "Pen" => {
+            state.corner_preview_active = false;
             state.status_message =
                 "2D Tool: Pen — click vertices on board, Enter or click start to close".into();
         }
         "Freehand" => {
+            state.corner_preview_active = false;
             state.status_message = "2D Tool: Freehand — drag on board to sketch contour".into();
         }
         "Sew" => {
+            state.corner_preview_active = false;
             state.active_category = ObjectCategory::Sewing;
             state.status_message = "2D Tool: Sew — click two edges to create a seam".into();
         }
         "Split" => {
+            state.corner_preview_active = false;
             state.status_message =
                 "2D Tool: Split — click a boundary edge to insert a point".into();
         }
         "Internal Line" => {
+            state.corner_preview_active = false;
             state.status_message =
                 "2D Tool: Internal Line — click points inside piece, Enter to finish".into();
         }
         "Measure" => {
+            state.corner_preview_active = false;
             state.status_message =
                 "2D Tool: Measure — click two points on board to measure distance".into();
         }
         "Trim" => {
+            state.corner_preview_active = false;
             state.status_message =
                 "2D Tool: Trim — click corner, sewn edge, or internal line to remove".into();
         }
         "Corner" => {
+            state.corner_preview_active = true;
             state.accordion_open[1] = true;
             state.open_accordion_idx = 1;
             state.status_message =
-                "2D Tool: Corner — click or drag a corner handle to round".into();
+                "2D Tool: Corner Rounding Menu — adjust settings to preview or click/drag corner to round"
+                    .into();
         }
         _ => {}
     }
@@ -958,6 +982,7 @@ fn apply_runner_ui_op(state: &mut CssRunnerState, op: RunnerUiOp) {
     match op {
         RunnerUiOp::SetCornerMode(radius) => {
             state.corner_mode_radius = radius;
+            state.corner_preview_active = true;
             state.status_message = if radius {
                 "Corner mode: Radius (circular fillet)".into()
             } else {
@@ -966,15 +991,18 @@ fn apply_runner_ui_op(state: &mut CssRunnerState, op: RunnerUiOp) {
         }
         RunnerUiOp::SetCornerRule(rule) => {
             state.corner_rule = rule;
+            state.corner_preview_active = true;
             state.status_message = format!("Continuity rule: {:?}", rule);
         }
         RunnerUiOp::AdjustCornerRadiusMm(delta) => {
             state.corner_radius_mm = (state.corner_radius_mm + delta).clamp(1.0, 250.0);
+            state.corner_preview_active = true;
             state.status_message = format!("Corner radius: {:.1} mm", state.corner_radius_mm);
         }
         RunnerUiOp::AdjustCornerTension(delta) => {
             state.corner_tension = (state.corner_tension + delta).clamp(0.05, 1.5);
             state.corner_mode_radius = false;
+            state.corner_preview_active = true;
             state.status_message = format!("Corner tension: {:.2}", state.corner_tension);
         }
         RunnerUiOp::ApplyCornerRoundSelected => {
@@ -1537,11 +1565,13 @@ fn connected_batch_fillet_max_radius_m(
 }
 
 fn active_fillet_previews(state: &CssRunnerState) -> Vec<(usize, String, FilletPreview, f64)> {
-    if state.active_2d_tool != "Corner" {
-        return Vec::new();
-    }
     let template = state.active_template();
     let sel_pts = effective_selected_points(state);
+    let dragging_corner = matches!(state.drag_2d, Some(Drag2d::CornerRadius { .. }));
+    let preview_selected = state.corner_preview_active && !sel_pts.is_empty();
+    if state.active_2d_tool != "Corner" && !preview_selected && !dragging_corner {
+        return Vec::new();
+    }
     let seed_corners: Vec<(String, String)> = match &state.drag_2d {
         Some(Drag2d::CornerRadius {
             panel_id,
@@ -1555,6 +1585,7 @@ fn active_fillet_previews(state: &CssRunnerState) -> Vec<(usize, String, FilletP
                 vec![(panel_id.clone(), edge_name.clone())]
             }
         }
+        _ if state.active_2d_tool != "Corner" => batch_corners_for_points(template, &sel_pts),
         _ => match &state.hovered_2d {
             Some(Hover2dTarget::CornerPreviewHandle {
                 panel_idx,
@@ -2321,6 +2352,10 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                             set_active_2d_tool(state, "Trim");
                             return true;
                         }
+                        if ch == "v" || ch == "V" {
+                            set_active_2d_tool(state, "Corner Select");
+                            return true;
+                        }
                         if ch == "c" || ch == "C" {
                             set_active_2d_tool(state, "Corner");
                             return true;
@@ -2384,6 +2419,7 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                         if state.drag_2d.is_some()
                             || !effective_selected_points(state).is_empty()
                             || state.selected_2d_edge.is_some()
+                            || state.corner_preview_active
                         {
                             state.drag_2d = None;
                             state.preview_template = None;
@@ -3046,6 +3082,7 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                                         let new_pts = effective_selected_points(state);
                                         let count = new_pts.len();
                                         if state.active_2d_tool == "Corner"
+                                            || state.active_2d_tool == "Corner Select"
                                             || !new_pts.contains(&(pid.clone(), point_idx))
                                         {
                                             state.status_message = if count == 0 {
@@ -3088,7 +3125,13 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                                         vec![(pid.clone(), point_idx)]
                                     };
 
-                                    if state.active_2d_tool == "Corner" {
+                                    if state.active_2d_tool == "Corner Select" {
+                                        state.set_single_2d_point(pid.clone(), point_idx);
+                                        state.status_message = format!(
+                                            "Selected corner #{point_idx} on {pname}{link_suffix}"
+                                        );
+                                        return true;
+                                    } else if state.active_2d_tool == "Corner" {
                                         let batch_corners = if already_in_multi {
                                             batch_corners_for_points(
                                                 &state.project.template,
@@ -4030,6 +4073,11 @@ fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
     } else {
         "tool-btn"
     };
+    let corner_select_class = if state.active_2d_tool == "Corner Select" {
+        "tool-btn active"
+    } else {
+        "tool-btn"
+    };
     let corner_class = if state.active_2d_tool == "Corner" {
         "tool-btn active"
     } else {
@@ -4074,7 +4122,11 @@ fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
                 {icon_trim_2d()}
                 <span class="tool-label">"Trim"</span>
             </button>
-            <button class={corner_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_CORNER2D)} title="Corner Rounding & Chamfer (C)">
+            <button id="tool-corner-select-2d" class={corner_select_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_CORNER_SELECT2D)} title="Select Corners (V / Shift+Click multi)">
+                {icon_corner_select_2d()}
+                <span class="tool-label">"Select Corner"</span>
+            </button>
+            <button id="tool-corner-round-2d" class={corner_class} onclick_shared={queue_action(&state.actions, ACT_RUN_TOOL_CORNER2D)} title="Corner Rounding Menu & Fillet (C)">
                 {icon_corner_2d()}
                 <span class="tool-label">"Corner"</span>
             </button>
@@ -4274,6 +4326,7 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
         format!(" +{}", ids.join(","))
     };
     let sel_pts = effective_selected_points(state);
+    let has_selected_pts = !sel_pts.is_empty();
     let sub_detail = if sel_pts.len() > 1 {
         format!(" · {} corners selected{linked_str}", sel_pts.len())
     } else if let Some((pid, pt_idx)) = sel_pts.into_iter().next() {
@@ -4296,6 +4349,18 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
         "Tool: {} · Zoom: {}% · Selected: {} ({:.0}×{:.0} mm){}",
         state.active_2d_tool, zoom_pct, selected_name, w_mm, h_mm, sub_detail
     );
+    let corner_menu_active =
+        state.active_2d_tool == "Corner" || (state.corner_preview_active && has_selected_pts);
+    let corner_group_class = if corner_menu_active {
+        "cad-2d-group corner-menu-active"
+    } else {
+        "cad-2d-group"
+    };
+    let corner_row_class = if corner_menu_active {
+        "cad-2d-row corner-menu-active"
+    } else {
+        "cad-2d-row"
+    };
 
     let radius_mode_class = if state.corner_mode_radius {
         "cad-2d-pill active"
@@ -4391,7 +4456,7 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
                     {undo_btn}
                     {redo_btn}
                 </div>
-                <div class="cad-2d-group">
+                <div class={corner_group_class}>
                     <span class="cad-2d-label">"Corner"</span>
                     {mode_radius_btn}
                     {mode_shape_btn}
@@ -4425,7 +4490,7 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
                     {curve_on_btn}
                     {curve_off_btn}
                 </div>
-                <div class="cad-2d-row">
+                <div class={corner_row_class}>
                     <span class="cad-2d-label">"Corner"</span>
                     {mode_radius_btn}
                     {mode_shape_btn}
@@ -4441,14 +4506,14 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
         },
         3 => ui! {
             <div id="cad-2d-bar" class="cad-2d-bar rows-3">
-                <div class="cad-2d-row">
+                <div class={corner_row_class}>
                     {undo_btn}
                     {redo_btn}
                     {mode_radius_btn}
                     {mode_shape_btn}
                     {apply_round_btn}
                 </div>
-                <div class="cad-2d-row">
+                <div class={corner_row_class}>
                     {radius_dec_btn}
                     {radius_val}
                     {radius_inc_btn}
@@ -4467,19 +4532,19 @@ pub fn build_runner_2d_viewport(state: &CssRunnerState) -> Node {
         },
         _ => ui! {
             <div id="cad-2d-bar" class="cad-2d-bar rows-4">
-                <div class="cad-2d-row">
+                <div class={corner_row_class}>
                     {undo_btn}
                     {redo_btn}
                     {mode_radius_btn}
                     {mode_shape_btn}
                 </div>
-                <div class="cad-2d-row">
+                <div class={corner_row_class}>
                     {radius_dec_btn}
                     {radius_val}
                     {radius_inc_btn}
                     {apply_round_btn}
                 </div>
-                <div class="cad-2d-row">
+                <div class={corner_row_class}>
                     {tension_dec_btn}
                     {tension_val}
                     {tension_inc_btn}
@@ -4905,6 +4970,28 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
             .join(", ")
     };
     let sel_pts = effective_selected_points(state);
+    let has_sel_pts = !sel_pts.is_empty();
+    let corner_menu_active =
+        state.active_2d_tool == "Corner" || (state.corner_preview_active && has_sel_pts);
+    let corner_menu_box_class = if corner_menu_active {
+        "cad-corner-menu-box active"
+    } else {
+        "cad-corner-menu-box"
+    };
+    let preview_count = if open_1 {
+        active_fillet_previews(state).len()
+    } else {
+        0
+    };
+    let corner_menu_badge = if preview_count > 0 {
+        format!("Live preview ({preview_count})")
+    } else if state.active_2d_tool == "Corner" {
+        "Menu Active".to_string()
+    } else if has_sel_pts {
+        "Adjust to preview".to_string()
+    } else {
+        "Select corner".to_string()
+    };
     let sel_info: (String, String, String, String) = if sel_pts.len() > 1 {
         let mut any_curved = false;
         let mut any_straight = false;
@@ -4996,6 +5083,16 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
             "0.0 mm".into(),
         )
     };
+    let mode_radius_prop_btn = if state.corner_mode_radius {
+        "cad-prop-btn active"
+    } else {
+        "cad-prop-btn"
+    };
+    let mode_shape_prop_btn = if !state.corner_mode_radius {
+        "cad-prop-btn active"
+    } else {
+        "cad-prop-btn"
+    };
     let rule_sharp_btn = if state.corner_rule == CornerRule::Sharp {
         "cad-prop-btn active"
     } else {
@@ -5041,19 +5138,35 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
                             <span class="prop-label">"Seam Allowance"</span>
                             <span class="prop-value">{sel_info.3}</span>
                         </div>
-                        <div class="prop-row">
-                            <span class="prop-label">"Fillet Radius"</span>
-                            <span class="prop-value">{format!("{:.1} mm (T {:.2})", state.corner_radius_mm, state.corner_tension)}</span>
-                        </div>
-                        <div class="cad-prop-actions">
-                            <button class={rule_sharp_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Sharp))}>"Sharp"</button>
-                            <button class={rule_smooth_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Smooth))}>"Smooth"</button>
-                            <button class={rule_sym_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Symmetric))}>"Sym"</button>
-                        </div>
-                        <div class="cad-prop-actions">
-                            <button class="cad-prop-btn primary" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ApplyCornerRoundSelected)}>{format!("Round ({:.0} mm)", state.corner_radius_mm)}</button>
-                            <button class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(true))}>"To Bézier"</button>
-                            <button class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(false))}>"To Straight"</button>
+                        <div id="corner-rounding-menu" class={corner_menu_box_class}>
+                            <div class="cad-corner-menu-header">
+                                <span>"Corner Rounding Menu"</span>
+                                <span id="corner-menu-badge" class="cad-corner-menu-badge">{corner_menu_badge}</span>
+                            </div>
+                            <div class="cad-prop-actions">
+                                <button id="prop-corner-radius-mode" class={mode_radius_prop_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerMode(true))}>"Radius"</button>
+                                <button id="prop-corner-shape-mode" class={mode_shape_prop_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerMode(false))}>"Shape"</button>
+                            </div>
+                            <div class="cad-prop-actions">
+                                <button id="prop-radius-dec" class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerRadiusMm(-2.0))}>"-2 mm"</button>
+                                <span class="cad-2d-value">{format!("{:.1} mm", state.corner_radius_mm)}</span>
+                                <button id="prop-radius-inc" class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerRadiusMm(2.0))}>"+2 mm"</button>
+                            </div>
+                            <div class="cad-prop-actions">
+                                <button id="prop-tension-dec" class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerTension(-0.05))}>"T-"</button>
+                                <span class="cad-2d-value">{format!("T {:.2}", state.corner_tension)}</span>
+                                <button id="prop-tension-inc" class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::AdjustCornerTension(0.05))}>"T+"</button>
+                            </div>
+                            <div class="cad-prop-actions">
+                                <button class={rule_sharp_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Sharp))}>"Sharp"</button>
+                                <button class={rule_smooth_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Smooth))}>"Smooth"</button>
+                                <button class={rule_sym_btn} onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::SetCornerRule(CornerRule::Symmetric))}>"Sym"</button>
+                            </div>
+                            <div class="cad-prop-actions">
+                                <button id="prop-apply-round" class="cad-prop-btn primary" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ApplyCornerRoundSelected)}>{format!("Round ({:.0} mm)", state.corner_radius_mm)}</button>
+                                <button class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(true))}>"To Bézier"</button>
+                                <button class="cad-prop-btn" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ToggleSelectedCurve(false))}>"To Straight"</button>
+                            </div>
                         </div>
                     </div>
                 }
@@ -7837,6 +7950,7 @@ mod tests {
             (ACT_RUN_TOOL_INTERNAL2D, "Internal Line"),
             (ACT_RUN_TOOL_MEASURE2D, "Measure"),
             (ACT_RUN_TOOL_TRIM2D, "Trim"),
+            (ACT_RUN_TOOL_CORNER_SELECT2D, "Corner Select"),
             (ACT_RUN_TOOL_CORNER2D, "Corner"),
             (ACT_RUN_TOOL_EDIT2D, "Edit"),
         ] {
@@ -8204,5 +8318,280 @@ mod tests {
                 .len(),
             n_before
         );
+    }
+
+    #[test]
+    fn test_2d_corner_select_live_preview_and_hover_tooltips() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let stylesheet = load_studio_stylesheet().expect("load studio stylesheet");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let project = FittingProject::basic(GarmentKind::Tshirt, 0, avatar);
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out_corner_preview"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let state = CssRunnerState::new(project, scene, files, tx, latest);
+        let mut app = create_runner_app(state, &stylesheet);
+        app.set_viewport(cssimpler::renderer::ViewportSize::new(1600, 980));
+        app.frame(FrameInfo {
+            delta: Duration::from_millis(16),
+            frame_index: 1,
+        });
+
+        // 1. Switch to Corner Select via 'v' shortcut (distinct from Corner Rounding Menu 'c')
+        assert!(handle_runner_event(
+            app.state_mut(),
+            &EngineEvent::Key(cssimpler::renderer::KeyboardEvent {
+                logical_key: cssimpler::renderer::KeyIdentity::Character("v".into()),
+                physical_key: None,
+                location: cssimpler::renderer::KeyLocation::Standard,
+                state: cssimpler::renderer::ButtonState::Pressed,
+                repeat: false,
+                modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+            })
+        ));
+        assert_eq!(app.state().active_2d_tool, "Corner Select");
+        assert!(app.state().accordion_open[1]);
+        assert!(active_fillet_previews(app.state()).is_empty());
+
+        let idx_by_edge = |tmpl: &GarmentTemplate, pidx: usize, name: &str| -> usize {
+            tmpl.panels[pidx]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .edges
+                .iter()
+                .position(|e| e == name)
+                .unwrap()
+        };
+        let c_right = idx_by_edge(&app.state().project.template, 0, "sleeve-top-right");
+        let c_left = idx_by_edge(&app.state().project.template, 0, "shoulder-left");
+
+        // 2. Click + Shift+click two sewn corners in Corner Select mode -> selects without committing or dragging
+        for (idx, shift) in [(c_right, false), (c_left, true)] {
+            let pt = app.state().project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .points[idx];
+            let (sx, sy) = board_to_screen_px(
+                app.state(),
+                panel_to_board_pt(&app.state().project.template, 0, pt),
+            );
+            handle_runner_event(app.state_mut(), &pointer_move_ev(sx, sy));
+            assert!(handle_runner_event(
+                app.state_mut(),
+                &pointer_btn_mod_ev(true, shift, false)
+            ));
+            assert!(app.state().drag_2d.is_none());
+            assert!(handle_runner_event(
+                app.state_mut(),
+                &pointer_btn_mod_ev(false, shift, false)
+            ));
+        }
+        assert_eq!(app.state().selected_2d_points.len(), 2);
+        assert!(
+            app.state().project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .is_empty()
+        );
+        assert!(active_fillet_previews(app.state()).is_empty());
+
+        // 3. Adjust corner rounding settings while Corner Select is still active -> live fillet preview appears & updates
+        let (svg_before, _) = render_runner_2d_svg(app.state());
+        apply_runner_ui_op(app.state_mut(), RunnerUiOp::AdjustCornerRadiusMm(4.0));
+        assert!(app.state().corner_preview_active);
+        let p_after_r = active_fillet_previews(app.state());
+        assert_eq!(
+            p_after_r.len(),
+            4,
+            "must preview both corners + sewn partners"
+        );
+        let c1_r14 = p_after_r[0].2.control_1;
+        let (svg_preview_r14, _) = render_runner_2d_svg(app.state());
+        assert_ne!(format!("{svg_before:?}"), format!("{svg_preview_r14:?}"));
+
+        apply_runner_ui_op(app.state_mut(), RunnerUiOp::AdjustCornerRadiusMm(-6.0));
+        let p_after_r8 = active_fillet_previews(app.state());
+        assert_eq!(p_after_r8.len(), 4);
+        assert!(p_after_r8[0].2.control_1.distance(c1_r14) > 1e-4);
+
+        apply_runner_ui_op(app.state_mut(), RunnerUiOp::SetCornerMode(false));
+        apply_runner_ui_op(app.state_mut(), RunnerUiOp::AdjustCornerTension(-0.15));
+        let p_after_tension = active_fillet_previews(app.state());
+        assert_eq!(p_after_tension.len(), 4);
+        assert!(
+            p_after_tension[0]
+                .2
+                .control_1
+                .distance(p_after_r8[0].2.control_1)
+                > 1e-4
+        );
+        // Geometry remains uncommitted during live preview
+        assert!(
+            app.state().project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .is_empty()
+        );
+
+        // Switching to Corner Rounding Menu tool preserves selection & preview; clicking Round commits and clears preview
+        set_active_2d_tool(app.state_mut(), "Corner");
+        assert_eq!(app.state().active_2d_tool, "Corner");
+        assert_eq!(active_fillet_previews(app.state()).len(), 4);
+        apply_runner_ui_op(app.state_mut(), RunnerUiOp::ApplyCornerRoundSelected);
+        assert!(!app.state().corner_preview_active);
+        assert_eq!(
+            app.state().project.template.panels[0]
+                .polygon
+                .as_ref()
+                .unwrap()
+                .curves
+                .len(),
+            2
+        );
+        assert!(undo_redo_2d(app.state_mut(), false));
+
+        // 4. Verify distinct Corner icons in #rail-2d and hover tooltips across #rail-2d, #rail-3d, #top-bar
+        assert_ne!(
+            format!("{:?}", icon_corner_select_2d()),
+            format!("{:?}", icon_corner_2d())
+        );
+
+        let ui_tree = build_runner_ui(app.state());
+        let base_scene = cssimpler::style::build_render_tree_in_viewport_with_interaction(
+            &ui_tree,
+            &stylesheet,
+            1600,
+            980,
+            &cssimpler::core::ElementInteractionState::default(),
+        );
+
+        fn find_dom_title<'a>(node: &'a Node, id: &str) -> Option<&'a str> {
+            match node {
+                Node::Element(el) => {
+                    if el.id.as_deref() == Some(id) {
+                        return el.attribute("title");
+                    }
+                    for child in &el.children {
+                        if let Some(found) = find_dom_title(child, id) {
+                            return Some(found);
+                        }
+                    }
+                    None
+                }
+                _ => None,
+            }
+        }
+        fn find_by_id<'a>(
+            node: &'a cssimpler::renderer::RenderNode,
+            id: &str,
+        ) -> Option<&'a cssimpler::renderer::RenderNode> {
+            if node.id() == Some(id) {
+                return Some(node);
+            }
+            for child in &node.children {
+                if let Some(found) = find_by_id(child, id) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        fn node_text(node: &cssimpler::renderer::RenderNode) -> Option<&str> {
+            match &node.kind {
+                cssimpler::core::RenderKind::Text(t) => Some(t.as_str()),
+                _ => None,
+            }
+        }
+        fn collect_all_text(node: &cssimpler::renderer::RenderNode, out: &mut Vec<String>) {
+            if let Some(t) = node_text(node) {
+                out.push(t.to_string());
+            }
+            for child in &node.children {
+                collect_all_text(child, out);
+            }
+        }
+        fn find_node_with_text<'a>(
+            node: &'a cssimpler::renderer::RenderNode,
+            needle: &str,
+        ) -> Option<&'a cssimpler::renderer::RenderNode> {
+            if node_text(node) == Some(needle)
+                || node.children.iter().any(|c| node_text(c) == Some(needle))
+            {
+                return Some(node);
+            }
+            for child in &node.children {
+                if let Some(found) = find_node_with_text(child, needle) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+
+        for (btn_id, expected_tooltip) in [
+            (
+                "#tool-corner-select-2d",
+                "Select Corners (V / Shift+Click multi)",
+            ),
+            ("#tool-corner-round-2d", "Corner Rounding Menu & Fillet (C)"),
+            (
+                "#avatar-diagnostics-btn",
+                "Avatar & Dress Form Diagnostics (Shift+A)",
+            ),
+            ("#sim-play-btn", "Start/Stop simulation (Space)"),
+        ] {
+            let trimmed_id = btn_id.trim_start_matches('#');
+            assert_eq!(find_dom_title(&ui_tree, trimmed_id), Some(expected_tooltip));
+            let btn_node = find_by_id(&base_scene, trimmed_id)
+                .unwrap_or_else(|| panic!("missing button {btn_id} in render tree"));
+            // Hover the SVG child if present to verify ancestor :hover::after propagation too
+            let hover_path = btn_node
+                .children
+                .first()
+                .and_then(|c| c.element_path.clone())
+                .or_else(|| btn_node.element_path.clone())
+                .expect("element_path for hover");
+            let hovered_scene = cssimpler::style::build_render_tree_in_viewport_with_interaction(
+                &ui_tree,
+                &stylesheet,
+                1600,
+                980,
+                &cssimpler::core::ElementInteractionState {
+                    hovered: Some(hover_path),
+                    active: None,
+                },
+            );
+            let mut texts = Vec::new();
+            collect_all_text(&hovered_scene, &mut texts);
+            assert!(
+                texts.iter().any(|t| t == expected_tooltip),
+                "hovering {btn_id} must render tooltip {expected_tooltip:?}; texts={texts:?}"
+            );
+            let tip_node =
+                find_node_with_text(&hovered_scene, expected_tooltip).expect("tooltip render node");
+            assert!(
+                tip_node.layout.width > 20.0
+                    && tip_node.layout.height > 12.0
+                    && tip_node.layout.x >= 0.0
+                    && tip_node.layout.y >= 0.0
+                    && tip_node.layout.x + tip_node.layout.width <= 1600.0
+                    && tip_node.layout.y + tip_node.layout.height <= 980.0,
+                "tooltip for {btn_id} must fit cleanly on screen: {:?}",
+                tip_node.layout
+            );
+        }
     }
 }
