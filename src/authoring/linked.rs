@@ -13,6 +13,7 @@ pub(super) fn check_command(t: &GarmentTemplate, c: &Command) -> Result<(), Stri
             copy_side: None,
             ..
         } => linked(panel),
+        Command::RemovePoints { points } => points.iter().any(|(panel, _)| linked(panel)),
         Command::Boolean { a, b, .. } => linked(a) || linked(b),
         _ => false,
     };

@@ -352,6 +352,16 @@ pub fn icon_trim_2d() -> Node {
     }
 }
 
+pub fn icon_corner_select_2d() -> Node {
+    ui! {
+        <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="5 19 5 6 18 6" />
+            <rect x="3" y="4" width="4" height="4" fill="#f59e0b" stroke="currentColor" stroke-width="1.5" />
+            <path d="M12 12l3.5 8 1.5-3.2L20.5 15 12 12z" fill="currentColor" />
+        </svg>
+    }
+}
+
 pub fn icon_corner_2d() -> Node {
     ui! {
         <svg viewBox="0 0 24 24" class="icon tool-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

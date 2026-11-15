@@ -158,6 +158,12 @@ pub enum Command {
         groups: Vec<(String, Vec<usize>)>,
         board_delta: DVec2,
     },
+    /// Move selected contour points on one or more panels by a board-space delta,
+    /// propagating across seams and mirror links atomically.
+    MovePointGroupsConnected {
+        points: Vec<(String, usize)>,
+        board_delta: DVec2,
+    },
     /// Move contour points by an exact metric step given in millimetres.
     Nudge {
         panel: String,
@@ -182,6 +188,13 @@ pub enum Command {
     RoundCornerShape {
         panel: String,
         edge: String,
+        radius_m: f64,
+        tension: f64,
+        rule: corner_tool::CornerRule,
+    },
+    /// Round one or more corners (plus all seam- and mirror-linked partners) atomically.
+    RoundCornersShape {
+        corners: Vec<(String, String)>,
         radius_m: f64,
         tension: f64,
         rule: corner_tool::CornerRule,
@@ -216,10 +229,19 @@ pub enum Command {
         panel: String,
         point: usize,
     },
+    /// Remove multiple contour points atomically and rejoin their neighbouring boundaries.
+    RemovePoints {
+        points: Vec<(String, usize)>,
+    },
     /// Curve (true) or straighten (false) both boundaries incident to a point.
     CurvePoint {
         panel: String,
         anchor: usize,
+        curved: bool,
+    },
+    /// Curve (true) or straighten (false) all boundaries incident to selected points (and connected edges).
+    CurvePoints {
+        points: Vec<(String, usize)>,
         curved: bool,
     },
     /// Required length of a named boundary, in metres. `0.0` clears the stored
@@ -1299,6 +1321,82 @@ pub fn apply_with_measurement_draft(
     Ok((edit, migrated))
 }
 
+fn remove_point_inner(
+    template: &mut GarmentTemplate,
+    panel: &str,
+    point: usize,
+) -> Result<(), String> {
+    let (removed, incoming, outgoing) = {
+        let p = template
+            .panels
+            .iter()
+            .find(|p| p.id == panel)
+            .ok_or("Panel not found")?;
+        let polygon = p
+            .polygon
+            .as_ref()
+            .ok_or("This panel has no editable contour")?;
+        let count = polygon.points.len();
+        if count <= 3 {
+            return Err("A contour needs at least three points".into());
+        }
+        if point >= count {
+            return Err("Point index out of range".into());
+        }
+        let previous = (point + count - 1) % count;
+        (
+            polygon.points[point],
+            polygon.edges[previous].clone(),
+            polygon.edges[point].clone(),
+        )
+    };
+    for name in [&incoming, &outgoing] {
+        if seam_uses(template, panel, name) {
+            return Err("A seam uses this point's boundaries; delete the seam first".into());
+        }
+    }
+    let p = template
+        .panels
+        .iter_mut()
+        .find(|p| p.id == panel)
+        .ok_or("Panel not found")?;
+    if p.polygon.as_ref().is_some_and(|polygon| {
+        polygon.target_lengths.contains_key(&incoming)
+            || polygon.target_lengths.contains_key(&outgoing)
+    }) {
+        return Err("A target length uses this point's boundaries; clear the target first".into());
+    }
+    if p.polygon.as_ref().is_some_and(|polygon| {
+        [&incoming, &outgoing].iter().any(|name| {
+            polygon.seam_allowances.contains_key(*name)
+                || polygon.notches.contains_key(*name)
+                || polygon
+                    .measurements
+                    .iter()
+                    .any(|m| &m.a.edge == *name || &m.b.edge == *name)
+        })
+    }) {
+        return Err(
+            "Seam allowances, notches or measurements use this point's boundaries; clear them first"
+                .into(),
+        );
+    }
+    {
+        let polygon = p.polygon.as_mut().unwrap();
+        if polygon.curves.contains_key(&incoming) || polygon.curves.contains_key(&outgoing) {
+            return Err("Remove the Bézier handles before deleting this point".into());
+        }
+        polygon.points.remove(point);
+        // The outgoing name disappears with its point; the incoming name
+        // becomes the rejoined boundary.
+        polygon.edges.remove(point);
+    }
+    // A pin on the removed vertex cannot survive that vertex.
+    p.pin_points.retain(|pin| pin.distance(removed) >= 1e-9);
+    normalize(p);
+    Ok(())
+}
+
 pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String> {
     let held = |id: &str| {
         source.pin_targets.iter().any(|p| p.panel == id)
@@ -1952,6 +2050,14 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
                 normalize(p);
             }
         }
+        Command::MovePointGroupsConnected {
+            points,
+            board_delta,
+        } => {
+            let first = points.first().map(|(p, _)| p.clone());
+            corner_tool::move_point_groups_connected(source, &mut template, &points, board_delta)?;
+            selected = first;
+        }
         Command::Nudge {
             panel,
             points,
@@ -2157,6 +2263,23 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             )?;
             selected = Some(panel);
         }
+        Command::RoundCornersShape {
+            corners,
+            radius_m,
+            tension,
+            rule,
+        } => {
+            let first = corners.first().map(|(p, _)| p.clone());
+            corner_tool::round_shape_many(
+                source,
+                &mut template,
+                &corners,
+                radius_m,
+                tension,
+                rule,
+            )?;
+            selected = first;
+        }
         Command::AdjustCornerHandle {
             panel,
             edge,
@@ -2181,78 +2304,33 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
             selected = Some(sel);
         }
         Command::RemovePoint { panel, point } => {
-            let (removed, incoming, outgoing) = {
-                let p = template
-                    .panels
-                    .iter()
-                    .find(|p| p.id == panel)
-                    .ok_or("Panel not found")?;
-                let polygon = p
-                    .polygon
-                    .as_ref()
-                    .ok_or("This panel has no editable contour")?;
-                let count = polygon.points.len();
-                if count <= 3 {
-                    return Err("A contour needs at least three points".into());
-                }
-                if point >= count {
-                    return Err("Point index out of range".into());
-                }
-                let previous = (point + count - 1) % count;
-                (
-                    polygon.points[point],
-                    polygon.edges[previous].clone(),
-                    polygon.edges[point].clone(),
-                )
-            };
-            for name in [&incoming, &outgoing] {
-                if seam_uses(&template, &panel, name) {
-                    return Err("A seam uses this point's boundaries; delete the seam first".into());
-                }
-            }
-            let p = template
-                .panels
-                .iter_mut()
-                .find(|p| p.id == panel)
-                .ok_or("Panel not found")?;
-            if p.polygon.as_ref().is_some_and(|polygon| {
-                polygon.target_lengths.contains_key(&incoming)
-                    || polygon.target_lengths.contains_key(&outgoing)
-            }) {
-                return Err(
-                    "A target length uses this point's boundaries; clear the target first".into(),
-                );
-            }
-            if p.polygon.as_ref().is_some_and(|polygon| {
-                [&incoming, &outgoing].iter().any(|name| {
-                    polygon.seam_allowances.contains_key(*name)
-                        || polygon.notches.contains_key(*name)
-                        || polygon
-                            .measurements
-                            .iter()
-                            .any(|m| &m.a.edge == *name || &m.b.edge == *name)
-                })
-            }) {
-                return Err(
-                    "Seam allowances, notches or measurements use this point's boundaries; clear them first"
-                        .into(),
-                );
-            }
-            {
-                let polygon = p.polygon.as_mut().unwrap();
-                if polygon.curves.contains_key(&incoming) || polygon.curves.contains_key(&outgoing)
-                {
-                    return Err("Remove the Bézier handles before deleting this point".into());
-                }
-                polygon.points.remove(point);
-                // The outgoing name disappears with its point; the incoming name
-                // becomes the rejoined boundary.
-                polygon.edges.remove(point);
-            }
-            // A pin on the removed vertex cannot survive that vertex.
-            p.pin_points.retain(|pin| pin.distance(removed) >= 1e-9);
-            normalize(p);
+            remove_point_inner(&mut template, &panel, point)?;
             selected = Some(panel);
+        }
+        Command::RemovePoints { points } => {
+            if points.is_empty() {
+                return Err("Select at least one point".into());
+            }
+            let first = points.first().map(|(p, _)| p.clone());
+            let mut by_panel: std::collections::BTreeMap<String, Vec<usize>> =
+                std::collections::BTreeMap::new();
+            for (panel, point) in points {
+                by_panel.entry(panel).or_default().push(point);
+            }
+            if by_panel.len() > 1 {
+                for (i, p) in template.panels.iter_mut().enumerate() {
+                    p.layout_2d = Some(layout(source, i));
+                }
+            }
+            for (pid, mut pts) in by_panel {
+                pts.sort_unstable();
+                pts.dedup();
+                pts.reverse();
+                for pt in pts {
+                    remove_point_inner(&mut template, &pid, pt)?;
+                }
+            }
+            selected = first;
         }
         Command::CurvePoint {
             panel,
@@ -2261,6 +2339,11 @@ pub fn apply(source: &GarmentTemplate, command: Command) -> Result<Edit, String>
         } => {
             corner_tool::curve_point_connected(source, &mut template, &panel, anchor, curved)?;
             selected = Some(panel);
+        }
+        Command::CurvePoints { points, curved } => {
+            let first = points.first().map(|(p, _)| p.clone());
+            corner_tool::curve_points_connected(source, &mut template, &points, curved)?;
+            selected = first;
         }
         Command::TargetLength {
             panel,

@@ -219,7 +219,7 @@ fn tool_rails_and_corner_tool_radius_shape_modes_render_and_dispatch() {
 
     let mut btns_2d = Vec::new();
     find_elements_by_attr(&node_2d, "data-tool", &mut btns_2d);
-    assert_eq!(btns_2d.len(), 10);
+    assert_eq!(btns_2d.len(), 11);
 
     let mut mode_btns = Vec::new();
     find_elements_by_attr(&node_2d, "data-mode", &mut mode_btns);
@@ -295,13 +295,14 @@ fn radial_menu_renders_at_pointer_coordinates_when_open() {
 #[test]
 fn cad_vector_icons_and_rail_hotkeys_are_consistent_and_render_crisp_svgs() {
     use marvelous_cloth::css_ui::{
-        icon_circle_2d, icon_cloth_pull, icon_curve_point_2d, icon_dart_2d, icon_dress_form,
-        icon_free_sew_3d, icon_notch_2d, icon_pleat_2d, icon_polygon_2d, icon_seam_allowance_2d,
-        icon_select_2d,
+        icon_circle_2d, icon_cloth_pull, icon_corner_select_2d, icon_curve_point_2d, icon_dart_2d,
+        icon_dress_form, icon_free_sew_3d, icon_notch_2d, icon_pleat_2d, icon_polygon_2d,
+        icon_seam_allowance_2d, icon_select_2d,
     };
 
     let icons = [
         icon_select_2d(),
+        icon_corner_select_2d(),
         icon_curve_point_2d(),
         icon_polygon_2d(),
         icon_circle_2d(),
@@ -367,5 +368,6 @@ fn cad_vector_icons_and_rail_hotkeys_are_consistent_and_render_crisp_svgs() {
     assert!(titles_2d.iter().any(|t| t.contains("(G)")));
     assert!(titles_2d.iter().any(|t| t.contains("(M)")));
     assert!(titles_2d.iter().any(|t| t.contains("(T)")));
+    assert!(titles_2d.iter().any(|t| t.contains("(V")));
     assert!(titles_2d.iter().any(|t| t.contains("(C)")));
 }
