@@ -1304,3 +1304,368 @@ fn mixed_mirror_and_seam_corner_drag_bezier_and_round_propagate_coherently() {
         serde_json::to_vec(&rounded.template).unwrap()
     );
 }
+
+#[test]
+fn batch_round_corners_shape_checks_combined_shared_edge_limit_and_undo() {
+    use marvelous_cloth::authoring::CornerRule;
+    use marvelous_cloth::authoring::corner_tool::CIRCLE_TENSION;
+
+    let t = fixture(); // 0.4 x 0.5 rectangle
+    let pid = t.panels[0].id.clone();
+    let e1 = t.panels[0].polygon.as_ref().unwrap().edges[1].clone(); // corner (0.4, 0.0), shares edge[1] (length 0.5)
+    let e2 = t.panels[0].polygon.as_ref().unwrap().edges[2].clone(); // corner (0.4, 0.5), also touches edge[1]
+    let e3 = t.panels[0].polygon.as_ref().unwrap().edges[3].clone(); // corner (0.0, 0.5), shares edge[2] (length 0.4)
+
+    // Adjacent corners on the 0.4 m top edge (e2, e3) can each trim 0.15 m individually (< 0.4 m),
+    // but together need 0.25 + 0.25 = 0.50 m > 0.40 m when radius_m = 0.25 -> must fail atomically.
+    let before = serde_json::to_vec(&t).unwrap();
+    let too_big = authoring::apply(
+        &t,
+        Command::RoundCornersShape {
+            corners: vec![(pid.clone(), e2.clone()), (pid.clone(), e3.clone())],
+            radius_m: 0.25,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    );
+    assert!(too_big.is_err());
+    assert_eq!(before, serde_json::to_vec(&t).unwrap());
+
+    // Valid batch rounding of 3 corners on the same panel in one command
+    let edit = authoring::apply(
+        &t,
+        Command::RoundCornersShape {
+            corners: vec![(pid.clone(), e1), (pid.clone(), e2), (pid, e3)],
+            radius_m: 0.02,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    let poly = edit.template.panels[0].polygon.as_ref().unwrap();
+    let round_curves = poly
+        .curves
+        .keys()
+        .filter(|k| k.starts_with("corner_round_"))
+        .count();
+    assert_eq!(round_curves, 3);
+    assert_eq!(poly.points.len(), 7);
+    edit.template.compile().unwrap();
+
+    let mut history = History::default();
+    history.record(t.clone());
+    let undo = history.restore(&edit.template, false).unwrap();
+    assert_eq!(serde_json::to_vec(&undo.template).unwrap(), before);
+    let redo = history.restore(&undo.template, true).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&redo.template).unwrap(),
+        serde_json::to_vec(&edit.template).unwrap()
+    );
+}
+
+#[test]
+fn batch_round_corners_shape_propagates_across_sewn_and_mirrored_panels() {
+    use marvelous_cloth::authoring::CornerRule;
+    use marvelous_cloth::authoring::corner_tool::CIRCLE_TENSION;
+    use marvelous_cloth::garment::presets::{self, GarmentKind};
+    use marvelous_cloth::garment::seam::{BoundaryRef, Side};
+
+    // 1. Two-panel T-shirt: batch-round both sleeve-top corners on front -> rounds all 4 sewn corners & stitches seams
+    let tshirt = presets::basic(GarmentKind::Tshirt, 0);
+    let edit = authoring::apply(
+        &tshirt,
+        Command::RoundCornersShape {
+            corners: vec![
+                ("front".into(), "sleeve-top-right".into()),
+                ("front".into(), "shoulder-left".into()),
+            ],
+            radius_m: 0.008,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    for pidx in 0..2 {
+        let count = edit.template.panels[pidx]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .keys()
+            .filter(|k| k.starts_with("corner_round_"))
+            .count();
+        assert_eq!(
+            count, 2,
+            "panel {pidx} must receive both rounded corners via seams"
+        );
+    }
+    let round_seams = edit
+        .template
+        .seams
+        .iter()
+        .filter(|s| s.id.contains("corner_round"))
+        .count();
+    assert_eq!(round_seams, 2);
+    edit.template.compile().unwrap();
+
+    // 2. Passing BOTH mirror partners' corners in the same batch must work without double-application conflict
+    let base = fixture();
+    let mirrored = authoring::apply(
+        &base,
+        Command::LinkedMirror {
+            panel: base.panels[0].id.clone(),
+            axis: MirrorAxis::X,
+        },
+    )
+    .unwrap()
+    .template;
+    let p0_id = mirrored.panels[0].id.clone();
+    let p1_id = mirrored.panels[1].id.clone();
+    let p0_e1 = mirrored.panels[0].polygon.as_ref().unwrap().edges[1].clone();
+    // Corner 1 on p0 mirrors to corner 2 on p1 (same mirror corner on both panels -> 1 curve each).
+    let p1_e2 = mirrored.panels[1].polygon.as_ref().unwrap().edges[2].clone();
+    let same_mirror_pair = authoring::apply(
+        &mirrored,
+        Command::RoundCornersShape {
+            corners: vec![(p0_id.clone(), p0_e1.clone()), (p1_id.clone(), p1_e2)],
+            radius_m: 0.012,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        same_mirror_pair.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .len(),
+        1
+    );
+    assert_eq!(
+        same_mirror_pair.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .len(),
+        1
+    );
+    same_mirror_pair.template.compile().unwrap();
+
+    // Passing distinct corners across mirror partners (p0 corner 1 + p1 corner 3 -> p0 corners 1 & 0)
+    // rounds BOTH mirrored pairs coherently (2 curves per panel).
+    let p1_e3 = mirrored.panels[1].polygon.as_ref().unwrap().edges[3].clone();
+    let distinct_mirror_pair = authoring::apply(
+        &mirrored,
+        Command::RoundCornersShape {
+            corners: vec![(p0_id.clone(), p0_e1), (p1_id, p1_e3)],
+            radius_m: 0.012,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        distinct_mirror_pair.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .len(),
+        2
+    );
+    assert_eq!(
+        distinct_mirror_pair.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .len(),
+        2
+    );
+    distinct_mirror_pair.template.compile().unwrap();
+
+    // 3. Same-panel self-sewn edges compile cleanly after corner rounding.
+    let single = fixture();
+    let pid = single.panels[0].id.clone();
+    let poly = single.panels[0].polygon.as_ref().unwrap();
+    let self_sewn = authoring::apply(
+        &single,
+        Command::Sew {
+            a: BoundaryRef {
+                reversed: false,
+                panel: pid.clone(),
+                side: Side::Left,
+                edge: Some(poly.edges[3].clone()),
+                range: [0.0, 1.0],
+            },
+            b: BoundaryRef {
+                reversed: false,
+                panel: pid.clone(),
+                side: Side::Right,
+                edge: Some(poly.edges[1].clone()),
+                range: [0.0, 1.0],
+            },
+            reverse: false,
+            ease: true,
+        },
+    )
+    .unwrap()
+    .template;
+    let rounded_self = authoring::apply(
+        &self_sewn,
+        Command::RoundCornerShape {
+            panel: pid,
+            edge: poly.edges[1].clone(),
+            radius_m: 0.01,
+            tension: CIRCLE_TENSION,
+            rule: CornerRule::Smooth,
+        },
+    )
+    .unwrap();
+    rounded_self.template.compile().unwrap();
+}
+
+#[test]
+fn batch_curve_move_and_remove_points_across_seams_and_undo() {
+    use marvelous_cloth::garment::presets::{self, GarmentKind};
+
+    let t = presets::basic(GarmentKind::Tshirt, 0);
+    // 1. CurvePoints across multiple points propagates curves & straights to sewn partner "back"
+    let curved = authoring::apply(
+        &t,
+        Command::CurvePoints {
+            points: vec![("front".into(), 3), ("front".into(), 5)],
+            curved: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        !curved.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .is_empty()
+    );
+    curved.template.compile().unwrap();
+
+    let straight = authoring::apply(
+        &curved.template,
+        Command::CurvePoints {
+            points: vec![("front".into(), 3), ("front".into(), 5)],
+            curved: false,
+        },
+    )
+    .unwrap();
+    assert!(
+        straight.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .is_empty()
+    );
+    assert!(
+        straight.template.panels[1]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .curves
+            .is_empty()
+    );
+
+    // 2. MovePointGroupsConnected moves multiple corners and keeps seam lengths matched
+    let f_p3_before = t.panels[0].polygon.as_ref().unwrap().points[3];
+    let f_p6_before = t.panels[0].polygon.as_ref().unwrap().points[6];
+    let moved = authoring::apply(
+        &t,
+        Command::MovePointGroupsConnected {
+            points: vec![("front".into(), 3), ("back".into(), 6)],
+            board_delta: DVec2::new(0.012, 0.008),
+        },
+    )
+    .unwrap();
+    let fp = moved.template.panels[0].polygon.as_ref().unwrap();
+    let bp = moved.template.panels[1].polygon.as_ref().unwrap();
+    assert!(fp.points[3].distance(f_p3_before) > 0.01);
+    assert!(fp.points[6].distance(f_p6_before) > 0.01);
+    assert!(
+        (authoring::edge_length(fp, "shoulder-right").unwrap()
+            - authoring::edge_length(bp, "shoulder-right").unwrap())
+        .abs()
+            < 1e-9
+    );
+    moved.template.compile().unwrap();
+
+    let mut history = History::default();
+    history.record(t.clone());
+    let undo = history.restore(&moved.template, false).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&undo.template).unwrap(),
+        serde_json::to_vec(&t).unwrap()
+    );
+
+    // 3. RemovePoints removes multiple corners cleanly, while linked mirrors block it
+    let poly_t = authoring::apply(
+        &fixture(),
+        Command::Polygon {
+            points: vec![
+                DVec2::ZERO,
+                DVec2::new(0.2, 0.0),
+                DVec2::new(0.4, 0.05),
+                DVec2::new(0.4, 0.5),
+                DVec2::new(0.2, 0.52),
+                DVec2::new(0.0, 0.5),
+            ],
+            tangents: vec![],
+            meshing: MeshingSettings {
+                target_edge_m: 0.09,
+                ..Default::default()
+            },
+            fabric: "woven-demo".into(),
+            replace: true,
+        },
+    )
+    .unwrap()
+    .template;
+    let pid = poly_t.panels[0].id.clone();
+    let removed = authoring::apply(
+        &poly_t,
+        Command::RemovePoints {
+            points: vec![(pid.clone(), 1), (pid.clone(), 4)],
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        removed.template.panels[0]
+            .polygon
+            .as_ref()
+            .unwrap()
+            .points
+            .len(),
+        4
+    );
+    removed.template.compile().unwrap();
+
+    let mirrored = authoring::apply(
+        &poly_t,
+        Command::LinkedMirror {
+            panel: pid.clone(),
+            axis: MirrorAxis::X,
+        },
+    )
+    .unwrap()
+    .template;
+    assert!(
+        authoring::apply(
+            &mirrored,
+            Command::RemovePoints {
+                points: vec![(pid, 1)],
+            },
+        )
+        .is_err()
+    );
+}

@@ -601,40 +601,77 @@ fn validate_panel_fillet_metadata(
     Ok(())
 }
 
+/// Geometric preview for one corner resolved within a batch fillet validation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BatchCornerPreview {
+    pub panel: String,
+    pub point: usize,
+    pub preview: FilletPreview,
+}
+
+/// Validated fillet batch covering one or more user-selected corners together
+/// with all seam-connected and mirror-linked partners.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BatchFilletValidation {
+    pub primary: FilletPreview,
+    pub max_radius_m: f64,
+    pub corners: Vec<BatchCornerPreview>,
+}
+
 /// Validate template rules (seams, connected corners, markings, pins, linked
-/// partners) and compute a live fillet preview without mutating state.
-pub fn validate_fillet_preview(
+/// partners, and combined trim limits on shared/sewn edges) and compute live
+/// fillet previews for a batch of corners without mutating state.
+pub fn validate_fillet_batch(
     source: &GarmentTemplate,
-    panel: &str,
-    edge: &str,
+    corners: &[(String, String)],
     radius: f64,
     tension: f64,
-) -> Result<FilletPreview, String> {
-    let source_panel = source
-        .panels
-        .iter()
-        .find(|p| p.id == panel)
-        .ok_or("Panel not found")?;
-    let source_poly = source_panel
-        .polygon
-        .as_ref()
-        .ok_or("This panel has no editable contour")?;
-    let edge_pos = source_poly
-        .edges
-        .iter()
-        .position(|e| e == edge)
-        .ok_or("Boundary not found")?;
-    let source_n = source_poly.points.len();
-    if source_n < 3 || source_poly.edges.len() != source_n {
-        return Err("Invalid contour".into());
+) -> Result<BatchFilletValidation, String> {
+    if corners.is_empty() {
+        return Err("Select at least one corner".into());
+    }
+    if !radius.is_finite() || radius <= 0.0 {
+        return Err("Radius must be finite and positive".into());
+    }
+    if !tension.is_finite() || tension <= 0.0 {
+        return Err("Tension must be finite and positive".into());
     }
 
-    let seam_corners = connected_corners(source, panel, edge_pos);
-    let mut corner_previews = Vec::with_capacity(seam_corners.len());
+    let mut seen_corners = std::collections::BTreeSet::new();
+    let mut expanded_corners: Vec<CornerRef> = Vec::new();
+    for (panel, edge) in corners {
+        let source_panel = source
+            .panels
+            .iter()
+            .find(|p| p.id == *panel)
+            .ok_or("Panel not found")?;
+        let source_poly = source_panel
+            .polygon
+            .as_ref()
+            .ok_or("This panel has no editable contour")?;
+        let edge_pos = source_poly
+            .edges
+            .iter()
+            .position(|e| e == edge)
+            .ok_or("Boundary not found")?;
+        let source_n = source_poly.points.len();
+        if source_n < 3 || source_poly.edges.len() != source_n {
+            return Err("Invalid contour".into());
+        }
+        for c in connected_corners(source, panel, edge_pos) {
+            if seen_corners.insert(c.clone()) {
+                expanded_corners.push(c);
+            }
+        }
+    }
+
+    let mut corner_previews = Vec::with_capacity(expanded_corners.len());
     let mut min_max_radius = f64::INFINITY;
     let mut mirror_checked = std::collections::BTreeSet::new();
+    let mut edge_half_tan_sum: std::collections::BTreeMap<(String, String), f64> =
+        std::collections::BTreeMap::new();
 
-    for c in &seam_corners {
+    for c in &expanded_corners {
         let cp = source
             .panels
             .iter()
@@ -658,22 +695,49 @@ pub fn validate_fillet_preview(
         }
         let prev = preview_fillet(cp, c_out, radius, tension)?;
         min_max_radius = min_max_radius.min(prev.max_radius_m);
-        corner_previews.push((c.clone(), prev));
+        let half_tan = (prev.turn_radians.abs() * 0.5).tan();
+        *edge_half_tan_sum
+            .entry((c.panel.clone(), prev.incoming_edge.clone()))
+            .or_default() += half_tan;
+        *edge_half_tan_sum
+            .entry((c.panel.clone(), prev.outgoing_edge.clone()))
+            .or_default() += half_tan;
+        corner_previews.push(BatchCornerPreview {
+            panel: c.panel.clone(),
+            point: c.point,
+            preview: prev,
+        });
     }
 
-    // Verify that after trimming every incident sewn boundary across connected corners,
-    // seam rest lengths remain equal (unless allow_ease is explicitly set).
+    // Account for combined trims when multiple corners in the batch share an edge.
     let mut edge_trim_sum: std::collections::BTreeMap<(String, String), f64> =
         std::collections::BTreeMap::new();
-    for (c, prev) in &corner_previews {
-        let trim = radius * (prev.turn_radians.abs() * 0.5).tan();
-        *edge_trim_sum
-            .entry((c.panel.clone(), prev.incoming_edge.clone()))
-            .or_default() += trim;
-        *edge_trim_sum
-            .entry((c.panel.clone(), prev.outgoing_edge.clone()))
-            .or_default() += trim;
+    for ((pid, ename), half_tan_sum) in &edge_half_tan_sum {
+        let poly = source
+            .panels
+            .iter()
+            .find(|p| p.id == *pid)
+            .and_then(|p| p.polygon.as_ref())
+            .ok_or("Panel not found")?;
+        let e_idx = poly
+            .edges
+            .iter()
+            .position(|e| e == ename)
+            .ok_or("Boundary not found")?;
+        let len = poly.points[e_idx].distance(poly.points[(e_idx + 1) % poly.points.len()]);
+        let trim = radius * half_tan_sum;
+        if !trim.is_finite() || trim <= 1e-9 || trim >= len - 1e-9 {
+            return Err("Radius is too small or too large for the incident boundaries".into());
+        }
+        if *half_tan_sum > 1e-9 {
+            let max_edge_r = ((len - 1e-6).max(0.0)) / *half_tan_sum;
+            min_max_radius = min_max_radius.min(max_edge_r);
+        }
+        edge_trim_sum.insert((pid.clone(), ename.clone()), trim);
     }
+
+    // Verify that after trimming every incident sewn boundary across all batch corners,
+    // seam rest lengths remain equal (unless allow_ease is explicitly set).
     for seam in &source.seams {
         if seam.allow_ease {
             continue;
@@ -717,13 +781,38 @@ pub fn validate_fillet_preview(
         }
     }
 
-    let mut primary = corner_previews
-        .into_iter()
-        .next()
+    for bc in &mut corner_previews {
+        bc.preview.max_radius_m = min_max_radius;
+    }
+    let primary = corner_previews
+        .first()
         .ok_or("Corner not found")?
-        .1;
-    primary.max_radius_m = min_max_radius;
-    Ok(primary)
+        .preview
+        .clone();
+
+    Ok(BatchFilletValidation {
+        primary,
+        max_radius_m: min_max_radius,
+        corners: corner_previews,
+    })
+}
+
+/// Validate template rules (seams, connected corners, markings, pins, linked
+/// partners) and compute a live fillet preview without mutating state.
+pub fn validate_fillet_preview(
+    source: &GarmentTemplate,
+    panel: &str,
+    edge: &str,
+    radius: f64,
+    tension: f64,
+) -> Result<FilletPreview, String> {
+    let batch = validate_fillet_batch(
+        source,
+        &[(panel.to_owned(), edge.to_owned())],
+        radius,
+        tension,
+    )?;
+    Ok(batch.primary)
 }
 
 fn find_direct_seam_between(
@@ -761,51 +850,88 @@ pub(super) fn round_shape(
     edge: &str,
     radius: f64,
     tension: f64,
+    rule: CornerRule,
+) -> Result<(), String> {
+    round_shape_many(
+        source,
+        template,
+        &[(panel.to_owned(), edge.to_owned())],
+        radius,
+        tension,
+        rule,
+    )
+}
+
+pub(super) fn round_shape_many(
+    source: &GarmentTemplate,
+    template: &mut GarmentTemplate,
+    corners: &[(String, String)],
+    radius: f64,
+    tension: f64,
     _rule: CornerRule,
 ) -> Result<(), String> {
-    let _ = validate_fillet_preview(source, panel, edge, radius, tension)?;
-
-    let edge_pos = source
-        .panels
-        .iter()
-        .find(|p| p.id == panel)
-        .and_then(|p| p.polygon.as_ref())
-        .and_then(|poly| poly.edges.iter().position(|e| e == edge))
-        .ok_or("Boundary not found")?;
-    let seam_corners = connected_corners(source, panel, edge_pos);
+    let validated = validate_fillet_batch(source, corners, radius, tension)?;
 
     // Preserve every derived board origin before any panel's width can change.
     for (i, p) in template.panels.iter_mut().enumerate() {
         p.layout_2d = Some(layout(source, i));
     }
 
-    // Track one representative per mirror_link group (seed panel always takes precedence)
+    // Track one representative per mirror_link group (seed panels take precedence)
     // so linked::synchronize mirrors the group partner cleanly without conflict.
     let mut representative_by_panel: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
     let mut edited_reps = std::collections::BTreeSet::new();
-    for c in &seam_corners {
-        if representative_by_panel.contains_key(&c.panel) {
+    for (panel, _) in corners {
+        if representative_by_panel.contains_key(panel) {
             continue;
         }
-        if let Some(partner) = mirror_partner(source, &c.panel)
+        if let Some(partner) = mirror_partner(source, panel)
             && edited_reps.contains(partner)
         {
-            representative_by_panel.insert(c.panel.clone(), partner.to_owned());
+            representative_by_panel.insert(panel.clone(), partner.to_owned());
         } else {
-            edited_reps.insert(c.panel.clone());
-            representative_by_panel.insert(c.panel.clone(), c.panel.clone());
+            edited_reps.insert(panel.clone());
+            representative_by_panel.insert(panel.clone(), panel.clone());
+        }
+    }
+    for bc in &validated.corners {
+        if representative_by_panel.contains_key(&bc.panel) {
+            continue;
+        }
+        if let Some(partner) = mirror_partner(source, &bc.panel)
+            && edited_reps.contains(partner)
+        {
+            representative_by_panel.insert(bc.panel.clone(), partner.to_owned());
+        } else {
+            edited_reps.insert(bc.panel.clone());
+            representative_by_panel.insert(bc.panel.clone(), bc.panel.clone());
         }
     }
 
-    // Group directly-edited corners by panel, sorted descending by corner index so
-    // point/edge insertions do not shift earlier indices on the same panel.
+    // Map every corner (including corners on non-representative mirror partners) onto its
+    // representative panel's corner index, sorted descending so insertions do not shift indices.
     let mut by_panel: std::collections::BTreeMap<String, Vec<usize>> =
         std::collections::BTreeMap::new();
-    for c in &seam_corners {
-        if representative_by_panel.get(&c.panel) == Some(&c.panel) {
-            by_panel.entry(c.panel.clone()).or_default().push(c.point);
-        }
+    for bc in &validated.corners {
+        let rep = &representative_by_panel[&bc.panel];
+        let rep_pt = if rep == &bc.panel {
+            bc.point
+        } else {
+            let p = source
+                .panels
+                .iter()
+                .find(|p| p.id == bc.panel)
+                .ok_or("Panel not found")?;
+            let n = p
+                .polygon
+                .as_ref()
+                .ok_or("This panel has no editable contour")?
+                .points
+                .len();
+            n - 1 - bc.point
+        };
+        by_panel.entry(rep.clone()).or_default().push(rep_pt);
     }
     for pts in by_panel.values_mut() {
         pts.sort_unstable();
@@ -896,11 +1022,11 @@ pub(super) fn round_shape(
 
     // Build complete map of created corner_round_* edges including mirror-linked panels,
     // using source topology to resolve mirror corner & edge names.
-    let mut resolved_corners: Vec<CreatedCornerRound> = Vec::with_capacity(seam_corners.len());
-    for c in &seam_corners {
-        let rep = &representative_by_panel[&c.panel];
-        if rep == &c.panel {
-            if let Some(item) = created_on_rep.get(&(c.panel.clone(), c.point)) {
+    let mut resolved_corners: Vec<CreatedCornerRound> = Vec::with_capacity(validated.corners.len());
+    for bc in &validated.corners {
+        let rep = &representative_by_panel[&bc.panel];
+        if rep == &bc.panel {
+            if let Some(item) = created_on_rep.get(&(bc.panel.clone(), bc.point)) {
                 resolved_corners.push(CreatedCornerRound {
                     panel: item.panel.clone(),
                     point: item.point,
@@ -909,17 +1035,17 @@ pub(super) fn round_shape(
                     round_edge: item.round_edge.clone(),
                 });
             }
-        } else if let Some(p) = source.panels.iter().find(|p| p.id == c.panel)
+        } else if let Some(p) = source.panels.iter().find(|p| p.id == bc.panel)
             && let Some(poly) = p.polygon.as_ref()
         {
             let n = poly.points.len();
-            let rep_pt = n - 1 - c.point;
+            let rep_pt = n - 1 - bc.point;
             if let Some(item) = created_on_rep.get(&(rep.clone(), rep_pt)) {
                 resolved_corners.push(CreatedCornerRound {
-                    panel: c.panel.clone(),
-                    point: c.point,
-                    incoming_edge: poly.edges[(c.point + n - 1) % n].clone(),
-                    outgoing_edge: poly.edges[c.point].clone(),
+                    panel: bc.panel.clone(),
+                    point: bc.point,
+                    incoming_edge: poly.edges[(bc.point + n - 1) % n].clone(),
+                    outgoing_edge: poly.edges[bc.point].clone(),
                     round_edge: item.round_edge.clone(),
                 });
             }
@@ -933,7 +1059,7 @@ pub(super) fn round_shape(
         for j in (i + 1)..resolved_corners.len() {
             let ca = &resolved_corners[i];
             let cb = &resolved_corners[j];
-            if ca.panel == cb.panel {
+            if ca.panel == cb.panel && ca.point == cb.point {
                 continue;
             }
             let key = if (ca.panel.as_str(), ca.point) <= (cb.panel.as_str(), cb.point) {
@@ -1497,91 +1623,93 @@ fn propagate_corner_deltas(
     let mut corner_deltas = std::collections::BTreeMap::new();
     let mut queue = std::collections::VecDeque::new();
     for (seed_ref, delta) in seeds {
-        if corner_deltas.insert(seed_ref.clone(), delta).is_none() {
-            queue.push_back(seed_ref);
-        }
-    }
-
-    while let Some(cur) = queue.pop_front() {
-        let cur_delta = corner_deltas[&cur];
-        let Some(cp) = source.panels.iter().find(|p| p.id == cur.panel) else {
-            continue;
-        };
-        let Some(cpoly) = cp.polygon.as_ref() else {
-            continue;
-        };
-        let cn = cpoly.points.len();
-        if cn < 3 || cpoly.edges.len() != cn || cur.point >= cn {
+        if corner_deltas.contains_key(&seed_ref) {
             continue;
         }
-        let prev_idx = (cur.point + cn - 1) % cn;
-        let incident_edges = [
-            cpoly.edges[prev_idx].clone(),
-            cpoly.edges[cur.point].clone(),
-        ];
+        corner_deltas.insert(seed_ref.clone(), delta);
+        queue.push_back(seed_ref);
 
-        for cur_edge in incident_edges {
-            let e_idx = cpoly.edges.iter().position(|e| e == &cur_edge).unwrap();
-            let a0 = cpoly.points[e_idx];
-            let a1 = cpoly.points[(e_idx + 1) % cn];
-            for partner in connected_seam_edges(source, &cur.panel, &cur_edge)
-                .into_iter()
-                .skip(1)
-            {
-                let Some(pp) = source.panels.iter().find(|p| p.id == partner.panel) else {
-                    continue;
-                };
-                let Some(ppoly) = pp.polygon.as_ref() else {
-                    continue;
-                };
-                let pn = ppoly.points.len();
-                let Some(pe_idx) = ppoly.edges.iter().position(|e| e == &partner.edge) else {
-                    continue;
-                };
-                let b0 = ppoly.points[pe_idx];
-                let b1 = ppoly.points[(pe_idx + 1) % pn];
-                let at_edge_start = cur.point == e_idx;
-                let partner_pt = if at_edge_start ^ (!partner.same_direction) {
-                    pe_idx
-                } else {
-                    (pe_idx + 1) % pn
-                };
-                let target = CornerRef {
-                    panel: partner.panel.clone(),
-                    point: partner_pt,
-                };
-                if corner_deltas.contains_key(&target) {
-                    continue;
-                }
-                if let Some(mapped_delta) =
-                    map_edge_vector(a0, a1, b0, b1, partner.same_direction, cur_delta)
+        while let Some(cur) = queue.pop_front() {
+            let cur_delta = corner_deltas[&cur];
+            let Some(cp) = source.panels.iter().find(|p| p.id == cur.panel) else {
+                continue;
+            };
+            let Some(cpoly) = cp.polygon.as_ref() else {
+                continue;
+            };
+            let cn = cpoly.points.len();
+            if cn < 3 || cpoly.edges.len() != cn || cur.point >= cn {
+                continue;
+            }
+            let prev_idx = (cur.point + cn - 1) % cn;
+            let incident_edges = [
+                cpoly.edges[prev_idx].clone(),
+                cpoly.edges[cur.point].clone(),
+            ];
+
+            for cur_edge in incident_edges {
+                let e_idx = cpoly.edges.iter().position(|e| e == &cur_edge).unwrap();
+                let a0 = cpoly.points[e_idx];
+                let a1 = cpoly.points[(e_idx + 1) % cn];
+                for partner in connected_seam_edges(source, &cur.panel, &cur_edge)
+                    .into_iter()
+                    .skip(1)
                 {
-                    corner_deltas.insert(target.clone(), mapped_delta);
-                    queue.push_back(target);
+                    let Some(pp) = source.panels.iter().find(|p| p.id == partner.panel) else {
+                        continue;
+                    };
+                    let Some(ppoly) = pp.polygon.as_ref() else {
+                        continue;
+                    };
+                    let pn = ppoly.points.len();
+                    let Some(pe_idx) = ppoly.edges.iter().position(|e| e == &partner.edge) else {
+                        continue;
+                    };
+                    let b0 = ppoly.points[pe_idx];
+                    let b1 = ppoly.points[(pe_idx + 1) % pn];
+                    let at_edge_start = cur.point == e_idx;
+                    let partner_pt = if at_edge_start ^ (!partner.same_direction) {
+                        pe_idx
+                    } else {
+                        (pe_idx + 1) % pn
+                    };
+                    let target = CornerRef {
+                        panel: partner.panel.clone(),
+                        point: partner_pt,
+                    };
+                    if corner_deltas.contains_key(&target) {
+                        continue;
+                    }
+                    if let Some(mapped_delta) =
+                        map_edge_vector(a0, a1, b0, b1, partner.same_direction, cur_delta)
+                    {
+                        corner_deltas.insert(target.clone(), mapped_delta);
+                        queue.push_back(target);
+                    }
                 }
             }
-        }
 
-        for link in &source.mirror_links {
-            let partner = if link.a == cur.panel {
-                Some(link.b.as_str())
-            } else if link.b == cur.panel {
-                Some(link.a.as_str())
-            } else {
-                None
-            };
-            if let Some(m_panel) = partner
-                && let Some(mp) = source.panels.iter().find(|p| p.id == m_panel)
-                && let Some(mpoly) = mp.polygon.as_ref()
-                && mpoly.points.len() == cn
-            {
-                let target = CornerRef {
-                    panel: m_panel.to_owned(),
-                    point: cn - 1 - cur.point,
+            for link in &source.mirror_links {
+                let partner = if link.a == cur.panel {
+                    Some(link.b.as_str())
+                } else if link.b == cur.panel {
+                    Some(link.a.as_str())
+                } else {
+                    None
                 };
-                if !corner_deltas.contains_key(&target) {
-                    corner_deltas.insert(target.clone(), reflect_vec(link.axis, cur_delta));
-                    queue.push_back(target);
+                if let Some(m_panel) = partner
+                    && let Some(mp) = source.panels.iter().find(|p| p.id == m_panel)
+                    && let Some(mpoly) = mp.polygon.as_ref()
+                    && mpoly.points.len() == cn
+                {
+                    let target = CornerRef {
+                        panel: m_panel.to_owned(),
+                        point: cn - 1 - cur.point,
+                    };
+                    if !corner_deltas.contains_key(&target) {
+                        corner_deltas.insert(target.clone(), reflect_vec(link.axis, cur_delta));
+                        queue.push_back(target);
+                    }
                 }
             }
         }
@@ -1698,29 +1826,75 @@ pub(super) fn curve_point_connected(
     anchor: usize,
     curved: bool,
 ) -> Result<(), String> {
-    {
+    curve_points_connected(source, template, &[(panel.to_owned(), anchor)], curved)
+}
+
+pub(super) fn curve_points_connected(
+    source: &GarmentTemplate,
+    template: &mut GarmentTemplate,
+    points: &[(String, usize)],
+    curved: bool,
+) -> Result<(), String> {
+    if points.is_empty() {
+        return Err("Select at least one point".into());
+    }
+    let mut seed_corners = Vec::with_capacity(points.len());
+    let mut seen_seed = std::collections::BTreeSet::new();
+    for (panel, anchor) in points {
         let p = source
             .panels
             .iter()
-            .find(|p| p.id == panel)
+            .find(|p| p.id == *panel)
             .ok_or("Panel not found")?;
         let poly = p
             .polygon
             .as_ref()
             .ok_or("This panel has no editable contour")?;
-        if anchor >= poly.points.len() {
+        if *anchor >= poly.points.len() {
             return Err("Point index out of range".into());
+        }
+        let cref = CornerRef {
+            panel: panel.clone(),
+            point: *anchor,
+        };
+        if seen_seed.insert(cref.clone()) {
+            seed_corners.push(cref);
         }
     }
 
-    let seam_corners = connected_corners(source, panel, anchor);
+    let mut seam_corners = Vec::new();
+    let mut seen_corners = std::collections::BTreeSet::new();
+    for seed in &seed_corners {
+        for c in connected_corners(source, &seed.panel, seed.point) {
+            if seen_corners.insert(c.clone()) {
+                seam_corners.push(c);
+            }
+        }
+    }
     if seam_corners.len() > 1 {
         for (i, p) in template.panels.iter_mut().enumerate() {
             p.layout_2d = Some(layout(source, i));
         }
     }
+
+    // Choose one representative per mirror pair upfront (seed panels take precedence)
+    // so linked::synchronize never sees both members of a mirror link edited.
+    let mut representative_by_panel: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
     let mut edited_reps = std::collections::BTreeSet::new();
-    edited_reps.insert(panel.to_owned());
+    for seed in &seed_corners {
+        if representative_by_panel.contains_key(&seed.panel) {
+            continue;
+        }
+        if let Some(m_partner) = mirror_partner(source, &seed.panel)
+            && edited_reps.contains(m_partner)
+        {
+            representative_by_panel.insert(seed.panel.clone(), m_partner.to_owned());
+        } else {
+            edited_reps.insert(seed.panel.clone());
+            representative_by_panel.insert(seed.panel.clone(), seed.panel.clone());
+        }
+    }
 
     let mut edges_to_toggle: Vec<(String, String)> = Vec::new();
     let mut visited_edges = std::collections::BTreeSet::new();
@@ -1746,14 +1920,21 @@ pub(super) fn curve_point_connected(
 
     let mut touched_panels = std::collections::BTreeSet::new();
     for (pid, ename) in edges_to_toggle {
-        if pid != panel
-            && let Some(m_partner) = mirror_partner(source, &pid)
+        let is_rep = if let Some(rep) = representative_by_panel.get(&pid) {
+            rep == &pid
+        } else if let Some(m_partner) = mirror_partner(source, &pid)
             && edited_reps.contains(m_partner)
-            && !edited_reps.contains(&pid)
         {
+            representative_by_panel.insert(pid.clone(), m_partner.to_owned());
+            false
+        } else {
+            edited_reps.insert(pid.clone());
+            representative_by_panel.insert(pid.clone(), pid.clone());
+            true
+        };
+        if !is_rep {
             continue;
         }
-        edited_reps.insert(pid.clone());
         touched_panels.insert(pid.clone());
         let p = template
             .panels
@@ -1786,6 +1967,113 @@ pub(super) fn curve_point_connected(
             .iter_mut()
             .find(|p| p.id == pid)
             .ok_or("Panel not found")?;
+        normalize(p);
+    }
+    Ok(())
+}
+
+/// Live preview variant of multi-panel connected point movement in board metres.
+pub fn preview_move_point_groups_connected(
+    source: &GarmentTemplate,
+    template: &mut GarmentTemplate,
+    points: &[(String, usize)],
+    board_delta: DVec2,
+) -> Result<(), String> {
+    move_point_groups_connected(source, template, points, board_delta)?;
+    let _ = linked::synchronize(source, template);
+    Ok(())
+}
+
+pub(super) fn move_point_groups_connected(
+    source: &GarmentTemplate,
+    template: &mut GarmentTemplate,
+    points: &[(String, usize)],
+    board_delta: DVec2,
+) -> Result<(), String> {
+    if !board_delta.is_finite() || points.is_empty() {
+        return Err("Select points and use a finite move delta".into());
+    }
+
+    let mut seen_seeds = std::collections::BTreeSet::new();
+    let mut seeds: Vec<(CornerRef, DVec2)> = Vec::with_capacity(points.len());
+    for (panel, pt_idx) in points {
+        let p = source
+            .panels
+            .iter()
+            .find(|p| p.id == *panel)
+            .ok_or("Panel not found")?;
+        let poly = p
+            .polygon
+            .as_ref()
+            .ok_or("This panel has no editable contour")?;
+        if *pt_idx >= poly.points.len() {
+            return Err("Point index out of range".into());
+        }
+        let cref = CornerRef {
+            panel: panel.clone(),
+            point: *pt_idx,
+        };
+        if seen_seeds.insert(cref.clone()) {
+            let local_delta = rotate_2d(board_delta, -p.layout_rotation_degrees);
+            seeds.push((cref, local_delta));
+        }
+    }
+
+    for (i, p) in template.panels.iter_mut().enumerate() {
+        p.layout_2d = Some(layout(source, i));
+    }
+
+    let mut representative_by_panel: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    let mut edited_reps = std::collections::BTreeSet::new();
+    for (seed, _) in &seeds {
+        if representative_by_panel.contains_key(&seed.panel) {
+            continue;
+        }
+        if let Some(m_partner) = mirror_partner(source, &seed.panel)
+            && edited_reps.contains(m_partner)
+        {
+            representative_by_panel.insert(seed.panel.clone(), m_partner.to_owned());
+        } else {
+            edited_reps.insert(seed.panel.clone());
+            representative_by_panel.insert(seed.panel.clone(), seed.panel.clone());
+        }
+    }
+
+    let corner_deltas = propagate_corner_deltas(source, seeds);
+    let mut by_panel: std::collections::BTreeMap<String, Vec<(usize, DVec2)>> =
+        std::collections::BTreeMap::new();
+    for (cref, d) in &corner_deltas {
+        let is_rep = if let Some(rep) = representative_by_panel.get(&cref.panel) {
+            rep == &cref.panel
+        } else if let Some(m_partner) = mirror_partner(source, &cref.panel)
+            && edited_reps.contains(m_partner)
+        {
+            representative_by_panel.insert(cref.panel.clone(), m_partner.to_owned());
+            false
+        } else {
+            edited_reps.insert(cref.panel.clone());
+            representative_by_panel.insert(cref.panel.clone(), cref.panel.clone());
+            true
+        };
+        if !is_rep {
+            continue;
+        }
+        by_panel
+            .entry(cref.panel.clone())
+            .or_default()
+            .push((cref.point, *d));
+    }
+
+    for (pid, moves) in by_panel {
+        let p = template
+            .panels
+            .iter_mut()
+            .find(|p| p.id == pid)
+            .ok_or("Panel not found")?;
+        for (pt_idx, d) in moves {
+            remap_anchors(p, &[pt_idx], |pt| pt + d)?;
+        }
         normalize(p);
     }
     Ok(())
