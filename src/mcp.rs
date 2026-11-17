@@ -6,7 +6,8 @@
 //!
 //! Every tool call is translated into the documented clothcraft.authoring
 //! requests, so validation, revision guards and history stay in one place.
-use crate::session_protocol::Session;
+use crate::inspect::{summarize_document, summarize_template};
+use crate::session_client::{Client, SessionError};
 use crate::template_catalog::Selection;
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
@@ -15,7 +16,6 @@ pub const SERVER_NAME: &str = "clothcraft-mcp";
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// MCP revision announced when a client sends nothing usable.
 pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
-const AUTHORING_PROTOCOL: &str = crate::session_protocol::PROTOCOL;
 const MAX_TEMPLATE_BYTES: usize = 8 * 1024 * 1024;
 
 /// A rejected tool call. Codes mirror the authoring session where possible.
@@ -33,102 +33,36 @@ impl ToolError {
 }
 pub type ToolResult = Result<Value, ToolError>;
 
-fn request_line(id: u64, payload: &Value) -> String {
-    json!({
-        "protocol": AUTHORING_PROTOCOL,
-        "protocolVersion": 1,
-        "requestId": format!("mcp-{id}"),
-        "payload": payload,
-    })
-    .to_string()
-}
-
 /// One MCP server holding one resident authoring session.
 pub struct Server {
-    session: Session,
-    identity: String,
-    revision: u64,
-    counter: u64,
+    client: Client,
+}
+
+fn tool_failure(error: SessionError) -> ToolError {
+    ToolError::new(&error.code, error.detail)
 }
 
 impl Server {
     pub fn new() -> io::Result<Self> {
-        let mut session = Session::new()?;
-        let hello = session.handle_line(&request_line(1, &json!({"op": "hello"})));
-        let mut server = Self {
-            session,
-            identity: String::new(),
-            revision: 0,
-            counter: 1,
-        };
-        server.absorb(&hello);
-        Ok(server)
-    }
-
-    fn call(&mut self, payload: Value) -> ToolResult {
-        self.counter += 1;
-        let response = self
-            .session
-            .handle_line(&request_line(self.counter, &payload));
-        self.absorb(&response);
-        if response.get("ok").and_then(Value::as_bool) == Some(true) {
-            Ok(response.get("data").cloned().unwrap_or(Value::Null))
-        } else {
-            let error = response.get("error");
-            Err(ToolError::new(
-                error
-                    .and_then(|e| e.get("code"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("session_error"),
-                error
-                    .and_then(|e| e.get("detail"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("The session rejected the request"),
-            ))
-        }
-    }
-
-    fn absorb(&mut self, response: &Value) {
-        let identity = [
-            "/data/documentSession",
-            "/data/session/documentSession",
-            "/documentSession",
-        ]
-        .iter()
-        .find_map(|pointer| response.pointer(pointer).and_then(Value::as_str));
-        if let Some(identity) = identity {
-            self.identity = identity.to_owned();
-        }
-        let revision = ["/data/revision", "/data/session/revision", "/revision"]
-            .iter()
-            .find_map(|pointer| response.pointer(pointer).and_then(Value::as_u64));
-        if let Some(revision) = revision {
-            self.revision = revision;
-        }
-    }
-
-    fn guard(&self) -> Value {
-        json!({
-            "documentSession": self.identity,
-            "expectedRevision": self.revision,
+        Ok(Self {
+            client: Client::new()?,
         })
     }
 
+    fn call(&mut self, payload: Value) -> ToolResult {
+        self.client.call(payload).map_err(tool_failure)
+    }
+
     fn snapshot(&mut self) -> ToolResult {
-        self.call(json!({"op": "snapshot"}))
+        self.client.snapshot().map_err(tool_failure)
     }
 
     fn template(&mut self) -> ToolResult {
-        let data = self.snapshot()?;
-        data.get("template")
-            .cloned()
-            .ok_or_else(|| ToolError::new("no_document", "Open a document first"))
+        self.client.template().map_err(tool_failure)
     }
 
     fn edit(&mut self, command: Value) -> ToolResult {
-        let guard = self.guard();
-        let data = self.call(json!({"op": "edit", "guard": guard, "command": command}))?;
-        Ok(summarize_document(&data))
+        Ok(summarize_document(&self.client.edit(command).map_err(tool_failure)?))
     }
 
     fn execute(&mut self, name: &str, args: &Value) -> ToolResult {
@@ -164,7 +98,7 @@ impl Server {
                     .map_err(|e| ToolError::new("io_failure", e.to_string()))?;
                 std::fs::write(&path, text.as_bytes())
                     .map_err(|e| ToolError::new("io_failure", format!("{path}: {e}")))?;
-                Ok(json!({"saved": path, "bytes": text.len(), "revision": self.revision}))
+                Ok(json!({"saved": path, "bytes": text.len(), "revision": self.client.revision()}))
             }
             "garment_add_panel" => {
                 let points = args.get("points").cloned().ok_or_else(|| {
@@ -287,12 +221,12 @@ impl Server {
                 self.edit(json!({"kind": "remove_panel", "panel": panel}))
             }
             "garment_undo" => {
-                let guard = self.guard();
+                let guard = self.client.guard();
                 let data = self.call(json!({"op": "undo", "guard": guard}))?;
                 Ok(summarize_document(&data))
             }
             "garment_redo" => {
-                let guard = self.guard();
+                let guard = self.client.guard();
                 let data = self.call(json!({"op": "redo", "guard": guard}))?;
                 Ok(summarize_document(&data))
             }
@@ -306,7 +240,7 @@ impl Server {
                 let command = args.get("command").cloned().ok_or_else(|| {
                     ToolError::new("invalid_arguments", "command object is required")
                 })?;
-                let guard = self.guard();
+                let guard = self.client.guard();
                 let data = self.call(json!({"op": "prepare_edit", "guard": guard, "command": command}))?;
                 Ok(json!({
                     "change": data.get("change"),
@@ -318,13 +252,13 @@ impl Server {
             }
             "change_commit" => {
                 let change = require_string(args, "change")?;
-                let guard = self.guard();
+                let guard = self.client.guard();
                 let data = self.call(json!({"op": "commit", "guard": guard, "change": change}))?;
                 Ok(summarize_document(&data))
             }
             "change_cancel" => {
                 let change = require_string(args, "change")?;
-                let guard = self.guard();
+                let guard = self.client.guard();
                 let data = self.call(json!({"op": "cancel", "guard": guard, "change": change}))?;
                 Ok(summarize_document(&data))
             }
@@ -354,8 +288,7 @@ impl Server {
                 "Pass catalog, path or template",
             ));
         };
-        let guard = self.guard();
-        let data = self.call(json!({"op": "open", "guard": guard, "template": template}))?;
+        let data = self.client.open(template).map_err(tool_failure)?;
         Ok(summarize_document(&data))
     }
 
@@ -517,97 +450,6 @@ fn tool_value(value: Value) -> Value {
         "content": [{"type": "text", "text": text}],
         "structuredContent": value,
         "isError": false,
-    })
-}
-
-fn summarize_document(data: &Value) -> Value {
-    json!({
-        "documentSession": data.get("documentSession"),
-        "revision": data.get("revision"),
-        "canUndo": data.get("canUndo"),
-        "canRedo": data.get("canRedo"),
-        "pendingChange": data.get("pendingChange"),
-        "document": summarize_template(data.get("template").unwrap_or(&Value::Null)),
-    })
-}
-
-fn summarize_template(template: &Value) -> Value {
-    if template.is_null() {
-        return Value::Null;
-    }
-    let panels: Vec<Value> = template
-        .get("panels")
-        .and_then(Value::as_array)
-        .map(|panels| panels.iter().map(summarize_panel).collect())
-        .unwrap_or_default();
-    let seams: Vec<Value> = template
-        .get("seams")
-        .and_then(Value::as_array)
-        .map(|seams| seams.iter().map(summarize_seam).collect())
-        .unwrap_or_default();
-    let fabrics: Vec<Value> = template
-        .get("fabrics")
-        .and_then(Value::as_array)
-        .map(|fabrics| {
-            fabrics
-                .iter()
-                .map(|fabric| {
-                    json!({"id": fabric.get("id"), "name": fabric.get("name")})
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    json!({
-        "name": template.get("name"),
-        "format": template.get("format"),
-        "version": template.get("version"),
-        "units": "metres",
-        "fabrics": fabrics,
-        "panels": panels,
-        "seams": seams,
-        "mirror_links": template.get("mirror_links").cloned().unwrap_or(json!([])),
-        "counts": {"panels": panels.len(), "seams": seams.len()},
-    })
-}
-
-fn summarize_panel(panel: &Value) -> Value {
-    let polygon = panel.get("polygon");
-    let boundaries: Vec<String> = match polygon
-        .and_then(|polygon| polygon.get("edges"))
-        .and_then(Value::as_array)
-    {
-        Some(edges) => edges
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect(),
-        None => ["top", "right", "bottom", "left"]
-            .map(str::to_owned)
-            .to_vec(),
-    };
-    json!({
-        "id": panel.get("id"),
-        "name": panel.get("name"),
-        "fabric": panel.get("fabric"),
-        "grain_degrees": panel.get("grain_degrees"),
-        "boundaries": boundaries,
-        "placement": panel.get("placement"),
-        "layout_2d": panel.get("layout_2d"),
-        "measurements": polygon.and_then(|p| p.get("measurements")).cloned().unwrap_or(json!([])),
-        "target_lengths": polygon.and_then(|p| p.get("target_lengths")).cloned().unwrap_or(json!({})),
-        "seam_allowances": polygon.and_then(|p| p.get("seam_allowances")).cloned().unwrap_or(json!({})),
-        "pins": panel.get("pins").cloned().unwrap_or(json!([])),
-    })
-}
-
-fn summarize_seam(seam: &Value) -> Value {
-    json!({
-        "id": seam.get("id"),
-        "a": seam.get("a"),
-        "b": seam.get("b"),
-        "reverse_b": seam.get("reverse_b"),
-        "allow_ease": seam.get("allow_ease"),
-        "stiffness": seam.get("stiffness"),
     })
 }
 

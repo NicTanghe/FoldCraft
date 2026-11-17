@@ -4,6 +4,7 @@ extern crate self as marvelous_cloth;
 
 #[cfg(feature = "desktop")]
 pub mod atelier;
+pub mod api;
 pub mod authoring;
 pub mod avatar;
 pub mod avatar_import;
@@ -31,6 +32,7 @@ pub mod ipc;
 pub use cssimpler;
 pub mod issue_report;
 pub mod math;
+pub mod inspect;
 pub mod mcp;
 /// Opt-in static mesh sizing; evaluated during preparation, never solver steps.
 pub mod mesh_resolution;
@@ -43,6 +45,7 @@ pub mod project;
 /// Shared optional renderer; the numerical modules do not depend on this module.
 #[cfg(feature = "desktop")]
 pub mod render;
+pub mod session_client;
 pub mod session_protocol;
 pub mod solver;
 pub mod solver_lab;
