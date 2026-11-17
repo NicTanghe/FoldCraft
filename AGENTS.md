@@ -31,13 +31,13 @@ The second command only compiles. The authorized GPU pass is reproduced with `sc
 - Sewing belongs to the same implicit objective, gradient, Hessian and metrics. Do not add arbitrary position projections after Newton.
 - Parameters have physical units. Document residuals, convergence, penalties and limitations; a penalty is not a nonintersection guarantee.
 - Fiber guides are geometric surface attachments. They add no physical yarns, yarn contacts or measured calibration.
-- Keep `model`, `energy`, `garment`, `contact` and `solver` independent of egui/wgpu. Editing and rendering consume the compiled model.
+- Keep `model`, `energy`, `garment`, `contact` and `solver` independent of cssimpler/wgpu. Editing and rendering consume the compiled model.
 
-## UI replacement target
+## Desktop UI (cssimpler)
 
-The owner requires cssimpler to replace the desktop UI completely. The final repository must have no egui, eframe, egui-wgpu or egui-winit dependency, including through optional or legacy features. Use direct wgpu for rendering/compute and plain Rust types across authoring, worker, camera and viewport interfaces. Do not treat a cssimpler launch path alongside the existing egui editor as a completed migration. Preserve real document, history, selection and simulation behavior through native adapters.
+FC-0022 replaced the egui desktop UI with cssimpler (PR #32). The repository has no egui, eframe, egui-wgpu or egui-winit dependency; do not reintroduce one, including through optional or legacy features. Use direct wgpu for rendering/compute and plain Rust types across authoring, worker, camera and viewport interfaces. Preserve real document, history, selection and simulation behavior through native adapters.
 
-Validate removal with the all-features dependency graph and regenerated Cargo.lock, plus CPU-only and desktop builds. Migration prerequisites may temporarily retain old dependencies, but must explicitly remain incomplete under FC-0022 until the full graph is clean. New subagents default to GPT-6.1 Terra High; use GPT-6.1 Sol High for difficult problems.
+After dependency changes, check the all-features dependency graph (`cargo tree --all-features -i egui` must find no package) and the regenerated Cargo.lock, plus CPU-only and desktop builds. New subagents default to GPT-6.1 Terra High; use GPT-6.1 Sol High for difficult problems.
 
 ## Contributions
 
@@ -49,6 +49,6 @@ Write code comments, UI text and documentation in English; localization is futur
 
 ## Editing and product research
 
-`src/authoring.rs` owns CPU transactions and history. `src/atelier/authoring_ui.rs` and `gizmo.rs` are graphical adapters. Read `docs/authoring.md` before changing them. A placement preview is not new rest geometry; committing it resets dependent caches. Public manuals actually consulted are recorded in `docs/manual-study.md`. Do not advertise planned formats from `ROADMAP.md` as supported. The solver comparison contract is in `docs/solver-challenge.md`.
+`src/authoring.rs` owns CPU transactions and history. `src/atelier/css_runner.rs` (layout, event handling and 2D/3D tool modes) and `src/atelier/css_ui/` (property panels, rails, browsers, compositor and `studio_v2.css`) are the graphical adapters; `src/atelier/core_state.rs` holds UI-independent workspace state and `src/atelier/worker.rs` the simulation worker. Read `docs/authoring.md` before changing them. A placement preview is not new rest geometry; committing it resets dependent caches. Public manuals actually consulted are recorded in `docs/manual-study.md`. Do not advertise planned formats from `ROADMAP.md` as supported. The solver comparison contract is in `docs/solver-challenge.md`.
 
-The unified board is in `atelier/board.rs`, 3D selection/sewing in `atelier/edges_3d.rs` and Bézier operations in `garment/curves.rs`. Preserve shared boundary identities between views. `layout_2d` is excluded from physics; handles remain in local rest coordinates. Do not disable `serde_json/float_roundtrip` without checking mesh stability after reload.
+The 2D pattern board (drawing, hit testing, sewing and corner/fillet previews) is in `atelier/css_runner.rs`, with board rendering and input routing in `atelier/css_ui/compositor.rs` and UI-independent board navigation in `viewport_controller.rs`. Corner rounding is in `authoring/corner_tool.rs` and Bézier operations in `garment/curves.rs`. The native 3D viewport currently only orbits and zooms: the 3D rail modes (Gizmo, Grab, 3D Sew, Pin, Measure) do not yet drive interactions, and placement is shown read-only. The egui-era 3D edge sewing, grab and placement gizmo were not ported. Preserve shared boundary identities between views. `layout_2d` is excluded from physics; handles remain in local rest coordinates. Do not disable `serde_json/float_roundtrip` without checking mesh stability after reload.
