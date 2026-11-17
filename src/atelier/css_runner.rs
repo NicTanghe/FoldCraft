@@ -232,6 +232,14 @@ pub enum ToolDraft2d {
     Sew {
         first_edge: Option<(String, String)>,
     },
+    /// Both boundaries are picked; nothing is committed until the user
+    /// confirms. Unequal lengths can only be sewn with explicit easing.
+    SewConfirm {
+        a: (String, String),
+        b: (String, String),
+        a_len_m: f64,
+        b_len_m: f64,
+    },
     InternalLine {
         panel_id: String,
         points_local_m: Vec<DVec2>,
@@ -259,6 +267,8 @@ pub enum RunnerUiOp {
     SelectPiece(usize),
     LoadPreset(GarmentKind),
     StatusNote(String),
+    ConfirmSew { ease: bool },
+    CancelSew,
 }
 
 // ============================================================================
@@ -1093,6 +1103,15 @@ fn apply_runner_ui_op(state: &mut CssRunnerState, op: RunnerUiOp) {
         RunnerUiOp::StatusNote(msg) => {
             state.status_message = msg;
         }
+        RunnerUiOp::ConfirmSew { ease } => {
+            confirm_pending_sew(state, ease);
+        }
+        RunnerUiOp::CancelSew => {
+            if matches!(state.draft_2d, Some(ToolDraft2d::SewConfirm { .. })) {
+                state.draft_2d = None;
+                state.status_message = "Sewing cancelled; no seam was added".into();
+            }
+        }
     }
 }
 
@@ -1924,6 +1943,228 @@ fn install_authoring_edit(
     state.status_message = msg;
 }
 
+/// Same relative tolerance the seam compiler uses before it demands `allow_ease`
+/// (`garment::seam`), so the UI never offers an un-eased seam the compiler rejects.
+pub fn sew_lengths_equal(a_len_m: f64, b_len_m: f64) -> bool {
+    (a_len_m - b_len_m).abs() <= 1e-8 * a_len_m.max(b_len_m)
+}
+
+fn sew_confirm_prompt(
+    a_panel: &str,
+    a_edge: &str,
+    b_panel: &str,
+    b_edge: &str,
+    a_len_m: f64,
+    b_len_m: f64,
+) -> String {
+    let lengths = format!(
+        "Sew {a_panel}.{a_edge} ({:.1} mm) ↔ {b_panel}.{b_edge} ({:.1} mm)",
+        a_len_m * 1e3,
+        b_len_m * 1e3
+    );
+    if sew_lengths_equal(a_len_m, b_len_m) {
+        format!("{lengths}: press Enter or Sew to confirm, Escape to cancel")
+    } else {
+        format!(
+            "{lengths}: lengths differ by {:.1} mm; choose Sew with easing or Escape to cancel",
+            (a_len_m - b_len_m).abs() * 1e3
+        )
+    }
+}
+
+/// Commit the pending seam. Without `ease`, unequal lengths are refused and the
+/// draft is kept so the user can still choose easing or cancel.
+pub fn confirm_pending_sew(state: &mut CssRunnerState, ease: bool) -> bool {
+    let Some(ToolDraft2d::SewConfirm {
+        a,
+        b,
+        a_len_m,
+        b_len_m,
+    }) = state.draft_2d.clone()
+    else {
+        return false;
+    };
+    let equal = sew_lengths_equal(a_len_m, b_len_m);
+    if !ease && !equal {
+        state.status_message = format!(
+            "Lengths differ by {:.1} mm: choose Sew with easing to accept the mismatch, or Escape to cancel",
+            (a_len_m - b_len_m).abs() * 1e3
+        );
+        return false;
+    }
+    state.draft_2d = None;
+    let message = if equal {
+        format!("Sewed {}.{} ↔ {}.{}", a.0, a.1, b.0, b.1)
+    } else {
+        format!(
+            "Sewed {}.{} ↔ {}.{} with {:.1} mm easing",
+            a.0,
+            a.1,
+            b.0,
+            b.1,
+            (a_len_m - b_len_m).abs() * 1e3
+        )
+    };
+    commit_authoring_command(
+        state,
+        Command::Sew {
+            a: BoundaryRef {
+                reversed: false,
+                panel: a.0,
+                side: Side::Right,
+                edge: Some(a.1),
+                range: [0.0, 1.0],
+            },
+            b: BoundaryRef {
+                reversed: false,
+                panel: b.0,
+                side: Side::Left,
+                edge: Some(b.1),
+                range: [0.0, 1.0],
+            },
+            reverse: false,
+            ease: ease && !equal,
+        },
+        message,
+    )
+}
+
+#[cfg(test)]
+mod sew_confirmation_tests {
+    use super::*;
+
+    fn named_key(name: &str) -> EngineEvent {
+        EngineEvent::Key(cssimpler::renderer::KeyboardEvent {
+            logical_key: cssimpler::renderer::KeyIdentity::Named(name.into()),
+            physical_key: None,
+            location: cssimpler::renderer::KeyLocation::Standard,
+            state: cssimpler::renderer::ButtonState::Pressed,
+            repeat: false,
+            modifiers: cssimpler::renderer::KeyboardModifiers::default(),
+        })
+    }
+
+    type EdgeLen = (String, String, f64);
+
+    /// One pair of boundaries on different panels whose lengths are equal (as
+    /// the seam compiler measures equality) and one pair that clearly differs.
+    fn sew_pairs(template: &GarmentTemplate) -> ((EdgeLen, EdgeLen), (EdgeLen, EdgeLen)) {
+        let mut edges = Vec::new();
+        for panel in &template.panels {
+            if let Some(poly) = &panel.polygon {
+                for edge in &poly.edges {
+                    if let Some(len) = panel_edge_length_m(panel, edge) {
+                        edges.push((panel.id.clone(), edge.clone(), len));
+                    }
+                }
+            }
+        }
+        let mut equal = None;
+        let mut unequal = None;
+        for (i, x) in edges.iter().enumerate() {
+            for y in &edges[i + 1..] {
+                if x.0 == y.0 {
+                    continue;
+                }
+                if sew_lengths_equal(x.2, y.2) {
+                    equal.get_or_insert((x.clone(), y.clone()));
+                } else if (x.2 - y.2).abs() > 1e-3 {
+                    unequal.get_or_insert((x.clone(), y.clone()));
+                }
+            }
+        }
+        (
+            equal.expect("fixture has an equal-length pair"),
+            unequal.expect("fixture has an unequal-length pair"),
+        )
+    }
+
+    fn pending_sew(pair: &(EdgeLen, EdgeLen)) -> ToolDraft2d {
+        ToolDraft2d::SewConfirm {
+            a: (pair.0.0.clone(), pair.0.1.clone()),
+            b: (pair.1.0.clone(), pair.1.1.clone()),
+            a_len_m: pair.0.2,
+            b_len_m: pair.1.2,
+        }
+    }
+
+    #[test]
+    fn native_sewing_requires_an_explicit_easing_choice() {
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let mut project = FittingProject::basic(GarmentKind::Tshirt, 1, avatar);
+        // Free every boundary so the fixture's own seams cannot overlap the test seams.
+        project.template.seams.clear();
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let mut state = CssRunnerState::new(project, scene, files, tx, latest);
+        let (equal, unequal) = sew_pairs(&state.project.template);
+
+        // Unequal lengths: plain confirmation (button or Enter) is refused and
+        // keeps the draft; nothing is committed.
+        state.draft_2d = Some(pending_sew(&unequal));
+        assert!(!confirm_pending_sew(&mut state, false));
+        assert!(handle_runner_event(&mut state, &named_key("Enter")));
+        assert!(state.project.template.seams.is_empty());
+        assert!(matches!(
+            state.draft_2d,
+            Some(ToolDraft2d::SewConfirm { .. })
+        ));
+        assert!(state.status_message.contains("Sew with easing"));
+
+        // Escape cancels: document and history unchanged.
+        assert!(handle_runner_event(&mut state, &named_key("Escape")));
+        assert!(state.draft_2d.is_none());
+        assert!(state.project.template.seams.is_empty());
+        assert!(
+            !undo_redo_2d(&mut state, false),
+            "cancel must not create history"
+        );
+
+        // Cancel button behaves the same way.
+        state.draft_2d = Some(pending_sew(&unequal));
+        apply_runner_ui_op(&mut state, RunnerUiOp::CancelSew);
+        assert!(state.draft_2d.is_none());
+        assert!(state.project.template.seams.is_empty());
+
+        // Explicit easing commits one eased seam as one undo entry.
+        state.draft_2d = Some(pending_sew(&unequal));
+        apply_runner_ui_op(&mut state, RunnerUiOp::ConfirmSew { ease: true });
+        assert_eq!(
+            state.project.template.seams.len(),
+            1,
+            "{}",
+            state.status_message
+        );
+        assert!(state.project.template.seams[0].allow_ease);
+        assert!(state.status_message.contains("easing"));
+        assert!(undo_redo_2d(&mut state, false));
+        assert!(state.project.template.seams.is_empty());
+
+        // Equal lengths: Enter sews without easing.
+        state.draft_2d = Some(pending_sew(&equal));
+        assert!(handle_runner_event(&mut state, &named_key("Enter")));
+        assert_eq!(
+            state.project.template.seams.len(),
+            1,
+            "{}",
+            state.status_message
+        );
+        assert!(!state.project.template.seams[0].allow_ease);
+        assert!(state.draft_2d.is_none());
+    }
+}
+
 pub fn commit_authoring_command(
     state: &mut CssRunnerState,
     cmd: Command,
@@ -2451,6 +2692,10 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                         }
                     }
                     if name == "Enter" {
+                        if matches!(state.draft_2d, Some(ToolDraft2d::SewConfirm { .. })) {
+                            confirm_pending_sew(state, false);
+                            return true;
+                        }
                         if matches!(state.draft_2d, Some(ToolDraft2d::Pen { .. })) {
                             return finish_pen_draft(state);
                         }
@@ -2668,30 +2913,34 @@ pub fn handle_runner_event(state: &mut CssRunnerState, event: &EngineEvent) -> b
                                                     .into();
                                             return true;
                                         }
-                                        state.draft_2d = None;
-                                        commit_authoring_command(
-                                            state,
-                                            Command::Sew {
-                                                a: BoundaryRef {
-                                                    reversed: false,
-                                                    panel: first_pid.clone(),
-                                                    side: Side::Right,
-                                                    edge: Some(first_edge.clone()),
-                                                    range: [0.0, 1.0],
-                                                },
-                                                b: BoundaryRef {
-                                                    reversed: false,
-                                                    panel: pid.clone(),
-                                                    side: Side::Left,
-                                                    edge: Some(edge_name.clone()),
-                                                    range: [0.0, 1.0],
-                                                },
-                                                reverse: false,
-                                                ease: true,
-                                            },
-                                            format!(
-                                                "Sewed {first_pid}.{first_edge} ↔ {pid}.{edge_name}"
-                                            ),
+                                        let length = |panel: &str, edge: &str| {
+                                            state
+                                                .project
+                                                .template
+                                                .panels
+                                                .iter()
+                                                .find(|p| p.id == panel)
+                                                .and_then(|p| panel_edge_length_m(p, edge))
+                                        };
+                                        let (Some(a_len_m), Some(b_len_m)) = (
+                                            length(first_pid, first_edge),
+                                            length(&pid, &edge_name),
+                                        ) else {
+                                            state.draft_2d = None;
+                                            state.status_message =
+                                                "Sew: could not measure a boundary; nothing was sewn"
+                                                    .into();
+                                            return true;
+                                        };
+                                        state.draft_2d = Some(ToolDraft2d::SewConfirm {
+                                            a: (first_pid.clone(), first_edge.clone()),
+                                            b: (pid.clone(), edge_name.clone()),
+                                            a_len_m,
+                                            b_len_m,
+                                        });
+                                        state.status_message = sew_confirm_prompt(
+                                            first_pid, first_edge, &pid, &edge_name, a_len_m,
+                                            b_len_m,
                                         );
                                         return true;
                                     } else {
@@ -5109,6 +5358,44 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
         "cad-prop-btn"
     };
 
+    let sew_confirm_card = match &state.draft_2d {
+        Some(ToolDraft2d::SewConfirm {
+            a,
+            b,
+            a_len_m,
+            b_len_m,
+        }) => {
+            let equal = sew_lengths_equal(*a_len_m, *b_len_m);
+            let difference = format!("{:.1} mm", (a_len_m - b_len_m).abs() * 1e3);
+            let (confirm_label, confirm_ease) = if equal {
+                ("Sew", false)
+            } else {
+                ("Sew with easing", true)
+            };
+            ui! {
+                <div id="sew-confirm-card" class="card sew-confirm-card">
+                    <div class="prop-row">
+                        <span class="prop-label">{format!("{}.{}", a.0, a.1)}</span>
+                        <span class="prop-value">{format!("{:.1} mm", a_len_m * 1e3)}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">{format!("{}.{}", b.0, b.1)}</span>
+                        <span class="prop-value">{format!("{:.1} mm", b_len_m * 1e3)}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">"Length difference"</span>
+                        <span class="prop-value">{if equal { "None".to_string() } else { difference }}</span>
+                    </div>
+                    <div class="quick-actions-row">
+                        <button id="btn-sew-confirm" class="btn-action btn-action-accent" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::ConfirmSew { ease: confirm_ease })}>{confirm_label}</button>
+                        <button id="btn-sew-cancel" class="btn-action" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::CancelSew)}>"Cancel"</button>
+                    </div>
+                </div>
+            }
+        }
+        _ => ui! { <span class="hidden" /> },
+    };
+
     let acc_line = ui! {
         <div class={if open_1 { "accordion open" } else { "accordion collapsed" }}>
             <button class="accordion-header" onclick_shared={queue_action(&state.actions, ACT_RUN_ACC_1)}>
@@ -5118,6 +5405,7 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
             {if open_1 {
                 ui! {
                     <div class="accordion-content">
+                        {sew_confirm_card}
                         <div class="prop-row">
                             <span class="prop-label">"2D Selection"</span>
                             <span class="prop-value">{sel_info.0}</span>
@@ -6206,28 +6494,32 @@ pub fn render_runner_2d_svg(state: &CssRunnerState) -> (Vec<Node>, String) {
                     });
                 }
             }
-            ToolDraft2d::Sew {
-                first_edge: Some((pid, ename)),
-            } => {
-                if let Some(pg) = panel_geos.iter().find(|g| &g.id == pid)
-                    && let Some(eidx) = pg.edge_names.iter().position(|e| e == ename)
-                {
-                    let (ax, ay) = pg.points[eidx];
-                    let (bx, by) = pg.points[(eidx + 1) % pg.points.len()];
-                    let seg_d = if let Some(c) = pg.curves.iter().find(|c| c.edge_idx == eidx) {
-                        format!(
-                            "M {ax:.2},{ay:.2} C {:.2},{:.2} {:.2},{:.2} {bx:.2},{by:.2}",
-                            c.c1.0, c.c1.1, c.c2.0, c.c2.1
-                        )
-                    } else {
-                        format!("M {ax:.2},{ay:.2} L {bx:.2},{by:.2}")
-                    };
-                    nodes.push(ui! {
-                        <path d={seg_d} fill="none" stroke={accent_gold} stroke-width={format!("{:.2}", 3.2 * px)} class="tool-draft-sew" />
-                    });
+            ToolDraft2d::Sew { .. } | ToolDraft2d::SewConfirm { .. } => {
+                let pending: Vec<&(String, String)> = match draft {
+                    ToolDraft2d::Sew { first_edge } => first_edge.iter().collect(),
+                    ToolDraft2d::SewConfirm { a, b, .. } => vec![a, b],
+                    _ => Vec::new(),
+                };
+                for (pid, ename) in pending {
+                    if let Some(pg) = panel_geos.iter().find(|g| &g.id == pid)
+                        && let Some(eidx) = pg.edge_names.iter().position(|e| e == ename)
+                    {
+                        let (ax, ay) = pg.points[eidx];
+                        let (bx, by) = pg.points[(eidx + 1) % pg.points.len()];
+                        let seg_d = if let Some(c) = pg.curves.iter().find(|c| c.edge_idx == eidx) {
+                            format!(
+                                "M {ax:.2},{ay:.2} C {:.2},{:.2} {:.2},{:.2} {bx:.2},{by:.2}",
+                                c.c1.0, c.c1.1, c.c2.0, c.c2.1
+                            )
+                        } else {
+                            format!("M {ax:.2},{ay:.2} L {bx:.2},{by:.2}")
+                        };
+                        nodes.push(ui! {
+                            <path d={seg_d} fill="none" stroke={accent_gold} stroke-width={format!("{:.2}", 3.2 * px)} class="tool-draft-sew" />
+                        });
+                    }
                 }
             }
-            ToolDraft2d::Sew { first_edge: None } => {}
             ToolDraft2d::InternalLine {
                 panel_id,
                 points_local_m,
@@ -7711,7 +8003,8 @@ mod tests {
         assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
         assert!(state.status_message.contains("mm"));
 
-        // 6. Sew tool: click first edge on rect panel and second edge on pen panel -> creates new seam
+        // 6. Sew tool: click first edge on rect panel and second edge on pen panel -> pending
+        //    confirmation; the seam exists only after an explicit confirm.
         let seams_before = state.project.template.seams.len();
         set_active_2d_tool(&mut state, "Sew");
         let p_rect = state.project.template.panels[initial_panels]
@@ -7741,6 +8034,21 @@ mod tests {
         handle_runner_event(&mut state, &pointer_move_ev(spx, spy));
         assert!(handle_runner_event(&mut state, &pointer_btn_ev(true)));
         assert!(handle_runner_event(&mut state, &pointer_btn_ev(false)));
+        assert_eq!(state.project.template.seams.len(), seams_before);
+        let Some(ToolDraft2d::SewConfirm {
+            a_len_m, b_len_m, ..
+        }) = state.draft_2d.clone()
+        else {
+            panic!("second pick must wait for confirmation");
+        };
+        let (svg_sew, _) = render_runner_2d_svg(&state);
+        assert!(count_class(&svg_sew, "tool-draft-sew") >= 2);
+        apply_runner_ui_op(
+            &mut state,
+            RunnerUiOp::ConfirmSew {
+                ease: !sew_lengths_equal(a_len_m, b_len_m),
+            },
+        );
         assert_eq!(state.project.template.seams.len(), seams_before + 1);
 
         // 7. Trim tool: click internal line on panel 0 -> removes it
