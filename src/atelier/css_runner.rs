@@ -4134,6 +4134,105 @@ fn build_runner_2d_rail(state: &CssRunnerState) -> Node {
     }
 }
 
+/// An import quick action shown in the left browser.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportQuickAction {
+    pub label: &'static str,
+    pub tooltip: &'static str,
+}
+
+/// Import quick actions for the native workspace. None is wired yet: the CPU
+/// importers exist (`pattern_import`, `garment::svg_import`, `avatar_import`)
+/// but the native dialogs were not ported after FC-0022, so the buttons render
+/// disabled and the tooltip names the working alternative.
+pub fn import_quick_actions() -> [ImportQuickAction; 3] {
+    [
+        ImportQuickAction {
+            label: "DXF",
+            tooltip: "DXF import is not available in this window yet",
+        },
+        ImportQuickAction {
+            label: "SVG",
+            tooltip: "SVG import is not available in this window yet",
+        },
+        ImportQuickAction {
+            label: "Avatar",
+            tooltip: "Not available in this window yet; start cloth-fit with --avatar <file.obj|.gltf|.glb>",
+        },
+    ]
+}
+
+#[cfg(test)]
+mod import_quick_action_tests {
+    use super::*;
+
+    #[test]
+    fn import_quick_actions_are_disabled_and_name_working_alternatives() {
+        let actions = import_quick_actions();
+        assert_eq!(
+            actions.iter().map(|a| a.label).collect::<Vec<_>>(),
+            ["DXF", "SVG", "Avatar"]
+        );
+        for action in &actions {
+            assert!(
+                !action.tooltip.to_lowercase().contains("file menu"),
+                "{} tooltip refers to a nonexistent File menu",
+                action.label
+            );
+            assert!(
+                action
+                    .tooltip
+                    .to_lowercase()
+                    .contains("not available in this window yet")
+            );
+        }
+        assert!(actions[2].tooltip.contains("--avatar"));
+
+        let _guard = worker::WORKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let avatar = dir.path().join("avatar.obj");
+        std::fs::write(&avatar, "v 0 0 -10\nv 1 0 -10\nv 0 1 -10\nf 1 2 3\n")
+            .expect("write avatar");
+        let project = FittingProject::basic(GarmentKind::Tshirt, 1, avatar);
+        let scene = project.compile().expect("compile scene");
+        let files = DocumentFiles {
+            output: dir.path().join("out"),
+            source: None,
+            modified: false,
+        };
+        let (tx, latest) = worker::start_cpu().expect("start cpu worker");
+        let state = CssRunnerState::new(project, scene, files, tx, latest);
+        fn disabled_tooltips(node: &Node, out: &mut Vec<String>) {
+            if let Node::Element(el) = node {
+                if el.classes.iter().any(|c| c == "btn-action")
+                    && el.classes.iter().any(|c| c == "disabled")
+                {
+                    out.push(el.attribute("title").unwrap_or_default().to_string());
+                }
+                for child in &el.children {
+                    disabled_tooltips(child, out);
+                }
+            }
+        }
+        let browser = build_runner_left_browser(&state);
+        assert!(
+            !format!("{browser:?}").to_lowercase().contains("file menu"),
+            "rendered browser refers to a nonexistent File menu"
+        );
+        let mut tooltips = Vec::new();
+        disabled_tooltips(&browser, &mut tooltips);
+        assert_eq!(
+            tooltips,
+            actions
+                .iter()
+                .map(|a| a.tooltip.to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 fn build_runner_left_browser(state: &CssRunnerState) -> Node {
     if !state.left_drawer_open || state.clean_view {
         return ui! { <aside class="left-drawer collapsed"></aside> };
@@ -4217,9 +4316,12 @@ fn build_runner_left_browser(state: &CssRunnerState) -> Node {
                     <div class="quick-action-group">
                         <span class="group-label">"Import"</span>
                         <div class="quick-actions-row">
-                            <button class="btn-action" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::StatusNote("Use CLI --project or File menu to import DXF".into()))}>"DXF"</button>
-                            <button class="btn-action" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::StatusNote("Use CLI or File menu to import SVG".into()))}>"SVG"</button>
-                            <button class="btn-action" onclick_shared={queue_ui_op(&state.pending_ui_ops, RunnerUiOp::StatusNote("Use CLI --avatar to swap mannequin OBJ".into()))}>"Avatar"</button>
+                            {import_quick_actions()
+                                .into_iter()
+                                .map(|action| ui! {
+                                    <button class="btn-action disabled" title={action.tooltip}>{action.label}</button>
+                                })
+                                .collect::<Vec<_>>()}
                         </div>
                     </div>
                     <div class="quick-action-group">
