@@ -4850,6 +4850,87 @@ fn build_cat_environment(state: &CssRunnerState) -> Node {
     }
 }
 
+/// Label/value rows for the Fabric Mechanics accordion, read from the
+/// selected panel's fabric in the document (SI values, with g/m² and mm shown
+/// for readability). Returns a single explanatory row instead of defaults when
+/// no panel is selected or the panel names a fabric the template lacks.
+pub fn fabric_mechanics_rows(
+    template: &GarmentTemplate,
+    selected_panel: usize,
+) -> Vec<(&'static str, String)> {
+    let Some(panel) = template.panels.get(selected_panel) else {
+        return vec![("Fabric", "No panel selected".to_string())];
+    };
+    let Some(fabric) = template.fabrics.iter().find(|f| f.id == panel.fabric) else {
+        return vec![("Fabric", format!("Unknown fabric id '{}'", panel.fabric))];
+    };
+    let p = &fabric.properties;
+    vec![
+        ("Fabric", format!("{} ({})", fabric.name, fabric.id)),
+        ("Areal Density", format!("{:.0} g/m²", p.density * 1e3)),
+        ("Thickness", format!("{:.2} mm", p.thickness * 1e3)),
+        ("Warp Membrane", format!("{:.0} N/m", p.warp)),
+        ("Weft Membrane", format!("{:.0} N/m", p.weft)),
+        ("Shear", format!("{:.0} N/m", p.shear)),
+        ("Bending Warp", format!("{:.2e} N·m", p.bend_warp)),
+        ("Bending Weft", format!("{:.2e} N·m", p.bend_weft)),
+    ]
+}
+
+#[cfg(test)]
+mod fabric_mechanics_tests {
+    use super::*;
+
+    #[test]
+    fn fabric_mechanics_rows_reflect_the_selected_panels_fabric() {
+        let mut template =
+            FittingProject::basic(GarmentKind::Tshirt, 1, "unused.obj".into()).template;
+        assert!(template.panels.len() >= 2);
+        let mut denim = template.fabrics[0].clone();
+        denim.id = "test-denim".into();
+        denim.name = "Test denim".into();
+        denim.properties.density = 0.42;
+        denim.properties.warp = 900.0;
+        denim.properties.bend_warp = 3.5e-5;
+        template.fabrics.push(denim);
+        template.panels[1].fabric = "test-denim".into();
+
+        let first = fabric_mechanics_rows(&template, 0);
+        let second = fabric_mechanics_rows(&template, 1);
+        let value = |rows: &[(&str, String)], label: &str| {
+            rows.iter()
+                .find(|(l, _)| *l == label)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(
+            value(&second, "Fabric").as_deref(),
+            Some("Test denim (test-denim)")
+        );
+        assert_eq!(value(&second, "Areal Density").as_deref(), Some("420 g/m²"));
+        assert_eq!(value(&second, "Warp Membrane").as_deref(), Some("900 N/m"));
+        assert_eq!(
+            value(&second, "Bending Warp").as_deref(),
+            Some("3.50e-5 N·m")
+        );
+        let base = &template.fabrics[0].properties;
+        assert_eq!(
+            value(&first, "Areal Density"),
+            Some(format!("{:.0} g/m²", base.density * 1e3))
+        );
+        assert_ne!(first, second, "different fabrics must render differently");
+
+        assert_eq!(
+            fabric_mechanics_rows(&template, template.panels.len()),
+            vec![("Fabric", "No panel selected".to_string())]
+        );
+        template.panels[0].fabric = "missing".into();
+        assert_eq!(
+            fabric_mechanics_rows(&template, 0),
+            vec![("Fabric", "Unknown fabric id 'missing'".to_string())]
+        );
+    }
+}
+
 fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
     let panels = &state.project.template.panels;
     let selected_panel = panels.get(state.selected_piece_index);
@@ -5253,26 +5334,15 @@ fn build_runner_property_accordions(state: &CssRunnerState) -> Node {
             {if open_4 {
                 ui! {
                     <div class="accordion-content">
-                        <div class="prop-row">
-                            <span class="prop-label">"Preset"</span>
-                            <span class="prop-value">{selected_panel.map_or("Cotton", |p| p.fabric.as_str())}</span>
-                        </div>
-                        <div class="prop-row">
-                            <span class="prop-label">"Areal Density"</span>
-                            <span class="prop-value">"180 g/m²"</span>
-                        </div>
-                        <div class="prop-row">
-                            <span class="prop-label">"Warp Stretch"</span>
-                            <span class="prop-value">"150 N/m"</span>
-                        </div>
-                        <div class="prop-row">
-                            <span class="prop-label">"Weft Stretch"</span>
-                            <span class="prop-value">"120 N/m"</span>
-                        </div>
-                        <div class="prop-row">
-                            <span class="prop-label">"Bending Stiffness"</span>
-                            <span class="prop-value">"0.002 N·m"</span>
-                        </div>
+                        {fabric_mechanics_rows(&state.project.template, state.selected_piece_index)
+                            .into_iter()
+                            .map(|(label, value)| ui! {
+                                <div class="prop-row">
+                                    <span class="prop-label">{label}</span>
+                                    <span class="prop-value">{value}</span>
+                                </div>
+                            })
+                            .collect::<Vec<_>>()}
                     </div>
                 }
             } else {
