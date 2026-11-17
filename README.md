@@ -30,7 +30,7 @@ Install Rust stable and run from the repository root:
 cargo run --release --locked -j 2 --bin cloth-fit -- --steps 0 --view
 ```
 
-The editor opens a T-shirt and the bundled MakeHuman mannequin. Windows is the main development platform; macOS and Linux need equivalent acceptance testing. The desktop requires a graphics adapter supported by wgpu. CPU command-line tools build without graphics dependencies.
+The editor opens a T-shirt and the bundled MakeHuman mannequin. Windows is the main development platform; macOS and Linux need equivalent acceptance testing. On Linux Wayland sessions the window falls back to XWayland automatically, because the viewport currently requires X11; see [install notes](docs/install.md#linux-wayland-sessions-use-xwayland). The desktop requires a graphics adapter supported by wgpu. CPU command-line tools build without graphics dependencies.
 
 Plain `cargo run --locked -j 2` opens the cloth-over-sphere demo with the same WGSL default; `--cpu` selects historical Newton. Headless execution uses `--headless`, independently of solver selection.
 In that window, open **Properties → REST PATTERN → Physics-inspired mesh

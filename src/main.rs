@@ -55,6 +55,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.threads == 0 {
         return Err("--threads must be positive".into());
     }
+    #[cfg(feature = "desktop")]
+    if !args.headless {
+        // SAFETY: still single-threaded; the rayon pool and window start below.
+        unsafe { marvelous_cloth::display_backend::prefer_xwayland_for_native_window() };
+    }
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;

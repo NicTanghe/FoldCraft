@@ -15,6 +15,7 @@ pub mod cosserat;
 #[cfg(feature = "desktop")]
 #[path = "atelier/css_ui/mod.rs"]
 pub mod css_ui;
+pub mod display_backend;
 pub mod document;
 pub mod energy;
 pub(crate) mod energy_factors;

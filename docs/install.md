@@ -32,6 +32,28 @@ from a source checkout with Python 3, run
 `python scripts/check-packaged-session.py path/to/extracted-artifact`.
 It copies the supplied directory and edits only temporary public fixtures.
 
+## Linux: Wayland sessions use XWayland
+
+The native window's GPU viewport (cssimpler) currently embeds an X11 child
+window and rejects Wayland surfaces with *"Linux GPU viewports currently require
+X11"*. In a Wayland session that also provides XWayland (`DISPLAY` is set),
+`cloth-fit --view`, `--ui-smoke`, `--ui-perf-smoke` and the `marvelous-cloth`
+window remove `WAYLAND_DISPLAY` and `WAYLAND_SOCKET` from their own process at
+startup, before any thread or window exists, so winit uses XWayland instead.
+They print one line on standard error when they do this. Nothing changes without
+a `DISPLAY` to fall back to, on other platforms, or for headless runs.
+
+Set `FOLDCRAFT_KEEP_WAYLAND=1` to keep the Wayland variables, for example to
+test native Wayland once cssimpler supports it. The manual equivalent of the
+fallback is:
+
+```sh
+env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET ./cloth-fit --steps 0 --view
+```
+
+If no XWayland server is available, install it (e.g. the `xorg-x11-server-Xwayland`
+package on Fedora) or log in to an X11 session.
+
 ## Windows x64 portable preview
 
 Download the `clothcraft-windows-x64-portable-preview` ZIP artifact from a

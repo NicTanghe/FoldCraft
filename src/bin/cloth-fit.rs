@@ -297,6 +297,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !(1..=16).contains(&args.threads) || args.steps > 10_000 {
         return Err("Require 1..16 threads and at most 10000 steps".into());
     }
+    #[cfg(feature = "desktop")]
+    if args.view
+        || args.ui_smoke
+        || args.ui_interaction_smoke
+        || args.ui_perf_smoke
+        || args.ui_authoring_smoke
+    {
+        // SAFETY: still single-threaded; the rayon pool and window start below.
+        unsafe { marvelous_cloth::display_backend::prefer_xwayland_for_native_window() };
+    }
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;
