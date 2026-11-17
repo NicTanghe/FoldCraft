@@ -27,7 +27,7 @@ Audit: 17 November 2026, against `main` at `fcd319a`. FC-0022 ([NicTanghe/FoldCr
 - Undo/redo for these 2D edits.
 - Play/pause, step, reset, the solver dropdown, clean view, light/dark theme and the command palette.
 - Loading the bundled T-shirt or dress preset (the Apron entry reports that it is planned).
-- **Save Project (Ctrl+S)** writes `<--output>/fitting-project.json`, including the state and settings. It does not overwrite the file passed to `--project`, and it does not use the portable-asset writer in `document.rs`.
+- **Save Project (Ctrl+S)** writes `<--output>/fitting-project.json`, including the state and settings. It goes through `FittingProject::save`, so the write is atomic and the avatar is copied into the adjacent `.assets` folder, but it never writes to the file passed to `--project`.
 - Export of OBJ/SVG artifacts to the output directory.
 - 3D viewport orbit and zoom.
 - `--ui-smoke` writes `ui.png`; `--ui-perf-smoke` writes `ui-perf.json`.
