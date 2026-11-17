@@ -35,7 +35,7 @@ The second command only compiles. The authorized GPU pass is reproduced with `sc
 
 ## Desktop UI (cssimpler)
 
-FC-0022 replaced the egui desktop UI with cssimpler (PR #32). The repository has no egui, eframe, egui-wgpu or egui-winit dependency; do not reintroduce one, including through optional or legacy features. Use direct wgpu for rendering/compute and plain Rust types across authoring, worker, camera and viewport interfaces. Preserve real document, history, selection and simulation behavior through native adapters.
+FC-0022 replaced the egui desktop UI with cssimpler (upstream PR #32). [Native UI status](docs/native-ui-status.md) lists which egui-era controls were ported. The repository has no egui, eframe, egui-wgpu or egui-winit dependency; do not reintroduce one, including through optional or legacy features. Use direct wgpu for rendering/compute and plain Rust types across authoring, worker, camera and viewport interfaces. Preserve real document, history, selection and simulation behavior through native adapters.
 
 After dependency changes, check the all-features dependency graph (`cargo tree --all-features -i egui` must find no package) and the regenerated Cargo.lock, plus CPU-only and desktop builds. New subagents default to GPT-6.1 Terra High; use GPT-6.1 Sol High for difficult problems.
 

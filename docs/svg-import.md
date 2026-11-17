@@ -1,7 +1,7 @@
 # SVG pattern geometry import
 
 `garment::svg_import` provides a CPU reader and a prepared authoring edit.
-The desktop adapter exposes this through **File → Import SVG patterns…**.
+The egui editor exposed this through **File → Import SVG patterns…**; that adapter was removed in FC-0022 and is not ported yet ([status](native-ui-status.md)).
 It is not an SVG renderer or a sewing-pattern interchange standard.
 
 ## Native review workflow
@@ -200,5 +200,5 @@ Consulted specifications:
 - [SVG coordinate systems and transforms](https://www.w3.org/TR/SVG2/coords.html)
 - [SVG elliptical arc implementation notes](https://www.w3.org/TR/SVG/implnote.html)
 
-The native adapter lives in `atelier/svg_import_ui.rs` and
-`atelier/documents_ui.rs`; it reuses this reader rather than parsing SVG again.
+The egui-era adapter lived in `atelier/svg_import_ui.rs` and
+`atelier/documents_ui.rs`; it reused this reader rather than parsing SVG again.

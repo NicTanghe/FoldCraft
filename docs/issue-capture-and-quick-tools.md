@@ -1,5 +1,7 @@
 # Issue capture and cursor tools
 
+> **Native UI (FC-0022):** this guide describes controls of the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 ## Mark a simulation problem
 
 Open the saved garment, reproduce the problem, then choose **Mark issue** on the left rail or press **D**. This pauses on the displayed accepted state. Paint the problem faces in the 3D viewport; **Shift** erases. The brush samples visible cloth, so it does not paint through the avatar or the front cloth layer. Orbit to reach the back. Marks are red, depth-tested in 3D, and also appear on the material-space pattern.
@@ -47,7 +49,7 @@ Both sides must exist before committing. Mismatched lengths without easing are s
 
 ## Implementation and validation
 
-`issue_report.rs` and `examples/issue_probe.rs` are CPU-only. `atelier/issue_ui.rs` owns transient painting; `picking::visible_cloth_face` supplies avatar-aware nearest hits. The renderer colors marked faces within its ordinary depth pass. `atelier/quick_actions.rs` adapts the existing authoring transactions; `sewing_ui.rs` owns the shared viewport strip and shortcuts.
+`issue_report.rs` and `examples/issue_probe.rs` are CPU-only. The egui-era `atelier/issue_ui.rs` owned transient painting; `picking::visible_cloth_face` supplies avatar-aware nearest hits. The renderer colors marked faces within its ordinary depth pass. `atelier/quick_actions.rs` adapted the existing authoring transactions and `sewing_ui.rs` owned the shared viewport strip and shortcuts; none of these adapters is ported yet.
 
 `tests/issue_report.rs` checks material-space references, portable replay, preservation of positions/velocities/settings, stale-face rejection and avatar occlusion. The optional native quick-tools scenario uses real pointer events:
 

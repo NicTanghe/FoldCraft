@@ -1,5 +1,7 @@
 # Repository handoff
 
+**17 November — native UI audit.** FC-0022 (upstream PR #32) replaced the egui editor with cssimpler. Many workflows survive only as CPU APIs: Open/Save As, imports, fabric assignment, 3D placement and 3D sewing among them. [Native UI status](native-ui-status.md) maps the removed `atelier/*` modules and lists wired, display-only and unported controls. Dated entries below keep their egui references.
+
 **11 November — FC-0043 coupled WGSL garment correction.** The reported default T-shirt protrusion is reproduced and corrected in matched reset runs with both WGSL backends. See [method, results and limits](wgsl-coupled-correction.md). The unchanged CPU control has final extension 21.174% / seam gap 2.041 mm; corrected IPC 19.957% / 2.181 mm and AL 21.307% / 2.250 mm. A separate long public-fixture regression passed CPU+IPC+AL 200-step comparisons and separation audits; its AL repeat had 21.839% / 2.335 mm and 9.267 mm CPU RMS difference, within the fixed gate. New GPU-only cached-gradient coupled Gauss-Newton/PCG propagates membrane/sewing updates and preserves rigid translation; only its block preconditioner gets numerical conditioning. CPU solver/model/OGC/energy code unchanged. Old Jacobi remains a headless research flag. Larger motion envelope and marginal vector fusion were rejected as fixes/optimizations. The primitive-sum planar sideways-force defect is still open separately as FC-0044. Start from a fresh garment, not a distorted cached checkpoint.
 
 

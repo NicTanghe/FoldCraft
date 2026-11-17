@@ -72,13 +72,13 @@ A fixed VBD budget does not guarantee minimizer convergence at each step. CPU re
 
 `gpu_compute_ms`, when available, is a hardware timestamp of the VBD compute pass. It excludes GPU contact search, CPU work and transfers. `contact_profile.filter_dispatch_ms` includes contact submission/wait/readback and is a wall-clock measurement. The historical OGC validation used a 3 mm radius, contact stiffness 100,000 N/m per pair, seam stiffness 50,000 N/m², eight iterations and a 1/60 s step. The current private-garment benchmark preserves its 16 iterations. These settings are not a material calibration.
 
-`--ui-interaction-smoke` injects pointer events into a real egui window, checks that a triangle was grabbed and an attached step accepted, writes `interaction.json`, captures and closes the window. It explicitly requires the GPU and remains outside ordinary tests.
+`--ui-interaction-smoke` injected pointer events into the egui window, checked that a triangle was grabbed and an attached step accepted, wrote `interaction.json`, captured and closed the window. Since FC-0022 the flag is accepted but not implemented ([status](native-ui-status.md)). It explicitly requires the GPU and remains outside ordinary tests.
 
 ## Realtime scheduling
 
 **Precision-limited vertices (16 October):** the hybrid backend retains vertices whose ball is dominated by the f32 roundoff margin in double precision. Two sparse CPU local-minimization sweeps use the same objective and original OGC balls after GPU readback. No radius or contact is relaxed. `precision_vertices` / `precision_ms` report the work. See [the stall diagnosis, invariant and tests](precision-stall.md).
 
-The [Turbo pass](turbo-perf.md) separately measures physical throughput and actual window cadence. `atelier/worker.rs` owns current state and a fixed-step clock independent of drawing. Catch-up is limited to four steps after a duration spike, without increasing dt or reducing iterations. Newest controls replace older ones; only one result waits for the UI, and generation numbers prevent old meshes from replacing new ones. `--ui-perf-smoke` measures five seconds after one second of warm-up using the unique egui frame counter and writes `ui-perf.json`.
+The [Turbo pass](turbo-perf.md) separately measures physical throughput and actual window cadence. `atelier/worker.rs` owns current state and a fixed-step clock independent of drawing. Catch-up is limited to four steps after a duration spike, without increasing dt or reducing iterations. Newest controls replace older ones; only one result waits for the UI, and generation numbers prevent old meshes from replacing new ones. `--ui-perf-smoke` measures five seconds after one second of warm-up using the UI frame counter and writes `ui-perf.json`.
 
 ## Run
 

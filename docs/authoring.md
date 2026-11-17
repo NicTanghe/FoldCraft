@@ -1,5 +1,7 @@
 # Unified pattern workspace
 
+> **Native UI (FC-0022):** this guide describes controls of the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 **Group 3D placement:** use Place mode for shared-pivot transforms and visible
 or Alt-through box selection. Read [group placement](group-placement.md) for
 the flat-arrangement reset policy, cancellation and visibility limits.
@@ -211,9 +213,10 @@ Reopen with `scripts/start-atelier.ps1 -ProjectPath output/atelier/fitting-proje
 | `src/authoring.rs` | Atomic commands, physical-vs-layout change classification, history, local-coordinate normalization |
 | `src/garment/curves.rs` | Cubic evaluation, bounded recursive subdivision, sampled arclength |
 | `src/garment/polygon.rs` | Contour validation, triangulation, reassembly of named curved boundary chains |
-| `src/atelier/board.rs` | Unified pan/zoom canvas, drafting, anchor/handle/layout previews, shared selection |
-| `src/atelier/edges_3d.rs` | Screen-space edge picking with visibility checks and correspondence overlays |
-| `src/atelier/authoring_ui.rs`, `gizmo.rs` | Inspector, history, mode controls, rigid placement |
+| `src/atelier/css_runner.rs` | Native board canvas, drafting, anchor/handle previews, 2D sewing, history and mode controls |
+| `src/viewport_controller.rs` | UI-independent board pan/zoom |
+
+The egui-era `board.rs`, `edges_3d.rs`, `authoring_ui.rs` and `gizmo.rs` were removed in FC-0022; 3D edge picking and rigid placement are not ported yet.
 
 Optional `curves`, `holes`, `lines`, `layout_2d` and `layout_rotation_degrees` fields extend existing templates; old v1/v2 files still load. Empty geometry extensions are omitted when serialized. Both layout fields are excluded from physical cache signatures and physical-change comparisons. The angle defaults to zero and zero is omitted when serialized, preserving historical cache signatures. JSON uses exact floating-point round trips so near-degenerate Delaunay decisions do not change on reload. Curve intersection validation applies to the sampled contour, not an exact algebraic intersection proof.
 

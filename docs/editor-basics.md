@@ -1,5 +1,7 @@
 # Editing and inspecting a garment
 
+> **Native UI (FC-0022):** this guide describes controls of the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 ## Sew two boundaries
 
 Choose **Sew**, click the first boundary, then the second in either viewport.

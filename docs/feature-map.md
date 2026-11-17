@@ -2,7 +2,7 @@
 
 Reviewed against `main` at `e569ac1bbe82fca2c5c0339f1ada551380ed4fc4`
 on 23 October 2026. This is a code-oriented inventory, not a product-parity
-claim or benchmark. The [backlog](rewrite-backlog.md) is optional planning context; inspect the current code before implementing a historical gap.
+claim or benchmark. It predates FC-0022: the egui adapters it names were removed, and [native UI status](native-ui-status.md) records what the cssimpler workspace wires up now. The [backlog](rewrite-backlog.md) is optional planning context; inspect the current code before implementing a historical gap.
 
 This review follows FireflyTheReal's [PR #5](https://github.com/erythrofr/ClothCraft/pull/5),
 head `74cd0157de5aa51e90172f59fd79dc01e05b25f5`. Its useful contribution is the

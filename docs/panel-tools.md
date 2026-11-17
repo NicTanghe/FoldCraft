@@ -46,8 +46,8 @@ Relations are excluded from physical cache signatures; actual rest geometry is
 still included. Linking does not introduce solver constraints. Shape edits remesh
 and reset affected pieces through the existing transaction/cache contract.
 
-Code: `authoring/linked.rs`, `atelier/drafting_ui.rs`, `atelier/measure.rs` and
-the board interaction adapter. CPU coverage is in `tests/linked_mirror.rs`;
+Code: `authoring/linked.rs` and the board adapter in `atelier/css_runner.rs`
+(the egui-era `drafting_ui.rs` and `measure.rs` were removed in FC-0022). CPU coverage is in `tests/linked_mirror.rs`;
 `CLOTHCRAFT_AUTHORING_SCENARIO=panel-tools` selects the opt-in native authoring
 smoke, covering boundary ownership, a 200 mm ruler and a mirrored edit.
 

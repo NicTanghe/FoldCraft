@@ -82,7 +82,7 @@ the labels and Rust stable channel remain moving references.
 | Clipboard/shortcuts | Verify Copy/Paste with text focus and panel selections | Verify Command versus Control behavior explicitly | Verify clipboard ownership and Copy/Paste in both display sessions |
 | GPU | Adapter-specific test required | Adapter-specific test required | Adapter/driver-specific test required |
 
-Desktop compilation enables eframe/wgpu; it does not initialize a device in
+Desktop compilation enables cssimpler/wgpu; it does not initialize a device in
 these jobs. Record the backend, adapter and driver actually selected at runtime
 instead of assuming Metal, Vulkan or DirectX support from the platform name.
 GPU simulation is a separate opt-in workload, not part of this CPU validation.

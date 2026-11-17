@@ -1,5 +1,7 @@
 # Static avatar import
 
+> **Native UI (FC-0022):** the import dialog described here belonged to the egui editor, which was removed; use `cloth-fit --avatar` meanwhile. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 Use **File → Import avatar… → Choose file…** to select a local OBJ, glTF or GLB.
 The confirmation shows the source, vertex and triangle counts, bounding box,
 dimensions in metres and geometry-loss warnings. The action row stays outside
@@ -51,8 +53,8 @@ worker, mesh simplification and native visual acceptance remain future work.
 ## Tests and handoff
 
 `src/avatar_import.rs` owns staging and candidate preparation, independently of
-egui/wgpu. `atelier/avatar_import_ui.rs` owns the confirmation controls;
-`documents_ui.rs` installs the candidate and retains the staged asset. The
+the UI and wgpu. The egui-era `atelier/avatar_import_ui.rs` owned the confirmation
+controls and `documents_ui.rs` installed the candidate and retained the staged asset. The
 existing `atelier.rs` worker-generation contract is reused without modification.
 
 ```sh

@@ -1,5 +1,7 @@
 # Presentation and lighting
 
+> **Native UI (FC-0022):** the presentation controls described here belonged to the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 Workspace → Presentation controls a single world-space directional light.
 Rotation and tilt are degrees relative to the original rig; Ambient and Key
 light are dimensionless gains from 0 to 2. Defaults are zero rotation/tilt and

@@ -114,9 +114,8 @@ implementations and callers.
 | CPU commands, validation and history | `src/authoring.rs`; proposed `src/authoring/corners.rs` |
 | Curves and optional authored corner data | `src/garment/curves.rs`, `src/garment/polygon.rs` |
 | Linked propagation and reference policies | `src/authoring/linked.rs`, `src/authoring/geometry.rs` |
-| Toolbar and shared transitions | `src/atelier/authoring_ui.rs` |
-| Pointer picking, transforms and preview | `src/atelier/board.rs`; proposed `src/atelier/corner_ui.rs` |
-| Glyph, hints and minimal module/input wiring | `src/atelier/icons.rs`, `src/atelier/view_controls.rs`, `src/atelier.rs` |
+| Toolbar, pointer picking, transforms and preview | `src/atelier/css_runner.rs` (Corner Select mode, live fillet preview); CPU side in `src/authoring/corner_tool.rs` |
+| Glyph and hints | `src/atelier/css_ui/icons.rs` |
 | Physical cache classification | `src/fitting.rs`, only as needed for nonphysical corner metadata |
 
 Constructor defaults, importers and fixtures must be updated coherently if an
@@ -135,7 +134,7 @@ outside this feature.
 - Test both mirror directions, source reconstruction on radius re-edit,
   retained/removed reference intervals, atomic partner failures and legacy JSON.
 - Drive the actual toolbar, mode buttons, corner and handle gestures through
-  named CPU egui controls and the production installer. Include rotated/zoomed
+  native controls and the production installer. Include rotated/zoomed
   layouts, text focus, Escape, lost focus, mode switches and stale targets.
 - Verify one-step Undo/Redo and Save/Open, including the next coupled-handle
   edit after reopen. Inspect state/history/generation rather than treating a

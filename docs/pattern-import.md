@@ -1,5 +1,7 @@
 # Import DXF pattern outlines
 
+> **Native UI (FC-0022):** the import dialog described here belonged to the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 Use **File → Import DXF patterns…** and choose a local ASCII DXF. Review the
 preview, select closed outlines, choose an existing fabric and mesh spacing,
 acknowledge excluded data, then **Add panels**. The operation adds unsewn pieces
@@ -54,7 +56,7 @@ the import modal and continues the normal unsaved-document flow.
   DXF sections are not imported. No code-page conversion or industrial
   DXF-AAMA/DXF-ASTM semantics are implemented.
 
-The CPU adapter is `src/pattern_import.rs`; native controls live in
-`src/atelier/pattern_import_ui.rs` and use the existing document/history adapter.
+The CPU adapter is `src/pattern_import.rs`; the egui-era controls in
+`src/atelier/pattern_import_ui.rs` were removed in FC-0022 and are not ported yet.
 Tests use the CPU named-widget harness. Native OS picker, GPU rendering and
 visual acceptance require a separate window run; CPU results do not prove them.

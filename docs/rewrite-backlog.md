@@ -1,6 +1,6 @@
 # Rust rewrite backlog
 
-Optional planning reference inherited from upstream. Statuses and dependencies are historical snapshots, not work reservations or requirements for editing or merging in this fork. Edit this document directly as plans change. Inspect current code before treating an item as missing. Upstream links are evidence only. Administrative tasks and reservation notes have been omitted.
+Optional planning reference inherited from upstream. Statuses and dependencies are historical snapshots, not work reservations or requirements for editing or merging in this fork. File lists naming `src/atelier/*_ui.rs`, `board.rs`, `chrome.rs` and similar egui adapters predate FC-0022; see [native UI status](native-ui-status.md) for current locations. Edit this document directly as plans change. Inspect current code before treating an item as missing. Upstream links are evidence only. Administrative tasks and reservation notes have been omitted.
 
 ## EXO-UX-008
 

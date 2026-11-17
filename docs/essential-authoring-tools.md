@@ -84,8 +84,8 @@ The Freeze/Deactivate distinction is documented in Marvelous; the rest of this t
 - `src/authoring.rs`: current transactional command enum covers drawing, edits, mirrors, booleans, sewing, fabric and clipboard; no dedicated pin, freeze, offset or cut command.
 - `src/garment/seam.rs`: `BoundaryRef.range` and `SeamSpec.notches` provide lower-level foundations. They do **not** establish an interactive partial-sewing/notch tool or arbitrary M:N relation model.
 - `src/garment/template.rs`: `grain_degrees` and `pin_points` exist. Current material pins must coincide with rest mesh vertices and compile to arrangement targets. Live pins on an already draped surface need an explicit target/attachment design, not just another checkbox.
-- `src/atelier/board.rs`, `edges_3d.rs`, `authoring_ui.rs`, `drafting_ui.rs`: current selection/drawing/sewing adapters; preserve shared semantic IDs.
-- `src/atelier.rs`, `workspace.rs`, `fitting.rs`: current export/reopening paths; do not confuse export with a complete document lifecycle.
+- `src/atelier/board.rs`, `edges_3d.rs`, `authoring_ui.rs`, `drafting_ui.rs`: selection/drawing/sewing adapters at the time of this audit, removed in FC-0022; see [native UI status](native-ui-status.md). Preserve shared semantic IDs.
+- `src/atelier.rs`, `workspace.rs`, `fitting.rs`: export/reopening paths at the time of this audit; do not confuse export with a complete document lifecycle.
 - `src/render.rs`: the current strain visualization is not a calibrated fit or pressure estimator. Physical measurements need definitions, units and material evidence. [CLO distinguishes these map types][fit]
 
 All new source and UI text stays English. Keep source curves/material coordinates authoritative and rebuild derived caches coherently. No solver change is required merely to add rulers, file dialogs or visibility controls. Pins, freeze, crease constraints and layer/contact behavior do require physical capability checks; solver independence is not permission to fake those operations.

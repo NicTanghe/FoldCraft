@@ -1,5 +1,7 @@
 # Workspace UI pass — 15 October 2026
 
+> **Native UI (FC-0022):** this records the egui workspace, which was removed. The modules listed below no longer exist; see [native UI status](native-ui-status.md).
+
 The workspace now gives most of the window to the garment and the unified pattern board. This is an independent interface pass, not a reproduction of proprietary artwork. All new controls and documentation are in English; localization remains future work.
 
 ## Controls

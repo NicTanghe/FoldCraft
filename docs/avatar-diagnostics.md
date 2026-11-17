@@ -1,5 +1,7 @@
 # Avatar collision diagnostics
 
+> **Native UI (FC-0022):** the inspector described here belonged to the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 Open **Properties → Simulation → Avatar collision diagnostics**.
 These controls inspect the actual static triangle surface used by collision,
 independently of cosmetic avatar visibility. They do not repair geometry,
@@ -53,8 +55,8 @@ law. No numerical envelope is presented as cosmetic mesh thickness.
 ## Evidence and implementation
 
 `avatar::diagnostics` owns the CPU report and isolated initialization call.
-`atelier/avatar_diagnostics.rs` owns the inspector, bounded background request
-and result freshness; `chrome.rs` hosts its controls. No solver implementation
+The egui-era `atelier/avatar_diagnostics.rs` owned the inspector, bounded
+background request and result freshness; `chrome.rs` hosted its controls. No solver implementation
 or document schema is modified.
 
 CPU fixtures cover closed/open/nonmanifold/inconsistently oriented surfaces,

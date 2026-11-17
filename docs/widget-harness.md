@@ -1,5 +1,7 @@
 # Named-widget UI tests
 
+> **Native UI (FC-0022):** the harness described here drove the egui editor and was deleted with it; no native equivalent exists yet. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 The editor has a CPU-only egui input harness for repeatable tool tests. It
 does not open a native window, capture the screen, move the system mouse,
 initialize wgpu or require desktop automation. Graphics libraries still need

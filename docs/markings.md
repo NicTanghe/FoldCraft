@@ -230,7 +230,7 @@ are recorded on the coordination issue and PR.
 | `src/garment/polygon.rs` | the two optional fields; `build` validates the markings |
 | `src/authoring.rs`, `src/authoring/geometry.rs` | `SeamAllowance`, `SetNotch`, `RemoveNotch`; migration and refusal |
 | `src/garment/export.rs` | preview markings and the true-scale print SVG |
-| `src/atelier/board.rs`, `authoring_ui.rs` | boundary inspector, board overlay and the markings draft fields |
+| `src/atelier/css_runner.rs` | board overlay; the egui-era boundary inspector and markings draft fields are not ported |
 | `src/garment/shapes.rs`, `src/fitting.rs` | mirror migration; cache-signature cleanup |
 | `src/pattern_import.rs`, `src/garment/svg_import.rs` | initialise the two empty maps when constructing a polygon |
 | `tests/pattern_markings.rs` | CPU acceptance tests |

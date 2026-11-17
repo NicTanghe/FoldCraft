@@ -1,5 +1,7 @@
 # Template browser
 
+> **Native UI (FC-0022):** the browser described here belonged to the egui editor, which was removed. The native workspace loads only the T-shirt and dress presets. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 Open **File → Templates…**, or the grid button at the top of the tool rail.
 The browser contains six original ClothCraft examples: T-shirt, dress, curved
 panels, two rectangles, partial/chained seams and local easing. These are
@@ -38,9 +40,9 @@ take time to validate; this initial browser has no background import worker.
 ## Implementation and checks
 
 `template_catalog.rs` owns metadata, embedded fixtures, validated preview data
-and candidate preparation. `atelier/template_browser.rs` owns the actual egui
-controls. `documents_ui.rs` handles file dialogs and document replacement;
-`authoring_ui.rs` provides the tool-rail entry point.
+and candidate preparation. The egui-era `atelier/template_browser.rs`,
+`documents_ui.rs` and `authoring_ui.rs` provided the controls, dialogs and
+tool-rail entry point.
 
 CPU-only checks (two jobs/threads):
 

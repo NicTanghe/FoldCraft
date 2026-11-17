@@ -1,5 +1,7 @@
 # Sewing audit in the editor
 
+> **Native UI (FC-0022):** the audit panel described here belonged to the egui editor, which was removed; `cloth-template audit-sewing` still runs the same audit. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 Open **Properties → Piece → Sewing audit**, then click **Run audit**. No
 simulation is required. The audit reads the current document's material rest
 boundaries; it does not measure the separation of draped panels.

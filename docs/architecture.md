@@ -4,13 +4,13 @@
 
 ## Desktop replacement requirement
 
-The target desktop UI is cssimpler only. FC-0022 tracks removal of egui/eframe from every feature and the lockfile, with direct wgpu rendering/compute and UI-independent worker, authoring and camera interfaces. The existing egui implementation described in historical sections below remains migration work until that dependency check passes. Keeping an optional legacy egui frontend does not satisfy the target.
+The desktop UI is cssimpler only. FC-0022 removed egui/eframe from every feature and the lockfile, with direct wgpu rendering/compute and UI-independent worker, authoring and camera interfaces. Do not reintroduce an egui frontend. Sections below that name `atelier/*_ui.rs`, `board.rs`, `edges_3d.rs`, `gizmo.rs` or other deleted egui adapters are historical; [native UI status](native-ui-status.md) maps them to current code and lists the controls that were not ported.
 
 The CPU-only [solver consistency experiments](solver-consistency.md) live in
 `solver_lab`. Their matrix-free coupled solve shares the exact material factors
 and existing OGC guards. They are not wired into the editor or GPU worker.
 
-The repository remains one Rust package with three executables. CPU numerical modules do not import eframe or wgpu. The `desktop` feature adds rendering, the `gpu_vbd` compute backend and interfaces; disable it to build only the CPU core.
+The repository remains one Rust package with three executables. CPU numerical modules do not import cssimpler or wgpu. The `desktop` feature adds rendering, the `gpu_vbd` compute backend and interfaces; disable it to build only the CPU core.
 
 ## Data flow
 
@@ -50,7 +50,7 @@ Project JSON v1 -> Pattern::build() -> ReferenceSolver::step()
 
 The legacy editor uses the single-panel `Project`. `cloth-fit` uses `FittingProject`: a multi-panel template, avatar, settings and signed position cache. The CLI and interface consume the same `FittingScene` without duplicating the solver.
 
-The current `cloth-fit` path uses `VbdSolver` + `OgcWorld`, or `GpuVbd::step` with the same OGC topology and energies. The Newton diagram above describes `--reference`. The workspace worker receives a generation number: a result computed on an old mesh never replaces the current scene. It owns the physical state and fixed-step clock independently of egui refresh. Only one output snapshot is retained; control updates never reinsert an old displayed state. GPU resources and material terms are reused, and the OGC candidate cache never replaces distance/bound recomputation. See [Turbo](turbo-perf.md).
+The current `cloth-fit` path uses `VbdSolver` + `OgcWorld`, or `GpuVbd::step` with the same OGC topology and energies. The Newton diagram above describes `--reference`. The workspace worker receives a generation number: a result computed on an old mesh never replaces the current scene. It owns the physical state and fixed-step clock independently of UI refresh. Only one output snapshot is retained; control updates never reinsert an old displayed state. GPU resources and material terms are reused, and the OGC candidate cache never replaces distance/bound recomputation. See [Turbo](turbo-perf.md).
 
 The [coupled seam refinement experiment](seam-block-refinement.md) is a CPU numerical module, disabled by default on both CPU and hybrid paths. It is enabled only by the research API/example, not garment settings or UI. Components derive from compiled sewing coefficients; additional steps must decrease the unchanged objective inside the original OGC balls. Current measurements reject production activation.
 
@@ -65,9 +65,9 @@ restart/release protocols. See [its evidence and limitations](settling-zoo.md).
 | Module | Role | Input / output |
 |---|---|---|
 | `authoring.rs` | Transactions, history and rigid placements | Template + command → validated template + compiled model |
-| `authoring/clipboard.rs`, `atelier/selection.rs`, `atelier/radial.rs` | Semantic clipboard, transient selection and tool menu | Stable panels/boundaries → commands; no persistent mesh indices |
-| `fabrics.rs`, `atelier/fabrics_ui.rs` | Documented presets, extension-under-load conversion and controls | SI properties → `Command::Fabric` compilation, without changing rest geometry |
-| `atelier/authoring_ui.rs`, `atelier/gizmo.rs` | Drawing, sewing, selection and gizmos | Interactions → commands; previews do not remesh every frame |
+| `authoring/clipboard.rs` | Semantic clipboard (no native selection/radial adapter yet) | Stable panels/boundaries → commands; no persistent mesh indices |
+| `fabrics.rs` | Documented presets and extension-under-load conversion (no native assignment control yet) | SI properties → `Command::Fabric` compilation, without changing rest geometry |
+| `atelier/css_runner.rs`, `atelier/css_ui/`, `atelier/core_state.rs` | Drawing, 2D sewing, selection and tool modes | Interactions → commands; previews do not remesh every frame |
 | `model.rs` | Rectangular rest geometry and FEM mesh | `Pattern` → `Mesh`, mass, hinges |
 | `garment/template.rs` | Editing model, validation and compilation | `GarmentTemplate` → `CompiledGarment` |
 | `garment/polygon.rs`, `garment/meshing.rs` | Validated contours, constrained Delaunay and meshing metric | Points/boundaries → UVs and triangles, quality checks |
@@ -128,11 +128,11 @@ The backend evolution goal and comparison protocol are described in [solver-chal
 
 ## Unified authoring board
 
-The CPU drafting extension is documented in [drafting-tools.md](drafting-tools.md). `garment/domain.rs` adds optional hole contours and internal material paths; `shapes.rs` supplies primitives/mirrors/booleans, while `authoring/geometry.rs` migrates semantic references transactionally. Internal paths are CDT constraints with material on both sides, exposed as named chains to the existing seam compiler. No solver-specific drawing or new GPU seam representation is required. `atelier/drafting_ui.rs` only adapts these operations to controls.
+The CPU drafting extension is documented in [drafting-tools.md](drafting-tools.md). `garment/domain.rs` adds optional hole contours and internal material paths; `shapes.rs` supplies primitives/mirrors/booleans, while `authoring/geometry.rs` migrates semantic references transactionally. Internal paths are CDT constraints with material on both sides, exposed as named chains to the existing seam compiler. No solver-specific drawing or new GPU seam representation is required. UI code only adapts these operations to controls (now `atelier/css_runner.rs`; the egui-era `drafting_ui.rs` was removed).
 
-The board in `atelier/board.rs` shares selection (`panel` + named edge) with `atelier/edges_3d.rs`. It has one metric camera and persistent per-panel `layout_2d` / `layout_rotation_degrees` metadata. Board positions are `origin + rotation(local_uv)`. Layout does not modify material UV, placement, grain, masses or cache signatures. Shape edits inverse-rotate pointer coordinates into local anchors and controls; moving the local origin compensates both rotated 2D layout and 3D placement so untouched geometry stays fixed. `Command::BoardTransform` commits translation and angle atomically. The zero angle is omitted from serialization to preserve old physical hashes.
+The 2D board (egui-era `atelier/board.rs`, now `atelier/css_runner.rs`) shared selection (`panel` + named edge) with the removed `atelier/edges_3d.rs`. It has one metric camera and persistent per-panel `layout_2d` / `layout_rotation_degrees` metadata. Board positions are `origin + rotation(local_uv)`. Layout does not modify material UV, placement, grain, masses or cache signatures. Shape edits inverse-rotate pointer coordinates into local anchors and controls; moving the local origin compensates both rotated 2D layout and 3D placement so untouched geometry stays fixed. `Command::BoardTransform` commits translation and angle atomically. The zero angle is omitted from serialization to preserve old physical hashes.
 
-`atelier/workspace.rs` owns visual styling, the piece browser and format information. `atelier/seam_links.rs` draws sparse correspondence guides in either view. `CompiledSeam.guides` contains nine transient pairs of weighted boundary attachments derived during compilation from the same range/reversal/notch map as the physical seam. They do not enter energies, contacts or saved documents. Default overlays use three guides per seam, expanding the active pair to nine; dash counts are bounded for distant pieces.
+The egui-era `atelier/workspace.rs` owned visual styling, the piece browser and format information, and `atelier/seam_links.rs` drew sparse correspondence guides in either view; neither overlay is ported yet. `CompiledSeam.guides` contains nine transient pairs of weighted boundary attachments derived during compilation from the same range/reversal/notch map as the physical seam. They do not enter energies, contacts or saved documents. Default overlays use three guides per seam, expanding the active pair to nine; dash counts are bounded for distant pieces.
 
 The 2D board uses indexed vertices instead of duplicating every triangle corner. Boundary projection reuses one camera matrix per pass. Avatar visibility queries reuse `MeshCollider`'s static BVH and the existing two-sided triangle predicate; inclusive, padded slabs handle silhouettes and parallel rays. This is a picking optimization, not an OGC collision change. CPU equivalence tests and the standalone `picking_probe` benchmark cover it.
 
@@ -146,7 +146,7 @@ Board view rotation is radians; panel layout rotation remains degrees. Pointer a
 
 ## Document and sewing extensions (16 October 2026)
 
-`document.rs` owns portable avatar assets and atomic document replacement. `atelier/documents_ui.rs` handles dialogs, dirty state and recovery. `SeamSpec` keeps legacy A/B first segments plus optional ordered tails; `BoundaryRef.reversed` controls each trimmed segment. Cumulative arclength paths compile into the same quadrature/energy API, including both sides of discontinuous joints. Authoring, clipboard, mirrors, ownership checks and export traverse all references. See [contracts and limits](documents-and-sewing.md).
+`document.rs` owns portable avatar assets and atomic document replacement. The egui-era `atelier/documents_ui.rs` handled dialogs, dirty state and recovery; the native workspace has none of these yet. `SeamSpec` keeps legacy A/B first segments plus optional ordered tails; `BoundaryRef.reversed` controls each trimmed segment. Cumulative arclength paths compile into the same quadrature/energy API, including both sides of discontinuous joints. Authoring, clipboard, mirrors, ownership checks and export traverse all references. See [contracts and limits](documents-and-sewing.md).
 
 ### Paired editing and checkpoint measurements (19 October)
 

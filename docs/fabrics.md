@@ -1,5 +1,7 @@
 # Fabric library, mass and stretch
 
+> **Native UI (FC-0022):** the fabric inspector described here belonged to the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 In the inspector, select a piece and open **Fabric · weight and stretch**. Choose a preset, adjust its mass, thickness and extension, then **Apply fabric**. The default scope is the selected panel; **Apply to all panels** is explicit. Editing one panel detaches its shared material when necessary. Applied values participate in undo/redo and template/project JSON export.
 
 The displayed panel/garment mass is the sum of lumped vertex masses from rest area × surface density; it excludes accessories, seam thread and the avatar. Changing fabric rebuilds masses, energies and solver caches while preserving compatible geometry and velocities. It does not remesh, change material UVs or overwrite the panel grain. This is an instantaneous parameter edit, not a mass-transfer experiment conserving momentum.
@@ -39,4 +41,4 @@ Advanced controls expose shear in N/m and bending in µN·m. Density is stored i
 - [Fabric-101 / Learnable Persistent Wrinkle Formation, September 2026](https://arxiv.org/abs/2609.13707): read the abstract and [official repository](https://github.com/GongDeshan/Fabric_101_for_Wrinkles). It studies cyclic elastic, frictional and plastic behavior. At inspection on 2026-10-14 the README still marked the complete dataset/code release as coming soon. No claim of importing its parameters or reproducing its results.
 - [UK Hide nappa specification](https://www.ukhide.co.uk/wp-content/uploads/2017/05/Auto-Full-Grain-Nappa-technical-specifications.pdf): the 35–70% figure is **breaking elongation**. It was not used as recoverable stretch at our reference load.
 
-Implementation: `src/fabrics.rs` (pure CPU library and load conversion), `authoring::Command::Fabric` (atomic assignment), `src/atelier/fabrics_ui.rs` (controls). No file-format version bump or changes to existing default materials. Custom numerical properties remain serializable independently of the built-in list.
+Implementation: `src/fabrics.rs` (pure CPU library and load conversion), `authoring::Command::Fabric` (atomic assignment), egui-era `src/atelier/fabrics_ui.rs` (controls, removed in FC-0022). No file-format version bump or changes to existing default materials. Custom numerical properties remain serializable independently of the built-in list.

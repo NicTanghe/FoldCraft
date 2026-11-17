@@ -1,5 +1,7 @@
 # Documents and sewing
 
+> **Native UI (FC-0022):** the dialogs and sewing controls described here belonged to the egui editor, which was removed. The CPU behavior is unchanged; see [native UI status](native-ui-status.md) for what the cssimpler workspace wires up today.
+
 Implementation pass: 16 October 2026. A working alpha slice of SAVE-01, SEW-01 and SEW-02; the complete production roadmap remains open.
 
 ## Documents
@@ -37,11 +39,11 @@ Imported notches are preserved when editing ranges/chains and apply over the ent
 
 - `document.rs`: atomic replacement and portable avatars, independent of UI.
 - `fitting.rs`: v1 loading, state validation and saving.
-- `atelier/documents_ui.rs`: path, dirty state, dialogs and recovery.
+- egui-era `atelier/documents_ui.rs` (removed): path, dirty state, dialogs and recovery.
 - `garment/seam.rs`: optional `BoundaryRef.reversed` and `SeamSpec.a_tail` / `b_tail`. A/B remain the first segment; tails are ordered continuations. Defaults are omitted, preserving legacy single-edge JSON and physical signatures.
 - `BoundaryCurve::concatenate`: cumulative-length paths compiled to existing seam energy terms; no new solver.
 - `Command::SewChain`: create/replace one seam transactionally; `Command::Sew` now accepts partial ranges.
-- `atelier/sewing_ui.rs`: shared draft, picking, range handles and controls.
+- `atelier/css_runner.rs`: native 2D Sew tool. The egui-era `atelier/sewing_ui.rs` range handles and 3D picking are not ported.
 
 Old files load without conversion. Older builds denying unknown fields reject files using the extensions. Clipboard copies include a seam only when **every** referenced panel is selected. Mirrors reverse segment ranges/directions coherently; deleting a referenced panel removes its whole seam. Topology operations unable to preserve a sewn boundary still reject the edit explicitly.
 

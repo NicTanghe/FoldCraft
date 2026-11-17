@@ -49,7 +49,7 @@ Target lengths remain attached to their named edges through reflection. Mirrors 
 | `src/garment/domain.rs` | Holes/lines, validation, selectable paths |
 | `src/garment/meshing.rs`, `polygon.rs` | CDT domain meshing and named chain reconstruction |
 | `src/authoring/geometry.rs` | Geometric transactions, reference migration, gathered strips |
-| `src/atelier/drafting_ui.rs`, `board.rs` | Controls, pen, picking and handle previews |
+| `src/atelier/css_runner.rs` | Native pen, primitives, internal lines, linked mirrors, picking and handle previews (booleans and independent mirrors not yet wired) |
 | `tests/drafting_tools.rs` | Area/mass, holes, mirror inversion, board transforms, remeshing, seam forces, serialization, atomic failures |
 
 Additional point/view editing and Firefly attribution: [integration notes](firefly-integration.md).

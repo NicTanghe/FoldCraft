@@ -16,10 +16,10 @@ Updated 21 October 2026. The first goal is a coherent editing workflow around th
 
 | ID | Remaining task | Starting point / dependencies | Acceptance |
 |---|---|---|---|
-| UX-01 | Validate and refine the first-time sewing workflow | `atelier/sewing_ui.rs`, `board.rs`, `edges_3d.rs`; existing partial/chain model | An unfamiliar user selects two intended boundaries, sees direction and unequal-length policy, confirms once, then selects/deletes/undoes the seam in either view |
-| UX-02 | Consistent selection and editing across pieces | `atelier/selection.rs`, `authoring.rs` | Box/lasso, point/piece selection, group edits and Delete have explicit scope; text fields retain keyboard ownership; one edit is one undo entry; linked mirrors do not update twice |
-| UX-03 | Clear inspection and viewport controls | `atelier/view_controls.rs`, `chrome.rs` | A clean mesh view is reachable in one action; selection and sewing overlays have predictable visibility; Grab radius/strength are discoverable and do not change materials |
-| UX-04 | Arrangement and measurements for real drafting | ARR-01, SIM-01, `atelier/gizmo.rs` | Body-aware placement, pin editing and useful measurements preserve material coordinates and report unsupported operations |
+| UX-01 | Validate and refine the first-time sewing workflow | `atelier/css_runner.rs` (2D Sew tool); existing partial/chain model; 3D edge sewing not yet ported ([status](docs/native-ui-status.md)) | An unfamiliar user selects two intended boundaries, sees direction and unequal-length policy, confirms once, then selects/deletes/undoes the seam in either view |
+| UX-02 | Consistent selection and editing across pieces | `atelier/css_runner.rs`, `authoring.rs`, `authoring/clipboard.rs` | Box/lasso, point/piece selection, group edits and Delete have explicit scope; text fields retain keyboard ownership; one edit is one undo entry; linked mirrors do not update twice |
+| UX-03 | Clear inspection and viewport controls | `atelier/css_runner.rs`, `atelier/css_ui/` | A clean mesh view is reachable in one action; selection and sewing overlays have predictable visibility; Grab radius/strength are discoverable and do not change materials |
+| UX-04 | Arrangement and measurements for real drafting | ARR-01, SIM-01, `Command::{Place, PlaceGroup}` (no native placement gizmo yet) | Body-aware placement, pin editing and useful measurements preserve material coordinates and report unsupported operations |
 | PHYS-01 | Diagnose persistent motion on a settled benchmark | `vbd/audit.rs`, `motion.rs`; owner-provided final benchmark pending | Distinguish assembly motion, cold-restart history, contact-refresh discontinuity and final force residual; preserve velocities and record identical pull/hold/release controls |
 | PHYS-02 | Continuous contact response without artificial sticking | `ogc/`, existing rejected contact trials | Preserve separation checks and force coverage; pass rest, frictionless sliding and release; report energy/force continuity and full-step cost; keep unproven variants opt-in |
 | PHYS-03 | Evaluate real alternative solver adapters | `solver_lab/`, solver challenge | Same rest mesh/materials/seams/controls; report quality before speed; do not expose failed lab candidates as editor modes |
@@ -43,7 +43,7 @@ Each row is a contribution-sized track, not a promised release date. Finish one 
 | Order | Outcome | Start in | Acceptance / evidence |
 |---|---|---|---|
 | P0.1 | Reliable save/open and portable projects | `fitting.rs`, `atelier.rs` | File picker, explicit save vs export, relative/relinked avatar paths, autosave recovery; reopen the same document/state after a forced shutdown |
-| P0.2 | Understandable drawing and sewing | `atelier/board.rs`, `authoring.rs`, `garment/seam.rs` | Numeric dimensions, add/remove contour points, clear orientation and preflight intersections; a new user completes a top without editing JSON |
+| P0.2 | Understandable drawing and sewing | `atelier/css_runner.rs`, `authoring.rs`, `garment/seam.rs` | Numeric dimensions, add/remove contour points, clear orientation and preflight intersections; a new user completes a top without editing JSON |
 | P0.3 | Stable cloth at a measured realtime budget | `ogc/`, `vbd.rs`, `gpu_vbd.rs` | Shirt/apron/dress, supported and free cloth, multiple mesh densities; report step P50/P95, delivered physical time, seam gaps, stretch and intersections. Preserve accuracy checks |
 | P1.1 | Practical static asset interchange | `avatar.rs`, `garment/export.rs`, future adapters | OBJ+MTL round trip, then static GLB; explicit units/axes, groups, normals and UVs; Blender and a second independent viewer agree |
 | P1.2 | Industrial pattern exchange | canonical pattern model + new format adapters | DXF-AAMA and DXF-ASTM separately; import/export contours, grain and notches with independent fixtures; cutting vs sewing lines are explicit |
@@ -81,7 +81,7 @@ Acceptance: an unfamiliar user can draft a simple top, join its intended boundar
 
 ## 2. Physics as a replaceable module
 
-- [x] Authoring and material-space model independent of egui/wgpu; CPU-only build.
+- [x] Authoring and material-space model independent of the UI toolkit and wgpu; CPU-only build.
 - [x] CPU Newton reference; CPU VBD; hybrid GPU VBD/OGC; real window timing and force checks.
 - [ ] Common backend lifecycle/capability contract, exercised by two real adapters before exposing a new selector.
 - [ ] Standard scene suite and machine-readable quality/cost comparisons for alternative solvers.
@@ -121,10 +121,10 @@ The nine articles reviewed in the [dated manual ledger](docs/manual-study.md#aut
 | ID / milestone | Small deliverable | Dependencies / starting point | Done when |
 |---|---|---|---|
 | SAVE-01 / P0.1 | Open, Save As, dirty-state feedback and portable avatar references | `fitting.rs`, `atelier.rs`; foundation for every later task | A saved shirt reopens from another directory with matching material/rest/state; missing avatar gives relink UI; cancelled or failed writes preserve the previous file |
-| DRAW-01 / P0.2 | Rectangle width/height and numeric anchor movement in mm | `authoring.rs`, `atelier/board.rs`; current metric model | A 400 × 600 mm rectangle keeps exact dimensions through save/load; invalid values are atomic; one edit is one undo entry |
+| DRAW-01 / P0.2 | Rectangle width/height and numeric anchor movement in mm | `authoring.rs`, `atelier/css_runner.rs`; current metric model | A 400 × 600 mm rectangle keeps exact dimensions through save/load; invalid values are atomic; one edit is one undo entry |
 | DRAW-02 / P0.2 | Add/remove a contour point; split by arclength, ratio or count | DRAW-01; named-edge migration in `garment/curves.rs` and `authoring.rs`; MD-01 | Split a sewn Bézier without changing its outline; migrate seam ranges or reject explicitly; no dangling references after undo/remesh |
-| SEW-01 / P0.2 | Interactive partial-edge sewing in both views with numeric length and endpoint handles | Existing `BoundaryRef.range` / compiler correspondence; `board.rs`, `edges_3d.rs`; MD-02 | Sew 100 mm of a 400 mm edge to another piece, reverse/edit/delete it, undo and reload; selected subranges and preview match the physical seam |
-| ARR-01 / P0.2 | Named body arrangement anchors with preview, normal direction and clearance diagnostics | `avatar.rs`, `authoring.rs`, `gizmo.rs`; MD-06 | Place front/back/sleeve panels on an arbitrary supported avatar; show offending pieces before simulation; retain 2D rest data and undo the placement |
+| SEW-01 / P0.2 | Interactive partial-edge sewing in both views with numeric length and endpoint handles | Existing `BoundaryRef.range` / compiler correspondence; `atelier/css_runner.rs`; MD-02 | Sew 100 mm of a 400 mm edge to another piece, reverse/edit/delete it, undo and reload; selected subranges and preview match the physical seam |
+| ARR-01 / P0.2 | Named body arrangement anchors with preview, normal direction and clearance diagnostics | `avatar.rs`, `authoring.rs`; MD-06 | Place front/back/sleeve panels on an arbitrary supported avatar; show offending pieces before simulation; retain 2D rest data and undo the placement |
 | SIM-01 / P0.3 | Edit persistent pins from 2D/3D and distinguish them from temporary mouse grabbing | Material-coordinate attachment model + solver capabilities; MD-07 | Pin/unpin a patch and resume; report what survives remeshing; no persisted triangle indices, hidden forces or silent conversion between hard and soft constraints |
 | DRAW-03 / P1 authoring | Mirror copies with optional linked outline/sewing edits, plus unlink | DRAW-02; explicit relation model; MD-03 | Edit one sleeve and update its counterpart exactly once; mirrored winding, grain and seam orientation remain valid; unlink and undo are deterministic |
 | DRAW-04 / P1 authoring | Internal lines, offsets and holes as distinct semantic objects | DRAW-02; topology/model migration and constrained mesher; MD-04 | A 10 mm internal offset remains attached to its piece; reject self-crossing offsets; a hole removes area/mass while a guide line does not |

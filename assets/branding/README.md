@@ -1,6 +1,6 @@
 # ClothCraft artwork
 
-`clothcraft-icon.png` is the original generated ClothCraft ram icon, used by the README and the native atelier window. The ram and fleece refer to wool and textile craft. The PNG is 1254 × 1254 RGBA with transparent corners around a turquoise rounded tile. Native window icons are supplied through eframe; this does not embed a Windows Explorer icon resource or provide an installer.
+`clothcraft-icon.png` is the original generated ClothCraft ram icon, used by the README and the native atelier window. The ram and fleece refer to wool and textile craft. The PNG is 1254 × 1254 RGBA with transparent corners around a turquoise rounded tile. The egui-era window set it as the application icon; the native cssimpler window does not set one yet ([status](../../docs/native-ui-status.md)). This does not embed a Windows Explorer icon resource or provide an installer.
 
 ## Visual references
 

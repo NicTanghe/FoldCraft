@@ -117,7 +117,7 @@ The initial energies, solver, tests and renderer were written in this repository
 
 Links on `main` move: pin a commit and recheck files/notices before reuse. C-IPC, AVBD demos, ARCSim and OGC had no verified reuse authorization in this initial review. Reading a paper does not grant a general license to its code or data.
 
-The GUI uses [eframe 0.36.2](https://docs.rs/eframe/0.36.2/eframe/) (egui/winit/wgpu), with an original 3D pipeline. Resolved versions and the complete dependency list are in `Cargo.lock`. At the time of the initial work, there was no CUDA/compute backend and no graphics/GPU launch; later GPU work is documented separately.
+The GUI originally used [eframe 0.36.2](https://docs.rs/eframe/0.36.2/eframe/) (egui/winit/wgpu), with an original 3D pipeline; FC-0022 replaced it with cssimpler and direct wgpu. Resolved versions and the complete dependency list are in `Cargo.lock`. At the time of the initial work, there was no CUDA/compute backend and no graphics/GPU launch; later GPU work is documented separately.
 
 Downloaded dependency `Cargo.toml` metadata was also inspected: eframe/wgpu, glam, rayon, serde/serde_json, clap and naga declare `MIT OR Apache-2.0`; tracing/tracing-subscriber `MIT`; bytemuck `Zlib OR Apache-2.0 OR MIT`. This records direct dependencies and wgpu, not an exhaustive legal audit of transitive dependencies or bundled resources.
 

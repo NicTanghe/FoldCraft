@@ -44,24 +44,26 @@ To reopen a saved garment:
 cargo run --release --locked -j 2 --bin cloth-fit -- --project path/to/garment.json --steps 0 --view
 ```
 
-Use **Space** to start or pause, **Grab** to pull the cloth and **Ctrl+S** to save. Grab exposes radius and strength above the 3D view; **3D gear → Clean view** hides editing annotations. Right-click a canvas for the radial tool menu. **Q** opens nearby shape, mirror and boolean actions. The 2D board and 3D viewport share panel and boundary selections.
+Use **Space** to start or pause and **Ctrl+S** to save (to `fitting-project.json` in the `--output` directory). **Clean View** in the top bar hides editing annotations; **Ctrl+K** opens the command palette. The 3D viewport currently orbits and zooms only.
+
+**Native UI status:** FC-0022 replaced the egui editor with cssimpler, and only part of the egui workflow has been ported. Grab, 3D placement, 3D sewing, the radial menu, Open/Save As, imports and fabric assignment exist as CPU APIs, but the window doesn't expose them yet. See [native UI status](docs/native-ui-status.md) before following an older guide.
 
 ## What works today
 
-- **Patterns:** rectangles, ellipses, arc sectors, Bézier contours, point editing, holes and internal sewing paths; independent and paired linked mirrors; two-piece booleans.
-- **Sewing:** whole boundaries, partial ranges and ordered multi-edge chains, with direction, explicit easing and editable relationships.
-- **Arrangement:** translation and rotation in 3D; a separate 2D board layout; undo/redo and semantic copy/paste.
+- **Patterns:** pen polygons, rectangles, freehand panels, Bézier point editing, splits, corner fillets, internal lines and paired linked mirrors in the native board. The CPU model also has ellipses, arc sectors, holes, independent mirrors and two-piece booleans, which the native board doesn't expose yet.
+- **Sewing:** the native 2D Sew tool joins two whole boundaries and eases unequal lengths automatically. The model also supports partial ranges, ordered multi-edge chains, direction and explicit easing; those controls are not ported yet.
+- **Arrangement:** undo/redo of board edits. 3D translation/rotation, 2D board layout and semantic copy/paste exist as authoring commands without native controls yet.
 - **Simulation:** resident WGSL finite AVBD with IPC-style contact by default on this branch; explicit CPU and hybrid VBD/OGC controls remain available. The floor is currently a visual reference, not a physical collider.
-- **Documents:** Open, Save, Save As, portable avatar assets and local recovery. Keep a saved JSON and its adjacent `.assets` folder together.
-- **Starting assets:** six bundled pattern templates, native template JSON import, and static OBJ/glTF/GLB avatars through File → Import avatar. Avatar replacement preserves authored patterns but resets the drape and undo history; [supported geometry and limits](docs/avatar-import.md).
-- **Avatar inspection:** Properties → Simulation reports the actual collision mesh and can check the current arrangement through the CPU solver's initialization gate. [Coverage and limits](docs/avatar-diagnostics.md): topology warnings are not an intersection or global containment certificate.
-- **DXF outlines:** File → Import DXF patterns previews units, layers and excluded data before adding selected closed outlines as editable pieces. Existing unchanged panels retain their drape. This is a [generic planar subset](docs/pattern-import.md), not industrial DXF-AAMA/ASTM.
-- **SVG outlines:** File → Import SVG patterns adds selected closed outlines from a [physically scaled SVG subset](docs/svg-import.md). Curves are sampled into polygon edges; unsupported artwork and nested or overlapping selected outlines are rejected rather than interpreted as sewing or holes.
+- **Documents:** open a project with `--project`; save writes the output directory. Save As, portable avatar assets and local recovery exist in `document.rs` but aren't wired into the native window yet.
+- **Starting assets:** the native browser loads the T-shirt and dress presets; `examples/templates/` holds six templates for the CLI. Static OBJ/glTF/GLB avatars load through `cloth-fit --avatar` (the import dialog is not ported). Avatar replacement preserves authored patterns but resets the drape and undo history; [supported geometry and limits](docs/avatar-import.md).
+- **Avatar inspection** (CPU API; native panel not ported): reports the actual collision mesh and can check the current arrangement through the CPU solver's initialization gate. [Coverage and limits](docs/avatar-diagnostics.md): topology warnings are not an intersection or global containment certificate.
+- **DXF outlines** (CPU reader; native dialog not ported): previews units, layers and excluded data before adding selected closed outlines as editable pieces. Existing unchanged panels retain their drape. This is a [generic planar subset](docs/pattern-import.md), not industrial DXF-AAMA/ASTM.
+- **SVG outlines** (CPU reader; native dialog not ported): adds selected closed outlines from a [physically scaled SVG subset](docs/svg-import.md). Curves are sampled into polygon edges; unsupported artwork and nested or overlapping selected outlines are rejected rather than interpreted as sewing or holes.
 - **Net material report:** the CPU `cloth-template metrics` command reports
   rest-mesh area and cloth mass per panel and fabric. It is not cutting or
   purchasing consumption; see [units and limits](docs/production-metrics.md).
 
-Select two boundaries in Sew, then confirm the nearby proposal; unequal lengths offer an explicit easing action. In Edit, box/lasso can select contour points across patterns for one group move; Delete removes selected pieces when no point, seam or text field owns the action. See [editing and inspection controls](docs/editor-basics.md).
+In the native board, choose Sew and click two boundaries to create a seam. Select contour points to move or curve them, and press Delete to remove the selected points. The egui-era [editing guide](docs/editor-basics.md) describes controls that are not all ported.
 
 These are implemented foundations, not completed production workflows. See the [workspace guide](docs/workspace-ui.md), [document and sewing guide](docs/documents-and-sewing.md) and [authoring reference](docs/authoring.md) for controls and limitations.
 
