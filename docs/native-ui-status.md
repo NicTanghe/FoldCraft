@@ -64,6 +64,10 @@ Audit: 17 November 2026, against `main` at `fcd319a`. FC-0022 ([NicTanghe/FoldCr
 
 `--ui-interaction-smoke` and `--ui-authoring-smoke` are still accepted by `cloth-fit`, but `css_runner.rs` stores the flags without acting on them. They open the window and no longer write `interaction.json` or `authoring.json`. The native window also has no application icon set.
 
+## Platform limits
+
+On Linux, cssimpler's GPU viewport only embeds into X11 windows and fails on Wayland with *"Linux GPU viewports currently require X11"*. Until FC-0065 lands, start the window with `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET` to use XWayland. FC-0065 makes the binaries do that automatically when `DISPLAY` is available (`FOLDCRAFT_KEEP_WAYLAND=1` opts out); see `docs/install.md`.
+
 ## Reading older documents
 
 Validation records, PR reviews and dated handoff entries keep their egui references, because they describe what was tested at the time. When a guide names a removed module or a menu path such as **File → Import…**, check the tables above before assuming the control exists.
