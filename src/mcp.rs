@@ -8,6 +8,7 @@
 //! requests, so validation, revision guards and history stay in one place.
 use crate::inspect::{summarize_document, summarize_template};
 use crate::session_client::{Client, SessionError};
+use crate::skills;
 use crate::template_catalog::Selection;
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
@@ -262,6 +263,23 @@ impl Server {
                 let data = self.call(json!({"op": "cancel", "guard": guard, "change": change}))?;
                 Ok(summarize_document(&data))
             }
+            "skills_list" => Ok(json!({
+                "skills": skills::SKILLS
+                    .iter()
+                    .map(|skill| json!({"name": skill.name, "description": skill.description}))
+                    .collect::<Vec<_>>(),
+            })),
+            "skills_read" => {
+                let name = require_string(args, "name")?;
+                let skill = skills::find(&name).ok_or_else(|| {
+                    ToolError::new("unknown_skill", format!("No skill named {name}"))
+                })?;
+                Ok(json!({
+                    "name": skill.name,
+                    "description": skill.description,
+                    "body": skill.body,
+                }))
+            }
             other => Err(ToolError::new("unknown_tool", format!("No tool named {other}"))),
         }
     }
@@ -342,6 +360,20 @@ impl Server {
                     .collect::<Vec<_>>(),
             }))
             .map_err(|e| ToolError::new("io_failure", e.to_string()))?,
+            "clothcraft://skills" => serde_json::to_string_pretty(&json!({
+                "skills": skills::SKILLS
+                    .iter()
+                    .map(|skill| json!({"name": skill.name, "description": skill.description}))
+                    .collect::<Vec<_>>(),
+            }))
+            .map_err(|e| ToolError::new("io_failure", e.to_string()))?,
+            other if other.starts_with("clothcraft://skills/") => {
+                let name = other.trim_start_matches("clothcraft://skills/");
+                let skill = skills::find(name).ok_or_else(|| {
+                    ToolError::new("unknown_skill", format!("No skill named {name}"))
+                })?;
+                skill.body.to_owned()
+            }
             other => {
                 return Err(ToolError::new(
                     "unknown_resource",
@@ -660,6 +692,20 @@ fn tool_definitions() -> Value {
                 "properties": {"change": {"type": "string"}},
                 "required": ["change"]
             }
+        },
+        {
+            "name": "skills_list",
+            "description": "List the agent skills shipped with this engine. Each skill is a short card: when to use it, exact requests, refusals and what to verify.",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "skills_read",
+            "description": "Read one skill card by name, including the request bodies and the verification checklist.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"]
+            }
         }
     ])
 }
@@ -676,6 +722,12 @@ fn resource_definitions() -> Value {
             "uri": "clothcraft://catalog",
             "name": "Bundled templates",
             "description": "Engineering templates that document_open accepts by id.",
+            "mimeType": "application/json"
+        },
+        {
+            "uri": "clothcraft://skills",
+            "name": "Agent skills",
+            "description": "Skill cards shipped with the engine, also readable one at a time at clothcraft://skills/<name>.",
             "mimeType": "application/json"
         }
     ])

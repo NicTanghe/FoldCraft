@@ -46,6 +46,7 @@ pub mod project;
 #[cfg(feature = "desktop")]
 pub mod render;
 pub mod session_client;
+pub mod skills;
 pub mod session_protocol;
 pub mod solver;
 pub mod solver_lab;

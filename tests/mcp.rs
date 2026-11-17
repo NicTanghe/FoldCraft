@@ -57,7 +57,9 @@ fn tools_list_covers_document_and_garment_work() {
     ] {
         assert!(names.contains(&expected.to_owned()), "missing {expected} in {names:?}");
     }
-    assert_eq!(names.len(), 20, "unexpected tool count: {names:?}");
+    assert!(names.contains(&"skills_list".to_owned()));
+    assert!(names.contains(&"skills_read".to_owned()));
+    assert_eq!(names.len(), 22, "unexpected tool count: {names:?}");
 }
 
 #[test]
@@ -114,4 +116,25 @@ fn undo_returns_the_document_to_the_previous_revision() {
     let undone = structured(&mut server, "garment_undo", json!({}));
     assert_eq!(undone["revision"], json!(2));
     assert_eq!(undone["canRedo"], json!(true));
+}
+#[test]
+fn skill_cards_are_listed_and_readable() {
+    let mut server = Server::new().expect("server");
+    let listed = structured(&mut server, "skills_list", json!({}));
+    let names: Vec<&str> = listed["skills"]
+        .as_array()
+        .expect("skills")
+        .iter()
+        .map(|skill| skill["name"].as_str().expect("name"))
+        .collect();
+    assert_eq!(names.len(), 4, "unexpected skills: {names:?}");
+    for expected in ["inspect-document", "draft-panel", "sew-seams", "gate-changes"] {
+        assert!(names.contains(&expected), "missing skill {expected}");
+    }
+    let card = structured(&mut server, "skills_read", json!({"name": "sew-seams"}));
+    assert_eq!(card["name"], json!("sew-seams"));
+    let body = card["body"].as_str().expect("body");
+    assert!(body.contains("garment_sew"), "skill body should name the tools");
+    let missing = call(&mut server, "skills_read", json!({"name": "no-such-skill"}));
+    assert_eq!(missing["isError"], json!(true));
 }
