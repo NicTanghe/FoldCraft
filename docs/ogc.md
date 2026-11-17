@@ -72,7 +72,7 @@ A fixed VBD budget does not guarantee minimizer convergence at each step. CPU re
 
 `gpu_compute_ms`, when available, is a hardware timestamp of the VBD compute pass. It excludes GPU contact search, CPU work and transfers. `contact_profile.filter_dispatch_ms` includes contact submission/wait/readback and is a wall-clock measurement. The historical OGC validation used a 3 mm radius, contact stiffness 100,000 N/m per pair, seam stiffness 50,000 N/m², eight iterations and a 1/60 s step. The current private-garment benchmark preserves its 16 iterations. These settings are not a material calibration.
 
-`--ui-interaction-smoke` injected pointer events into the egui window, checked that a triangle was grabbed and an attached step accepted, wrote `interaction.json`, captured and closed the window. That harness was removed in FC-0022; the flag now exits with an error before loading anything. It explicitly requires the GPU and remains outside ordinary tests.
+`--ui-interaction-smoke` injected pointer events into the egui window, checked that a triangle was grabbed and an attached step accepted, wrote `interaction.json`, captured and closed the window. That harness was removed in FC-0022; the flag now exits with an error before loading anything. The removed harness required a GPU and stayed outside ordinary tests.
 
 ## Realtime scheduling
 
