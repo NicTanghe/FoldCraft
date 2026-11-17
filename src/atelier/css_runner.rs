@@ -310,9 +310,7 @@ pub struct CssRunnerState {
     pub gpu_sim: bool,
     pub contact_method: ContactMethod,
     pub solver_menu_open: bool,
-    pub drag_test: bool,
     pub perf_test: bool,
-    pub authoring_test: bool,
     pub perf: Option<super::perf::PerfRun>,
     pub cadence: super::perf::Cadence,
     pub should_exit: bool,
@@ -388,9 +386,7 @@ impl CssRunnerState {
             gpu_sim: false,
             contact_method: ContactMethod::Ipc,
             solver_menu_open: false,
-            drag_test: false,
             perf_test: false,
-            authoring_test: false,
             perf: None,
             cadence: Default::default(),
             should_exit: false,
@@ -6370,9 +6366,7 @@ pub fn run(
     let super::RunOptions {
         barrier_al,
         smoke,
-        drag_test,
         perf_test,
-        authoring_test,
         gpu_sim,
     } = options;
     let stylesheet =
@@ -6389,9 +6383,7 @@ pub fn run(
 
     let mut state = CssRunnerState::new(project, scene, files, tx, latest);
     state.smoke = smoke;
-    state.drag_test = drag_test;
     state.perf_test = perf_test;
-    state.authoring_test = authoring_test;
     state.gpu_sim = gpu_sim;
     state.contact_method = if barrier_al {
         ContactMethod::BarrierAl

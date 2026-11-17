@@ -44,13 +44,13 @@ struct Args {
     /// Capture the actual native UI then close (explicit GPU smoke).
     #[arg(long)]
     ui_smoke: bool,
-    /// Exercise a real pointer drag, verify an accepted grab step, capture and close.
+    /// Not implemented in the cssimpler workspace: exits with an error instead of opening a window.
     #[arg(long)]
     ui_interaction_smoke: bool,
     /// Measure five seconds of actual window cadence and physical clock, then close.
     #[arg(long, conflicts_with = "ui_interaction_smoke")]
     ui_perf_smoke: bool,
-    /// Draw, sew, move, undo/redo and export using real native UI pointer events.
+    /// Not implemented in the cssimpler workspace: exits with an error instead of opening a window.
     #[arg(long, conflicts_with_all = ["ui_interaction_smoke", "ui_perf_smoke"])]
     ui_authoring_smoke: bool,
     /// Use the slow global Newton reference instead of interactive VBD + OGC.
@@ -262,12 +262,7 @@ fn run_ogc(
         #[cfg(not(feature = "desktop"))]
         return Err("Rebuild with desktop for --gpu-benchmark".into());
     }
-    if args.view
-        || args.ui_smoke
-        || args.ui_interaction_smoke
-        || args.ui_perf_smoke
-        || args.ui_authoring_smoke
-    {
+    if args.view || args.ui_smoke || args.ui_perf_smoke {
         #[cfg(feature = "desktop")]
         fitting_editor::run(
             project,
@@ -280,9 +275,7 @@ fn run_ogc(
             fitting_editor::RunOptions {
                 barrier_al: args.barrier_al,
                 smoke: args.ui_smoke,
-                drag_test: args.ui_interaction_smoke,
                 perf_test: args.ui_perf_smoke,
-                authoring_test: args.ui_authoring_smoke,
                 gpu_sim: !args.cpu && !args.reference,
             },
         )
@@ -292,8 +285,26 @@ fn run_ogc(
     }
     Ok(())
 }
+/// The egui-era pointer smokes were deleted with that UI (FC-0022). Fail before
+/// loading or opening anything so a script cannot mistake an idle window for a pass.
+fn reject_unported_smoke(args: &Args) -> Result<(), String> {
+    let flag = if args.ui_interaction_smoke {
+        "--ui-interaction-smoke"
+    } else if args.ui_authoring_smoke {
+        "--ui-authoring-smoke"
+    } else {
+        return Ok(());
+    };
+    Err(format!(
+        "{flag} is not implemented in the cssimpler workspace: the egui pointer harness was \
+         removed in FC-0022 and no native replacement exists yet. No check was run. \
+         See docs/native-ui-status.md; --ui-smoke and --ui-perf-smoke still work."
+    ))
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    reject_unported_smoke(&args)?;
     if !(1..=16).contains(&args.threads) || args.steps > 10_000 {
         return Err("Require 1..16 threads and at most 10000 steps".into());
     }
@@ -421,12 +432,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(not(feature = "desktop"))]
         return Err("Rebuild with default desktop feature for --gpu-benchmark".into());
     }
-    if args.view
-        || args.ui_smoke
-        || args.ui_interaction_smoke
-        || args.ui_perf_smoke
-        || args.ui_authoring_smoke
-    {
+    if args.view || args.ui_smoke || args.ui_perf_smoke {
         #[cfg(feature = "desktop")]
         fitting_editor::run(
             project,
@@ -439,9 +445,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fitting_editor::RunOptions {
                 barrier_al: args.barrier_al,
                 smoke: args.ui_smoke,
-                drag_test: args.ui_interaction_smoke,
                 perf_test: args.ui_perf_smoke,
-                authoring_test: args.ui_authoring_smoke,
                 gpu_sim: !args.cpu && !args.reference,
             },
         )

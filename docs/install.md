@@ -130,8 +130,9 @@ The smoke therefore does not certify a physical GPU, driver version, file-dialog
 desktop session. If no usable wgpu adapter or window is available, the smoke
 step fails; the CPU package checks remain valid evidence only.
 
-The longer `--ui-authoring-smoke` pointer suite is deliberately not part of
-the hosted check. Its fixed 40-55 second frame budget cannot complete at a
+The longer `--ui-authoring-smoke` pointer suite was removed with the egui UI
+(FC-0022); the flag now exits with an error, so it is not part of any check.
+Historically it was deliberately not part of the hosted check. Its fixed 40-55 second frame budget cannot complete at a
 supported editor layout on a software adapter; the 1100x700 minimum also makes
 its rectangle drag self-intersect. Run that suite manually on a
 hardware-accelerated Windows desktop before claiming full pointer/authoring

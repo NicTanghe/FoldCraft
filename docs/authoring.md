@@ -219,7 +219,7 @@ Optional `curves`, `holes`, `lines`, `layout_2d` and `layout_rotation_degrees` f
 
 A v2 polygon may also carry `target_lengths`: a map from each stable boundary identifier to its required length in metres, empty and omitted when no target is set. A target is a 2D specification. It is shown as a measured-versus-target deviation and is applied to the rest contour only by an explicit **Target length** action in the inspector; opening or reloading a document never resizes a piece. Values that are missing, non-finite or non-positive are reported and treated as no target. Setting a boundary's target refuses a later split or point deletion on that boundary until the target is cleared, so a specification can never be silently re-pointed at a shorter edge. Stored targets are excluded from the physical-change comparison (`same_physics`), so setting or clearing one cannot disturb the drape; only applying a different required length moves the rest contour and resets the caches.
 
-The explicit native smoke (GPU window, outside ordinary CPU CI) is:
+The explicit native smoke below was removed with the egui UI in FC-0022. `--ui-authoring-smoke` now exits with an error before loading anything, and the scenario description that follows is historical:
 
 ```powershell
 cargo run --release --locked -j 2 --bin cloth-fit -- --steps 0 --ui-authoring-smoke --output output/board-smoke
