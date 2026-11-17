@@ -88,6 +88,10 @@ pub struct Selection {
     pub warnings: Vec<String>,
 }
 impl Selection {
+    /// The validated editable template, already compiled once by the constructor.
+    pub fn template(&self) -> &GarmentTemplate {
+        &self.template
+    }
     pub fn bundled(id: &str) -> Result<Self, String> {
         let entry = ENTRIES
             .iter()

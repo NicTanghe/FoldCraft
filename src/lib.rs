@@ -31,6 +31,7 @@ pub mod ipc;
 pub use cssimpler;
 pub mod issue_report;
 pub mod math;
+pub mod mcp;
 /// Opt-in static mesh sizing; evaluated during preparation, never solver steps.
 pub mod mesh_resolution;
 pub mod model;
