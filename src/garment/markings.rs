@@ -570,7 +570,7 @@ impl PolygonPattern {
     /// Set a uniform seam allowance (in metres) across all outer edges of the polygon.
     /// If `width_m == 0.0`, all existing seam allowances on the panel are cleared.
     pub fn set_panel_seam_allowance(&mut self, width_m: f64) -> Result<(), String> {
-        if !width_m.is_finite() || width_m < 0. || width_m > MAX_ALLOWANCE_M {
+        if !width_m.is_finite() || !(0. ..=MAX_ALLOWANCE_M).contains(&width_m) {
             return Err(format!(
                 "Panel seam allowance must be in [0, {} mm]",
                 MAX_ALLOWANCE_M * 1000.

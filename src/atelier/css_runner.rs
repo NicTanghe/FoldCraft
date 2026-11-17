@@ -8121,8 +8121,9 @@ mod tests {
                 modifiers: cssimpler::renderer::KeyboardModifiers::default(),
             })
         ));
-        for pidx in 0..2 {
-            let rc = state.project.template.panels[pidx]
+        assert!(state.project.template.panels.len() >= 2);
+        for (pidx, panel) in state.project.template.panels.iter().take(2).enumerate() {
+            let rc = panel
                 .polygon
                 .as_ref()
                 .unwrap()
